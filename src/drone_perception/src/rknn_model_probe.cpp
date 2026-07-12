@@ -382,7 +382,7 @@ private:
           "Raw depth unavailable, stale, or missing calibration; continuing with 2D detection");
       }
       const cv_bridge::CvImageConstPtr depth = depth_ready
-        ? cv_bridge::toCvShare(frame.depth, frame.depth)
+        ? cv_bridge::toCvShare(frame.depth)
         : cv_bridge::CvImageConstPtr{};
       const std::vector<Detection> detections = detector_.infer(image->image);
       ++frame_count_;

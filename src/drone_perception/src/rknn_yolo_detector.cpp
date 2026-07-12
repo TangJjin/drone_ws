@@ -157,7 +157,7 @@ std::vector<unsigned char> RknnYoloDetector::readFile(const std::string &path)
 }
 
 RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
-    const cv::Mat &rgb_image) const
+    const cv::Mat &rgb_image)
 {
     if (rgb_image.empty())
     {
@@ -172,22 +172,29 @@ RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
     const int resized_width = static_cast<int>(static_cast<float>(rgb_image.cols) * scale);
     const int resized_height = static_cast<int>(static_cast<float>(rgb_image.rows) * scale);
 
-    cv::Mat resized;
-    cv::resize(rgb_image, resized, cv::Size(resized_width, resized_height));
-
     const int pad_x = (input_width_ - resized_width) / 2;
     const int pad_y = (input_height_ - resized_height) / 2;
 
-    cv::Mat letterbox(
-        input_height_,
-        input_width_,
-        rgb_image.type(),
-        cv::Scalar(114, 114, 114));
-
-    resized.copyTo(letterbox(cv::Rect(pad_x, pad_y, resized_width, resized_height)));
+    letterbox_buffer_.create(input_height_, input_width_, rgb_image.type());
+    letterbox_buffer_.setTo(cv::Scalar(114, 114, 114));
+    cv::Mat destination = letterbox_buffer_(
+        cv::Rect(pad_x, pad_y, resized_width, resized_height));
+    if (resized_width == rgb_image.cols && resized_height == rgb_image.rows)
+    {
+        rgb_image.copyTo(destination);
+    }
+    else
+    {
+        resized_buffer_.create(resized_height, resized_width, rgb_image.type());
+        cv::resize(
+            rgb_image,
+            resized_buffer_,
+            cv::Size(resized_width, resized_height));
+        resized_buffer_.copyTo(destination);
+    }
 
     LetterboxResult result;
-    result.image = letterbox;
+    result.image = letterbox_buffer_;
     result.scale = scale;
     result.pad_x = pad_x;
     result.pad_y = pad_y;

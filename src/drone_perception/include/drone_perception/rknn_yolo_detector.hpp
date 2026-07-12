@@ -45,7 +45,7 @@ private:
         int pad_y = 0;
     };
 
-    LetterboxResult makeLetterbox(const cv::Mat &rgb_image) const;
+    LetterboxResult makeLetterbox(const cv::Mat &rgb_image);
 
     void loadModel(const std::string &model_path, rknn_core_mask core_mask);
 
@@ -67,4 +67,6 @@ private:
     rknn_context context_ = 0;
     std::vector<unsigned char> model_data_;
     InferenceTimingStats last_timing_;
+    cv::Mat resized_buffer_;
+    cv::Mat letterbox_buffer_;
 };

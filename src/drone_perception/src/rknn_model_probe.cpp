@@ -156,7 +156,7 @@ class D435iRknnStream : public rclcpp::Node
 public:
   explicit D435iRknnStream(const std::string &model_path)
   : Node("rknn_d435i_stream"),
-    detector_(model_path, RKNN_NPU_CORE_0),
+    detector_(model_path, RKNN_NPU_CORE_0_1_2),
     started_at_(Clock::now())
   {
     const rknn_mem_size memory = detector_.memorySize();
@@ -433,11 +433,6 @@ private:
         const int label_y = std::max(20, detection.box.y - 6);
         cv::putText(display, label, cv::Point(detection.box.x, label_y),
           cv::FONT_HERSHEY_SIMPLEX, 0.52, cv::Scalar(255, 0, 255), 1, cv::LINE_AA);
-        RCLCPP_INFO(get_logger(),
-          "detection class=%d score=%.3f box=(%d,%d,%d,%d) center=(%d,%d) depth=%.3fm",
-          detection.class_id, detection.score, detection.box.x, detection.box.y,
-          detection.box.width, detection.box.height, detection.center.x, detection.center.y,
-          sample.has_valid_depth ? sample.depth_m : -1.0F);
       }
 
       const DepthSampleResult center_depth = depth_ready
@@ -448,7 +443,7 @@ private:
       const double npu_fps = api_run_ms > 0.0 ? 1000.0 / api_run_ms : 0.0;
       const cv::Scalar text_color(255, 0, 255);
       const std::string status = cv::format(
-        "Input %.1f  Process %.1f  NPU %.1f FPS  CORE_0  Drop %llu",
+        "Input %.1f  Process %.1f  NPU %.1f FPS  CORE_0_1_2  Drop %llu",
         input_fps_.load(), display_fps_, npu_fps,
         static_cast<unsigned long long>(dropped_count_.load()));
       cv::putText(display, status, cv::Point(12, 30), cv::FONT_HERSHEY_SIMPLEX,
@@ -481,7 +476,7 @@ private:
         const double total_seconds = std::chrono::duration<double>(now - started_at_).count();
         RCLCPP_INFO(get_logger(),
           "stream frames=%llu received=%llu dropped=%llu input_fps=%.2f process_fps=%.2f "
-          "npu_fps=%.2f api_run=%.2fms core=0 "
+          "npu_fps=%.2f api_run=%.2fms core=0_1_2 "
           "detections=%zu preprocess=%.2fms input=%.2fms rknn_run=%.2fms "
           "output=%.2fms postprocess=%.2fms total=%.2fms",
           static_cast<unsigned long long>(frame_count_),

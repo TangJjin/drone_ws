@@ -356,9 +356,23 @@ private:
     rs2_project_color_pixel_to_depth_pixel(
       depth_pixel, reinterpret_cast<const uint16_t *>(depth.data), 0.001F, 0.1F, 10.0F,
       &depth_intrinsics, &color_intrinsics, &color_to_depth, &depth_to_color, color_pixel);
-    const int depth_u = static_cast<int>(std::lround(depth_pixel[0]));
-    const int depth_v = static_cast<int>(std::lround(depth_pixel[1]));
-    return depth_processor_.sampleAt(depth, depth_u, depth_v, sample_radius_px_);
+    const int projected_u = static_cast<int>(std::lround(depth_pixel[0]));
+    const int projected_v = static_cast<int>(std::lround(depth_pixel[1]));
+    const DepthSampleResult projected = depth_processor_.sampleAt(
+      depth, projected_u, projected_v, sample_radius_px_);
+    if (projected.has_valid_depth) {
+      return projected;
+    }
+
+    // Some realsense2_camera releases publish extrinsics with a matrix layout
+    // that differs from rsutil's C representation. Use calibrated intrinsics
+    // as a bounded fallback rather than returning a stale or arbitrary depth.
+    const float depth_u = (static_cast<float>(color_u) - color_intrinsics.ppx) /
+      color_intrinsics.fx * depth_intrinsics.fx + depth_intrinsics.ppx;
+    const float depth_v = (static_cast<float>(color_v) - color_intrinsics.ppy) /
+      color_intrinsics.fy * depth_intrinsics.fy + depth_intrinsics.ppy;
+    return depth_processor_.sampleAt(
+      depth, static_cast<int>(std::lround(depth_u)), static_cast<int>(std::lround(depth_v)), 20);
   }
 
   static bool depthMatchesColor(const FrameBundle &frame)

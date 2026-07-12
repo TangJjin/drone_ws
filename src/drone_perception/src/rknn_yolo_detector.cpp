@@ -103,6 +103,32 @@ const RknnYoloDetector::InferenceTimingStats &RknnYoloDetector::lastTiming() con
     return last_timing_;
 }
 
+rknn_mem_size RknnYoloDetector::memorySize() const
+{
+    rknn_mem_size memory_size;
+    std::memset(&memory_size, 0, sizeof(memory_size));
+    const int ret = rknn_query(
+        context_, RKNN_QUERY_MEM_SIZE, &memory_size, sizeof(memory_size));
+    if (ret != RKNN_SUCC)
+    {
+        throw std::runtime_error("RKNN_QUERY_MEM_SIZE failed, ret=" + std::to_string(ret));
+    }
+    return memory_size;
+}
+
+double RknnYoloDetector::lastRknnRunMs() const
+{
+    rknn_perf_run perf_run;
+    std::memset(&perf_run, 0, sizeof(perf_run));
+    const int ret = rknn_query(
+        context_, RKNN_QUERY_PERF_RUN, &perf_run, sizeof(perf_run));
+    if (ret != RKNN_SUCC)
+    {
+        throw std::runtime_error("RKNN_QUERY_PERF_RUN failed, ret=" + std::to_string(ret));
+    }
+    return static_cast<double>(perf_run.run_duration) / 1000.0;
+}
+
 std::vector<unsigned char> RknnYoloDetector::readFile(const std::string &path)
 {
     std::ifstream file(path, std::ios::binary | std::ios::ate);

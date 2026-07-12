@@ -32,6 +32,10 @@ public:
 
     const InferenceTimingStats &lastTiming() const;
 
+    rknn_mem_size memorySize() const;
+
+    double lastRknnRunMs() const;
+
 private:
     struct LetterboxResult
     {

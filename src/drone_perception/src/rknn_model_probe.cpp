@@ -1,6 +1,7 @@
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
-#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -8,6 +9,8 @@
 #include <vector>
 
 #include <cv_bridge/cv_bridge.h>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
 
@@ -138,6 +141,7 @@ public:
   explicit D435iRknnStream(const std::string &model_path)
   : Node("rknn_d435i_stream"), detector_(model_path), started_at_(Clock::now())
   {
+    cv::namedWindow(window_name_, cv::WINDOW_AUTOSIZE);
     const std::string topic = declare_parameter<std::string>(
       "color_topic", "/camera/camera/color/image_raw");
     subscription_ = create_subscription<sensor_msgs::msg::Image>(
@@ -145,6 +149,11 @@ public:
       [this](const sensor_msgs::msg::Image::ConstSharedPtr message) { inferFrame(message); });
     RCLCPP_INFO(get_logger(), "Streaming RKNN inference started: topic=%s model=%s",
       topic.c_str(), model_path.c_str());
+  }
+
+  ~D435iRknnStream() override
+  {
+    cv::destroyWindow(window_name_);
   }
 
 private:
@@ -157,14 +166,42 @@ private:
       const std::vector<Detection> detections = detector_.infer(image->image);
       ++frame_count_;
 
+      const auto now = Clock::now();
+      if (last_frame_at_ != Clock::time_point{}) {
+        const double interval = std::chrono::duration<double>(now - last_frame_at_).count();
+        if (interval > 0.0) {
+          const double current_fps = 1.0 / interval;
+          display_fps_ = display_fps_ <= 0.0 ? current_fps : 0.9 * display_fps_ + 0.1 * current_fps;
+        }
+      }
+      last_frame_at_ = now;
+
+      cv::Mat display = image->image.clone();
+
       for (const Detection &detection : detections) {
+        cv::rectangle(display, detection.box, cv::Scalar(0, 255, 0), 2);
+        const std::string label = cv::format(
+          "class %d %.2f", detection.class_id, detection.score);
+        const int label_y = std::max(20, detection.box.y - 6);
+        cv::putText(display, label, cv::Point(detection.box.x, label_y),
+          cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
         RCLCPP_INFO(get_logger(),
           "detection class=%d score=%.3f box=(%d,%d,%d,%d) center=(%d,%d)",
           detection.class_id, detection.score, detection.box.x, detection.box.y,
           detection.box.width, detection.box.height, detection.center.x, detection.center.y);
       }
 
-      const auto now = Clock::now();
+      const std::string status = cv::format(
+        "FPS %.1f  %dx%d", display_fps_, display.cols, display.rows);
+      cv::putText(display, status, cv::Point(12, 30), cv::FONT_HERSHEY_SIMPLEX,
+        0.75, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+      cv::imshow(window_name_, display);
+      const int key = cv::waitKey(1) & 0xff;
+      if (key == 'q' || key == 27) {
+        rclcpp::shutdown();
+        return;
+      }
+
       const double report_seconds = std::chrono::duration<double>(now - last_report_at_).count();
       if (report_seconds >= 1.0) {
         const double total_seconds = std::chrono::duration<double>(now - started_at_).count();
@@ -186,7 +223,10 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
   Clock::time_point started_at_;
   Clock::time_point last_report_at_ = started_at_;
+  Clock::time_point last_frame_at_{};
   std::uint64_t frame_count_ = 0;
+  double display_fps_ = 0.0;
+  const std::string window_name_ = "D435i RKNN Detection";
 };
 
 }  // namespace

@@ -696,7 +696,7 @@ int main(int argc, char **argv)
   if (argc == 1) {
     const std::string model_path =
       ament_index_cpp::get_package_share_directory("drone_perception") +
-      "/models/qr_rk3588_hybrid_bbox_fp16.rknn";
+      "/models/qr_rk3588_FP16.rknn";
     rclcpp::init(argc, argv);
     try {
       rclcpp::spin(std::make_shared<D435iRknnStream>(model_path));

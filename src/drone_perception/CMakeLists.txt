@@ -190,6 +190,7 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   )
 
   install(FILES
+    qr_rk3588_FP16.rknn
     qr_rk3588_hybrid_bbox_fp16.rknn
     DESTINATION share/${PROJECT_NAME}/models
   )

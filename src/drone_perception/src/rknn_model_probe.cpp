@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <cstring>
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -11,6 +12,7 @@
 #include <sensor_msgs/msg/image.hpp>
 
 #include "rknn_api.h"
+#include "drone_perception/rknn_yolo_detector.hpp"
 
 namespace
 {
@@ -130,10 +132,81 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
 };
 
+class D435iRknnStream : public rclcpp::Node
+{
+public:
+  explicit D435iRknnStream(const std::string &model_path)
+  : Node("rknn_d435i_stream"), detector_(model_path), started_at_(Clock::now())
+  {
+    const std::string topic = declare_parameter<std::string>(
+      "color_topic", "/camera/camera/color/image_raw");
+    subscription_ = create_subscription<sensor_msgs::msg::Image>(
+      topic, rclcpp::SensorDataQoS(),
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr message) { inferFrame(message); });
+    RCLCPP_INFO(get_logger(), "Streaming RKNN inference started: topic=%s model=%s",
+      topic.c_str(), model_path.c_str());
+  }
+
+private:
+  using Clock = std::chrono::steady_clock;
+
+  void inferFrame(const sensor_msgs::msg::Image::ConstSharedPtr &message)
+  {
+    try {
+      const auto image = cv_bridge::toCvShare(message, "bgr8");
+      const std::vector<Detection> detections = detector_.infer(image->image);
+      ++frame_count_;
+
+      for (const Detection &detection : detections) {
+        RCLCPP_INFO(get_logger(),
+          "detection class=%d score=%.3f box=(%d,%d,%d,%d) center=(%d,%d)",
+          detection.class_id, detection.score, detection.box.x, detection.box.y,
+          detection.box.width, detection.box.height, detection.center.x, detection.center.y);
+      }
+
+      const auto now = Clock::now();
+      const double report_seconds = std::chrono::duration<double>(now - last_report_at_).count();
+      if (report_seconds >= 1.0) {
+        const double total_seconds = std::chrono::duration<double>(now - started_at_).count();
+        const auto &timing = detector_.lastTiming();
+        RCLCPP_INFO(get_logger(),
+          "stream frames=%llu fps=%.2f detections=%zu preprocess=%.2fms input=%.2fms "
+          "rknn_run=%.2fms output=%.2fms postprocess=%.2fms total=%.2fms",
+          static_cast<unsigned long long>(frame_count_), frame_count_ / total_seconds,
+          detections.size(), timing.preprocess_ms, timing.input_set_ms, timing.rknn_run_ms,
+          timing.output_get_ms, timing.postprocess_ms, timing.detector_total_ms);
+        last_report_at_ = now;
+      }
+    } catch (const std::exception &error) {
+      RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 2000, "stream inference failed: %s", error.what());
+    }
+  }
+
+  RknnYoloDetector detector_;
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
+  Clock::time_point started_at_;
+  Clock::time_point last_report_at_ = started_at_;
+  std::uint64_t frame_count_ = 0;
+};
+
 }  // namespace
 
 int main(int argc, char **argv)
 {
+  if (argc >= 3 && std::string(argv[1]) == "--infer") {
+    const std::string model_path = argv[2];
+    rclcpp::init(argc, argv);
+    try {
+      rclcpp::spin(std::make_shared<D435iRknnStream>(model_path));
+    } catch (const std::exception &error) {
+      std::cerr << "Error: " << error.what() << '\n';
+      rclcpp::shutdown();
+      return 1;
+    }
+    rclcpp::shutdown();
+    return 0;
+  }
+
   if (argc >= 2 && std::string(argv[1]) == "--camera") {
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<FirstColorFrameProbe>());
@@ -143,6 +216,7 @@ int main(int argc, char **argv)
   if (argc != 2) {
     std::cerr << "Usage:\n"
               << "  " << argv[0] << " <model.rknn>\n"
+              << "  " << argv[0] << " --infer <model.rknn> [--ros-args -p color_topic:=<topic>]\n"
               << "  " << argv[0] << " --camera [--ros-args -p color_topic:=<topic>]\n";
     return 2;
   }

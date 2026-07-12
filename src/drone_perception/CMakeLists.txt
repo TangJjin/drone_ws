@@ -142,11 +142,6 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     ${RKNN_INCLUDE}
   )
 
-  target_link_libraries(rknn_model_probe
-    ${OpenCV_LIBS}
-    ${RKNN_RUNTIME_SO}
-  )
-
   ament_target_dependencies(rknn_model_probe
     cv_bridge
     rclcpp
@@ -168,6 +163,12 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   )
 
   target_link_libraries(rknn_yolo_detector
+    ${OpenCV_LIBS}
+    ${RKNN_RUNTIME_SO}
+  )
+
+  target_link_libraries(rknn_model_probe
+    rknn_yolo_detector
     ${OpenCV_LIBS}
     ${RKNN_RUNTIME_SO}
   )

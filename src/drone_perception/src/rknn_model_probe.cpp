@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <cmath>
@@ -9,7 +10,10 @@
 #include <iostream>
 #include <atomic>
 #include <condition_variable>
+#include <deque>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -174,13 +178,18 @@ class D435iRknnStream : public rclcpp::Node
 public:
   explicit D435iRknnStream(const std::string &model_path)
   : Node("rknn_d435i_stream"),
-    detector_(model_path, RKNN_NPU_CORE_0_1_2),
     started_at_(Clock::now())
   {
-    const rknn_mem_size memory = detector_.memorySize();
-    weight_mib_ = static_cast<double>(memory.total_weight_size) / (1024.0 * 1024.0);
-    internal_mib_ = static_cast<double>(memory.total_internal_size) / (1024.0 * 1024.0);
-    dma_mib_ = static_cast<double>(memory.total_dma_allocated_size) / (1024.0 * 1024.0);
+    constexpr std::array<rknn_core_mask, kWorkerCount> core_masks{
+      RKNN_NPU_CORE_0, RKNN_NPU_CORE_1, RKNN_NPU_CORE_2};
+    for (std::size_t index = 0; index < kWorkerCount; ++index) {
+      detectors_[index] = std::make_unique<RknnYoloDetector>(model_path, core_masks[index]);
+      const rknn_mem_size memory = detectors_[index]->memorySize();
+      weight_mib_ += static_cast<double>(memory.total_weight_size) / (1024.0 * 1024.0);
+      internal_mib_ += static_cast<double>(memory.total_internal_size) / (1024.0 * 1024.0);
+      dma_mib_ += static_cast<double>(memory.total_dma_allocated_size) / (1024.0 * 1024.0);
+    }
+
     const std::string color_topic = declare_parameter<std::string>(
       "color_topic", "/camera/camera/color/image_raw");
     const std::string depth_topic = declare_parameter<std::string>(
@@ -210,18 +219,27 @@ public:
       [this](const realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr message) {
         receiveExtrinsics(message);
       });
-    worker_ = std::thread(&D435iRknnStream::workerLoop, this);
+    for (std::size_t index = 0; index < kWorkerCount; ++index) {
+      workers_[index] = std::thread(&D435iRknnStream::workerLoop, this, index);
+    }
+    ui_thread_ = std::thread(&D435iRknnStream::uiLoop, this);
     RCLCPP_INFO(get_logger(),
-      "Streaming raw D435i RKNN inference started: color=%s depth=%s model=%s",
+      "Streaming 3-context raw D435i RKNN inference started: color=%s depth=%s model=%s",
       color_topic.c_str(), depth_topic.c_str(), model_path.c_str());
   }
 
   ~D435iRknnStream() override
   {
     running_.store(false);
-    frame_ready_.notify_one();
-    if (worker_.joinable()) {
-      worker_.join();
+    task_ready_.notify_all();
+    result_ready_.notify_all();
+    for (std::thread &worker : workers_) {
+      if (worker.joinable()) {
+        worker.join();
+      }
+    }
+    if (ui_thread_.joinable()) {
+      ui_thread_.join();
     }
   }
 
@@ -229,14 +247,33 @@ private:
   using Clock = std::chrono::steady_clock;
   using Image = sensor_msgs::msg::Image;
   using CameraInfo = sensor_msgs::msg::CameraInfo;
+  static constexpr std::size_t kWorkerCount = 3;
+  static constexpr std::size_t kTaskQueueCapacity = 3;
 
   struct FrameBundle
   {
+    std::uint64_t frame_id = 0;
     Image::ConstSharedPtr color;
     Image::ConstSharedPtr depth;
     CameraInfo::ConstSharedPtr color_info;
     CameraInfo::ConstSharedPtr depth_info;
     realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr depth_to_color;
+  };
+
+  struct InferenceResult
+  {
+    std::uint64_t frame_id = 0;
+    std::size_t worker_index = 0;
+    cv::Mat display;
+    std::size_t detection_count = 0;
+    bool depth_ready = false;
+    bool center_depth_valid = false;
+    float center_depth_m = 0.0F;
+    int depth_width = 0;
+    int depth_height = 0;
+    std::string depth_encoding;
+    RknnYoloDetector::InferenceTimingStats timing;
+    double api_run_ms = 0.0;
   };
 
   void receiveColor(const Image::ConstSharedPtr message)
@@ -250,62 +287,68 @@ private:
     last_received_stamp_ns_ = stamp_ns;
     received_count_.fetch_add(1);
 
+    FrameBundle frame;
     {
-      std::lock_guard<std::mutex> lock(frame_mutex_);
-      if (latest_color_) {
+      std::lock_guard<std::mutex> lock(data_mutex_);
+      frame.frame_id = next_frame_id_++;
+      frame.color = message;
+      frame.depth = latest_depth_;
+      frame.color_info = latest_color_info_;
+      frame.depth_info = latest_depth_info_;
+      frame.depth_to_color = latest_depth_to_color_;
+    }
+    {
+      std::lock_guard<std::mutex> lock(task_mutex_);
+      if (task_queue_.size() >= kTaskQueueCapacity) {
+        task_queue_.pop_front();
         dropped_count_.fetch_add(1);
       }
-      latest_color_ = message;
+      task_queue_.push_back(std::move(frame));
     }
-    frame_ready_.notify_one();
+    task_ready_.notify_one();
   }
 
   void receiveDepth(const Image::ConstSharedPtr message)
   {
-    std::lock_guard<std::mutex> lock(frame_mutex_);
+    std::lock_guard<std::mutex> lock(data_mutex_);
     latest_depth_ = message;
   }
 
   void receiveColorInfo(const CameraInfo::ConstSharedPtr message)
   {
-    std::lock_guard<std::mutex> lock(frame_mutex_);
+    std::lock_guard<std::mutex> lock(data_mutex_);
     latest_color_info_ = message;
   }
 
   void receiveDepthInfo(const CameraInfo::ConstSharedPtr message)
   {
-    std::lock_guard<std::mutex> lock(frame_mutex_);
+    std::lock_guard<std::mutex> lock(data_mutex_);
     latest_depth_info_ = message;
   }
 
   void receiveExtrinsics(const realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr message)
   {
-    std::lock_guard<std::mutex> lock(frame_mutex_);
+    std::lock_guard<std::mutex> lock(data_mutex_);
     latest_depth_to_color_ = message;
   }
 
-  void workerLoop()
+  void workerLoop(std::size_t worker_index)
   {
-    cv::namedWindow(window_name_, cv::WINDOW_AUTOSIZE);
     while (running_.load() && rclcpp::ok()) {
       FrameBundle frame;
       {
-        std::unique_lock<std::mutex> lock(frame_mutex_);
-        frame_ready_.wait(lock, [this] {
-          return latest_color_ != nullptr || !running_.load() || !rclcpp::ok();
+        std::unique_lock<std::mutex> lock(task_mutex_);
+        task_ready_.wait(lock, [this] {
+          return !task_queue_.empty() || !running_.load() || !rclcpp::ok();
         });
         if (!running_.load() || !rclcpp::ok()) {
           break;
         }
-        frame.color = std::move(latest_color_);
-        frame.depth = latest_depth_;
-        frame.color_info = latest_color_info_;
-        frame.depth_info = latest_depth_info_;
-        frame.depth_to_color = latest_depth_to_color_;
+        frame = std::move(task_queue_.front());
+        task_queue_.pop_front();
       }
-      inferFrame(frame);
+      processFrame(frame, worker_index);
     }
-    cv::destroyWindow(window_name_);
   }
 
   static rs2_distortion toRs2Distortion(const std::string &model)
@@ -355,7 +398,8 @@ private:
   }
 
   DepthSampleResult sampleRawDepth(
-    const cv::Mat &depth, const FrameBundle &frame, int color_u, int color_v) const
+    DepthProcessor &depth_processor, const cv::Mat &depth, const FrameBundle &frame,
+    int color_u, int color_v) const
   {
     if (!frame.depth || !frame.color_info || !frame.depth_info || !frame.depth_to_color ||
       depth.type() != CV_16UC1)
@@ -376,7 +420,7 @@ private:
       &depth_intrinsics, &color_intrinsics, &color_to_depth, &depth_to_color, color_pixel);
     const int projected_u = static_cast<int>(std::lround(depth_pixel[0]));
     const int projected_v = static_cast<int>(std::lround(depth_pixel[1]));
-    const DepthSampleResult projected = depth_processor_.sampleAt(
+    const DepthSampleResult projected = depth_processor.sampleAt(
       depth, projected_u, projected_v, sample_radius_px_);
     if (projected.has_valid_depth) {
       return projected;
@@ -389,7 +433,7 @@ private:
       color_intrinsics.fx * depth_intrinsics.fx + depth_intrinsics.ppx;
     const float depth_v = (static_cast<float>(color_v) - color_intrinsics.ppy) /
       color_intrinsics.fy * depth_intrinsics.fy + depth_intrinsics.ppy;
-    return depth_processor_.sampleAt(
+    return depth_processor.sampleAt(
       depth, static_cast<int>(std::lround(depth_u)), static_cast<int>(std::lround(depth_v)), 20);
   }
 
@@ -404,9 +448,11 @@ private:
     return std::llabs(color_stamp - depth_stamp) <= kMaxDepthOffsetNs;
   }
 
-  void inferFrame(const FrameBundle &frame)
+  void processFrame(const FrameBundle &frame, std::size_t worker_index)
   {
     try {
+      RknnYoloDetector &detector = *detectors_[worker_index];
+      DepthProcessor &depth_processor = depth_processors_[worker_index];
       const auto image = cv_bridge::toCvShare(frame.color, "bgr8");
       const bool depth_ready = frame.depth && frame.color_info && frame.depth_info &&
         frame.depth_to_color && depthMatchesColor(frame);
@@ -417,29 +463,19 @@ private:
       const cv_bridge::CvImageConstPtr depth = depth_ready
         ? cv_bridge::toCvShare(frame.depth)
         : cv_bridge::CvImageConstPtr{};
-      const std::vector<Detection> detections = detector_.infer(image->image);
-      ++frame_count_;
-
-      const auto now = Clock::now();
-      if (last_frame_at_ != Clock::time_point{}) {
-        const double interval = std::chrono::duration<double>(now - last_frame_at_).count();
-        if (interval > 0.0) {
-          const double current_fps = 1.0 / interval;
-          display_fps_ = display_fps_ <= 0.0 ? current_fps : 0.9 * display_fps_ + 0.1 * current_fps;
-        }
-      }
-      last_frame_at_ = now;
+      const std::vector<Detection> detections = detector.infer(image->image);
 
       cv::Mat display = image->image.clone();
 
       for (Detection detection : detections) {
         const DepthSampleResult sample = depth_ready
-          ? sampleRawDepth(depth->image, frame, detection.center.x, detection.center.y)
+          ? sampleRawDepth(
+            depth_processor, depth->image, frame, detection.center.x, detection.center.y)
           : DepthSampleResult{};
         detection.has_depth = sample.has_valid_depth;
         detection.depth_m = sample.depth_m;
         if (sample.has_valid_depth) {
-          detection.point_3d = depth_processor_.projectTo3D(
+          detection.point_3d = depth_processor.projectTo3D(
             detection.center.x, detection.center.y, sample.depth_m, *frame.color_info);
         }
         cv::rectangle(display, detection.box, cv::Scalar(0, 255, 0), 2);
@@ -454,85 +490,189 @@ private:
       }
 
       const DepthSampleResult center_depth = depth_ready
-        ? sampleRawDepth(depth->image, frame, display.cols / 2, display.rows / 2)
+        ? sampleRawDepth(
+          depth_processor, depth->image, frame, display.cols / 2, display.rows / 2)
         : DepthSampleResult{};
-      const auto &timing = detector_.lastTiming();
-      const double api_run_ms = detector_.lastRknnRunMs();
-      const double npu_fps = api_run_ms > 0.0 ? 1000.0 / api_run_ms : 0.0;
-      const cv::Scalar text_color(255, 0, 255);
-      const std::string status = cv::format(
-        "Input %.1f  Process %.1f  NPU %.1f FPS  CORE_0_1_2  Drop %llu",
-        input_fps_.load(), display_fps_, npu_fps,
-        static_cast<unsigned long long>(dropped_count_.load()));
-      cv::putText(display, status, cv::Point(12, 30), cv::FONT_HERSHEY_SIMPLEX,
-        0.54, text_color, 1, cv::LINE_AA);
-      const std::string stream_status = depth_ready
-        ? cv::format("RGB %dx%d  raw Depth %dx%d %s", display.cols, display.rows,
-          depth->image.cols, depth->image.rows, frame.depth->encoding.c_str())
-        : cv::format("RGB %dx%d  raw Depth unavailable/stale", display.cols, display.rows);
-      cv::putText(display, stream_status, cv::Point(12, 56), cv::FONT_HERSHEY_SIMPLEX,
-        0.54, text_color, 1, cv::LINE_AA);
-      const std::string depth_status = center_depth.has_valid_depth
-        ? cv::format("Center depth %.3fm  raw-depth registered in node", center_depth.depth_m)
-        : std::string("Center depth n/a  raw-depth registration");
-      cv::putText(display, depth_status, cv::Point(12, 82), cv::FONT_HERSHEY_SIMPLEX,
-        0.54, text_color, 1, cv::LINE_AA);
-      const std::string memory_status = cv::format(
-        "RKNN memory: weight %.1f MiB  internal %.1f MiB  DMA %.1f MiB",
-        weight_mib_, internal_mib_, dma_mib_);
-      cv::putText(display, memory_status, cv::Point(12, 108), cv::FONT_HERSHEY_SIMPLEX,
-        0.54, text_color, 1, cv::LINE_AA);
-      cv::imshow(window_name_, display);
-      const int key = cv::waitKey(1) & 0xff;
-      if (key == 'q' || key == 27) {
-        rclcpp::shutdown();
-        return;
+      InferenceResult result;
+      result.frame_id = frame.frame_id;
+      result.worker_index = worker_index;
+      result.display = std::move(display);
+      result.detection_count = detections.size();
+      result.depth_ready = depth_ready;
+      result.center_depth_valid = center_depth.has_valid_depth;
+      result.center_depth_m = center_depth.depth_m;
+      if (depth_ready) {
+        result.depth_width = depth->image.cols;
+        result.depth_height = depth->image.rows;
+        result.depth_encoding = frame.depth->encoding;
       }
+      result.timing = detector.lastTiming();
+      result.api_run_ms = detector.lastRknnRunMs();
+      core_run_ms_[worker_index].store(result.api_run_ms);
+      processed_count_.fetch_add(1);
 
-      const double report_seconds = std::chrono::duration<double>(now - last_report_at_).count();
-      if (report_seconds >= 1.0) {
-        const double total_seconds = std::chrono::duration<double>(now - started_at_).count();
-        RCLCPP_INFO(get_logger(),
-          "stream frames=%llu received=%llu dropped=%llu input_fps=%.2f process_fps=%.2f "
-          "npu_fps=%.2f api_run=%.2fms core=0_1_2 "
-          "detections=%zu preprocess=%.2fms input=%.2fms rknn_run=%.2fms "
-          "output=%.2fms postprocess=%.2fms total=%.2fms",
-          static_cast<unsigned long long>(frame_count_),
-          static_cast<unsigned long long>(received_count_.load()),
-          static_cast<unsigned long long>(dropped_count_.load()), input_fps_.load(),
-          frame_count_ / total_seconds, npu_fps, api_run_ms,
-          detections.size(), timing.preprocess_ms, timing.input_set_ms, timing.rknn_run_ms,
-          timing.output_get_ms, timing.postprocess_ms, timing.detector_total_ms);
-        last_report_at_ = now;
+      {
+        std::lock_guard<std::mutex> lock(result_mutex_);
+        if (result.frame_id <= displayed_frame_id_) {
+          stale_result_count_.fetch_add(1);
+          return;
+        }
+        if (latest_result_ && result.frame_id <= latest_result_->frame_id) {
+          stale_result_count_.fetch_add(1);
+          return;
+        }
+        latest_result_ = std::move(result);
       }
+      result_ready_.notify_one();
     } catch (const std::exception &error) {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 2000, "stream inference failed: %s", error.what());
     }
   }
 
-  RknnYoloDetector detector_;
-  DepthProcessor depth_processor_;
+  void uiLoop()
+  {
+    cv::namedWindow(window_name_, cv::WINDOW_AUTOSIZE);
+    while (running_.load() && rclcpp::ok()) {
+      std::optional<InferenceResult> result;
+      {
+        std::unique_lock<std::mutex> lock(result_mutex_);
+        result_ready_.wait_for(lock, std::chrono::milliseconds(20), [this] {
+          return latest_result_.has_value() || !running_.load() || !rclcpp::ok();
+        });
+        if (latest_result_) {
+          result = std::move(latest_result_);
+          latest_result_.reset();
+          if (result->frame_id <= displayed_frame_id_) {
+            stale_result_count_.fetch_add(1);
+            result.reset();
+          } else {
+            displayed_frame_id_ = result->frame_id;
+          }
+        }
+      }
+
+      if (result) {
+        displayResult(*result);
+      }
+      const int key = cv::waitKey(1) & 0xff;
+      if (key == 'q' || key == 27) {
+        rclcpp::shutdown();
+        break;
+      }
+    }
+    cv::destroyWindow(window_name_);
+  }
+
+  void displayResult(InferenceResult &result)
+  {
+    const auto now = Clock::now();
+    if (last_display_at_ != Clock::time_point{}) {
+      const double interval = std::chrono::duration<double>(now - last_display_at_).count();
+      if (interval > 0.0) {
+        const double current_fps = 1.0 / interval;
+        display_fps_ = display_fps_ <= 0.0 ? current_fps :
+          0.9 * display_fps_ + 0.1 * current_fps;
+      }
+    }
+    last_display_at_ = now;
+
+    double npu_capacity_fps = 0.0;
+    std::array<double, kWorkerCount> run_ms{};
+    for (std::size_t index = 0; index < kWorkerCount; ++index) {
+      run_ms[index] = core_run_ms_[index].load();
+      if (run_ms[index] > 0.0) {
+        npu_capacity_fps += 1000.0 / run_ms[index];
+      }
+    }
+
+    const cv::Scalar text_color(255, 0, 255);
+    const std::string status = cv::format(
+      "Input %.1f  Display %.1f  NPU cap %.1f FPS  Drop %llu  Stale %llu",
+      input_fps_.load(), display_fps_, npu_capacity_fps,
+      static_cast<unsigned long long>(dropped_count_.load()),
+      static_cast<unsigned long long>(stale_result_count_.load()));
+    cv::putText(result.display, status, cv::Point(12, 30), cv::FONT_HERSHEY_SIMPLEX,
+      0.54, text_color, 1, cv::LINE_AA);
+    const std::string core_status = cv::format(
+      "C0 %.2fms  C1 %.2fms  C2 %.2fms  latest frame %llu via C%zu",
+      run_ms[0], run_ms[1], run_ms[2],
+      static_cast<unsigned long long>(result.frame_id), result.worker_index);
+    cv::putText(result.display, core_status, cv::Point(12, 56), cv::FONT_HERSHEY_SIMPLEX,
+      0.54, text_color, 1, cv::LINE_AA);
+    const std::string stream_status = result.depth_ready
+      ? cv::format("RGB %dx%d  raw Depth %dx%d %s", result.display.cols, result.display.rows,
+        result.depth_width, result.depth_height, result.depth_encoding.c_str())
+      : cv::format("RGB %dx%d  raw Depth unavailable/stale",
+        result.display.cols, result.display.rows);
+    cv::putText(result.display, stream_status, cv::Point(12, 82), cv::FONT_HERSHEY_SIMPLEX,
+      0.54, text_color, 1, cv::LINE_AA);
+    const std::string depth_status = result.center_depth_valid
+      ? cv::format("Center depth %.3fm  raw-depth registered in node", result.center_depth_m)
+      : std::string("Center depth n/a  raw-depth registration");
+    cv::putText(result.display, depth_status, cv::Point(12, 108), cv::FONT_HERSHEY_SIMPLEX,
+      0.54, text_color, 1, cv::LINE_AA);
+    const std::string memory_status = cv::format(
+      "3-context RKNN memory: weight %.1f MiB  internal %.1f MiB  DMA %.1f MiB",
+      weight_mib_, internal_mib_, dma_mib_);
+    cv::putText(result.display, memory_status, cv::Point(12, 134), cv::FONT_HERSHEY_SIMPLEX,
+      0.54, text_color, 1, cv::LINE_AA);
+    cv::imshow(window_name_, result.display);
+
+    const double report_seconds = std::chrono::duration<double>(now - last_report_at_).count();
+    if (report_seconds >= 1.0) {
+      const std::uint64_t processed = processed_count_.load();
+      const double process_fps = static_cast<double>(processed - last_report_processed_) /
+        report_seconds;
+      RCLCPP_INFO(get_logger(),
+        "parallel frames=%llu received=%llu queue_drop=%llu stale_result=%llu "
+        "input_fps=%.2f process_fps=%.2f display_fps=%.2f npu_capacity_fps=%.2f "
+        "core_ms=[%.2f,%.2f,%.2f] latest_frame=%llu worker=%zu detections=%zu",
+        static_cast<unsigned long long>(processed),
+        static_cast<unsigned long long>(received_count_.load()),
+        static_cast<unsigned long long>(dropped_count_.load()),
+        static_cast<unsigned long long>(stale_result_count_.load()),
+        input_fps_.load(), process_fps, display_fps_, npu_capacity_fps,
+        run_ms[0], run_ms[1], run_ms[2],
+        static_cast<unsigned long long>(result.frame_id), result.worker_index,
+        result.detection_count);
+      last_report_processed_ = processed;
+      last_report_at_ = now;
+    }
+  }
+
+  std::array<std::unique_ptr<RknnYoloDetector>, kWorkerCount> detectors_;
+  std::array<DepthProcessor, kWorkerCount> depth_processors_;
   rclcpp::Subscription<Image>::SharedPtr color_sub_;
   rclcpp::Subscription<Image>::SharedPtr depth_sub_;
   rclcpp::Subscription<CameraInfo>::SharedPtr color_info_sub_;
   rclcpp::Subscription<CameraInfo>::SharedPtr depth_info_sub_;
   rclcpp::Subscription<realsense2_camera_msgs::msg::Extrinsics>::SharedPtr extrinsics_sub_;
-  std::mutex frame_mutex_;
-  std::condition_variable frame_ready_;
-  Image::ConstSharedPtr latest_color_;
+  std::mutex data_mutex_;
   Image::ConstSharedPtr latest_depth_;
   CameraInfo::ConstSharedPtr latest_color_info_;
   CameraInfo::ConstSharedPtr latest_depth_info_;
   realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr latest_depth_to_color_;
-  std::thread worker_;
+  std::mutex task_mutex_;
+  std::condition_variable task_ready_;
+  std::deque<FrameBundle> task_queue_;
+  std::mutex result_mutex_;
+  std::condition_variable result_ready_;
+  std::optional<InferenceResult> latest_result_;
+  std::array<std::thread, kWorkerCount> workers_;
+  std::thread ui_thread_;
   std::atomic<bool> running_{true};
   std::atomic<std::uint64_t> received_count_{0};
   std::atomic<std::uint64_t> dropped_count_{0};
+  std::atomic<std::uint64_t> stale_result_count_{0};
+  std::atomic<std::uint64_t> processed_count_{0};
+  std::array<std::atomic<double>, kWorkerCount> core_run_ms_{};
+  std::uint64_t next_frame_id_ = 1;
+  std::uint64_t displayed_frame_id_ = 0;
   int sample_radius_px_ = 10;
   Clock::time_point started_at_;
   Clock::time_point last_report_at_ = started_at_;
-  Clock::time_point last_frame_at_{};
-  std::uint64_t frame_count_ = 0;
+  Clock::time_point last_display_at_{};
+  std::uint64_t last_report_processed_ = 0;
   double display_fps_ = 0.0;
   std::atomic<double> input_fps_{0.0};
   std::int64_t last_received_stamp_ns_ = 0;

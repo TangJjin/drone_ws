@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -18,8 +19,11 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <realsense2_camera_msgs/msg/rgbd.hpp>
+#include <realsense2_camera_msgs/msg/extrinsics.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+
+#include <librealsense2/rsutil.h>
 
 #include "rknn_api.h"
 #include "drone_perception/depth_processor.hpp"
@@ -159,17 +163,38 @@ public:
     weight_mib_ = static_cast<double>(memory.total_weight_size) / (1024.0 * 1024.0);
     internal_mib_ = static_cast<double>(memory.total_internal_size) / (1024.0 * 1024.0);
     dma_mib_ = static_cast<double>(memory.total_dma_allocated_size) / (1024.0 * 1024.0);
-    const std::string rgbd_topic = declare_parameter<std::string>(
-      "rgbd_topic", "/camera/camera/rgbd");
-    rgbd_sub_ = create_subscription<realsense2_camera_msgs::msg::RGBD>(
-      rgbd_topic, rclcpp::SensorDataQoS(),
-      [this](const realsense2_camera_msgs::msg::RGBD::ConstSharedPtr message) {
-        receiveFrame(message);
+    const std::string color_topic = declare_parameter<std::string>(
+      "color_topic", "/camera/camera/color/image_raw");
+    const std::string depth_topic = declare_parameter<std::string>(
+      "depth_topic", "/camera/camera/depth/image_rect_raw");
+    const std::string color_info_topic = declare_parameter<std::string>(
+      "color_info_topic", "/camera/camera/color/camera_info");
+    const std::string depth_info_topic = declare_parameter<std::string>(
+      "depth_info_topic", "/camera/camera/depth/camera_info");
+    const std::string depth_to_color_topic = declare_parameter<std::string>(
+      "depth_to_color_topic", "/camera/camera/extrinsics/depth_to_color");
+
+    color_sub_ = create_subscription<sensor_msgs::msg::Image>(
+      color_topic, rclcpp::SensorDataQoS(),
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr message) { receiveColor(message); });
+    depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
+      depth_topic, rclcpp::SensorDataQoS(),
+      [this](const sensor_msgs::msg::Image::ConstSharedPtr message) { receiveDepth(message); });
+    color_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
+      color_info_topic, rclcpp::SensorDataQoS(),
+      [this](const sensor_msgs::msg::CameraInfo::ConstSharedPtr message) { receiveColorInfo(message); });
+    depth_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
+      depth_info_topic, rclcpp::SensorDataQoS(),
+      [this](const sensor_msgs::msg::CameraInfo::ConstSharedPtr message) { receiveDepthInfo(message); });
+    extrinsics_sub_ = create_subscription<realsense2_camera_msgs::msg::Extrinsics>(
+      depth_to_color_topic, rclcpp::SensorDataQoS(),
+      [this](const realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr message) {
+        receiveExtrinsics(message);
       });
     worker_ = std::thread(&D435iRknnStream::workerLoop, this);
     RCLCPP_INFO(get_logger(),
-      "Streaming RGBD RKNN inference started: rgbd=%s model=%s",
-      rgbd_topic.c_str(), model_path.c_str());
+      "Streaming raw D435i RKNN inference started: color=%s depth=%s model=%s",
+      color_topic.c_str(), depth_topic.c_str(), model_path.c_str());
   }
 
   ~D435iRknnStream() override
@@ -183,10 +208,21 @@ public:
 
 private:
   using Clock = std::chrono::steady_clock;
+  using Image = sensor_msgs::msg::Image;
+  using CameraInfo = sensor_msgs::msg::CameraInfo;
 
-  void receiveFrame(const realsense2_camera_msgs::msg::RGBD::ConstSharedPtr message)
+  struct FrameBundle
   {
-    const std::int64_t stamp_ns = rclcpp::Time(message->rgb.header.stamp).nanoseconds();
+    Image::ConstSharedPtr color;
+    Image::ConstSharedPtr depth;
+    CameraInfo::ConstSharedPtr color_info;
+    CameraInfo::ConstSharedPtr depth_info;
+    realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr depth_to_color;
+  };
+
+  void receiveColor(const Image::ConstSharedPtr message)
+  {
+    const std::int64_t stamp_ns = rclcpp::Time(message->header.stamp).nanoseconds();
     if (last_received_stamp_ns_ > 0 && stamp_ns > last_received_stamp_ns_) {
       const double fps = 1.0e9 / static_cast<double>(stamp_ns - last_received_stamp_ns_);
       const double previous_fps = input_fps_.load();
@@ -197,45 +233,157 @@ private:
 
     {
       std::lock_guard<std::mutex> lock(frame_mutex_);
-      if (latest_frame_) {
+      if (latest_color_) {
         dropped_count_.fetch_add(1);
       }
-      latest_frame_ = message;
+      latest_color_ = message;
     }
     frame_ready_.notify_one();
+  }
+
+  void receiveDepth(const Image::ConstSharedPtr message)
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    latest_depth_ = message;
+  }
+
+  void receiveColorInfo(const CameraInfo::ConstSharedPtr message)
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    latest_color_info_ = message;
+  }
+
+  void receiveDepthInfo(const CameraInfo::ConstSharedPtr message)
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    latest_depth_info_ = message;
+  }
+
+  void receiveExtrinsics(const realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr message)
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    latest_depth_to_color_ = message;
   }
 
   void workerLoop()
   {
     cv::namedWindow(window_name_, cv::WINDOW_AUTOSIZE);
     while (running_.load() && rclcpp::ok()) {
-      realsense2_camera_msgs::msg::RGBD::ConstSharedPtr message;
+      FrameBundle frame;
       {
         std::unique_lock<std::mutex> lock(frame_mutex_);
         frame_ready_.wait(lock, [this] {
-          return latest_frame_ != nullptr || !running_.load() || !rclcpp::ok();
+          return latest_color_ != nullptr || !running_.load() || !rclcpp::ok();
         });
         if (!running_.load() || !rclcpp::ok()) {
           break;
         }
-        message = std::move(latest_frame_);
+        frame.color = std::move(latest_color_);
+        frame.depth = latest_depth_;
+        frame.color_info = latest_color_info_;
+        frame.depth_info = latest_depth_info_;
+        frame.depth_to_color = latest_depth_to_color_;
       }
-      inferFrame(message);
+      inferFrame(frame);
     }
     cv::destroyWindow(window_name_);
   }
 
-  void inferFrame(const realsense2_camera_msgs::msg::RGBD::ConstSharedPtr &message)
+  static rs2_distortion toRs2Distortion(const std::string &model)
+  {
+    if (model == "plumb_bob") {
+      return RS2_DISTORTION_BROWN_CONRADY;
+    }
+    if (model == "equidistant" || model == "kannala_brandt4") {
+      return RS2_DISTORTION_KANNALA_BRANDT4;
+    }
+    return RS2_DISTORTION_NONE;
+  }
+
+  static rs2_intrinsics toRs2Intrinsics(const CameraInfo &info)
+  {
+    rs2_intrinsics intrinsics{};
+    intrinsics.width = static_cast<int>(info.width);
+    intrinsics.height = static_cast<int>(info.height);
+    intrinsics.ppx = static_cast<float>(info.k[2]);
+    intrinsics.ppy = static_cast<float>(info.k[5]);
+    intrinsics.fx = static_cast<float>(info.k[0]);
+    intrinsics.fy = static_cast<float>(info.k[4]);
+    intrinsics.model = toRs2Distortion(info.distortion_model);
+    for (std::size_t i = 0; i < std::min<std::size_t>(5, info.d.size()); ++i) {
+      intrinsics.coeffs[i] = static_cast<float>(info.d[i]);
+    }
+    return intrinsics;
+  }
+
+  static rs2_extrinsics inverseExtrinsics(const rs2_extrinsics &forward)
+  {
+    rs2_extrinsics inverse{};
+    for (int row = 0; row < 3; ++row) {
+      for (int column = 0; column < 3; ++column) {
+        // RealSense stores its rotation matrix in column-major order.
+        inverse.rotation[column * 3 + row] = forward.rotation[row * 3 + column];
+      }
+    }
+    for (int row = 0; row < 3; ++row) {
+      inverse.translation[row] = 0.0F;
+      for (int column = 0; column < 3; ++column) {
+        inverse.translation[row] -=
+          inverse.rotation[column * 3 + row] * forward.translation[column];
+      }
+    }
+    return inverse;
+  }
+
+  DepthSampleResult sampleRawDepth(
+    const cv::Mat &depth, const FrameBundle &frame, int color_u, int color_v) const
+  {
+    if (!frame.depth || !frame.color_info || !frame.depth_info || !frame.depth_to_color ||
+      depth.type() != CV_16UC1)
+    {
+      return {};
+    }
+    const auto &extrinsics = *frame.depth_to_color;
+    rs2_extrinsics depth_to_color{};
+    std::copy(extrinsics.rotation.begin(), extrinsics.rotation.end(), depth_to_color.rotation);
+    std::copy(extrinsics.translation.begin(), extrinsics.translation.end(), depth_to_color.translation);
+    const rs2_extrinsics color_to_depth = inverseExtrinsics(depth_to_color);
+    const rs2_intrinsics depth_intrinsics = toRs2Intrinsics(*frame.depth_info);
+    const rs2_intrinsics color_intrinsics = toRs2Intrinsics(*frame.color_info);
+    const float color_pixel[2] = {static_cast<float>(color_u), static_cast<float>(color_v)};
+    float depth_pixel[2] = {};
+    rs2_project_color_pixel_to_depth_pixel(
+      depth_pixel, reinterpret_cast<const uint16_t *>(depth.data), 0.001F, 0.1F, 10.0F,
+      &depth_intrinsics, &color_intrinsics, &color_to_depth, &depth_to_color, color_pixel);
+    const int depth_u = static_cast<int>(std::lround(depth_pixel[0]));
+    const int depth_v = static_cast<int>(std::lround(depth_pixel[1]));
+    return depth_processor_.sampleAt(depth, depth_u, depth_v, sample_radius_px_);
+  }
+
+  static bool depthMatchesColor(const FrameBundle &frame)
+  {
+    if (!frame.color || !frame.depth) {
+      return false;
+    }
+    const std::int64_t color_stamp = rclcpp::Time(frame.color->header.stamp).nanoseconds();
+    const std::int64_t depth_stamp = rclcpp::Time(frame.depth->header.stamp).nanoseconds();
+    constexpr std::int64_t kMaxDepthOffsetNs = 50'000'000;
+    return std::llabs(color_stamp - depth_stamp) <= kMaxDepthOffsetNs;
+  }
+
+  void inferFrame(const FrameBundle &frame)
   {
     try {
-      const auto image = cv_bridge::toCvShare(message->rgb, message, "bgr8");
-      const auto depth = cv_bridge::toCvShare(message->depth, message);
-      if (image->image.size() != depth->image.size()) {
+      const auto image = cv_bridge::toCvShare(frame.color, "bgr8");
+      const bool depth_ready = frame.depth && frame.color_info && frame.depth_info &&
+        frame.depth_to_color && depthMatchesColor(frame);
+      if (!depth_ready) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-          "RGBD size mismatch: color=%dx%d depth=%dx%d", image->image.cols, image->image.rows,
-          depth->image.cols, depth->image.rows);
-        return;
+          "Raw depth unavailable, stale, or missing calibration; continuing with 2D detection");
       }
+      const cv_bridge::CvImageConstPtr depth = depth_ready
+        ? cv_bridge::toCvShare(frame.depth, frame.depth)
+        : cv_bridge::CvImageConstPtr{};
       const std::vector<Detection> detections = detector_.infer(image->image);
       ++frame_count_;
 
@@ -252,13 +400,14 @@ private:
       cv::Mat display = image->image.clone();
 
       for (Detection detection : detections) {
-        const DepthSampleResult sample = depth_processor_.sampleAt(
-          depth->image, detection.center.x, detection.center.y, sample_radius_px_);
+        const DepthSampleResult sample = depth_ready
+          ? sampleRawDepth(depth->image, frame, detection.center.x, detection.center.y)
+          : DepthSampleResult{};
         detection.has_depth = sample.has_valid_depth;
         detection.depth_m = sample.depth_m;
         if (sample.has_valid_depth) {
           detection.point_3d = depth_processor_.projectTo3D(
-            detection.center.x, detection.center.y, sample.depth_m, message->rgb_camera_info);
+            detection.center.x, detection.center.y, sample.depth_m, *frame.color_info);
         }
         cv::rectangle(display, detection.box, cv::Scalar(0, 255, 0), 2);
         const std::string label = sample.has_valid_depth
@@ -276,8 +425,9 @@ private:
           sample.has_valid_depth ? sample.depth_m : -1.0F);
       }
 
-      const DepthSampleResult center_depth = depth_processor_.sampleAt(
-        depth->image, display.cols / 2, display.rows / 2, sample_radius_px_);
+      const DepthSampleResult center_depth = depth_ready
+        ? sampleRawDepth(depth->image, frame, display.cols / 2, display.rows / 2)
+        : DepthSampleResult{};
       const auto &timing = detector_.lastTiming();
       const double api_run_ms = detector_.lastRknnRunMs();
       const double npu_fps = api_run_ms > 0.0 ? 1000.0 / api_run_ms : 0.0;
@@ -288,14 +438,15 @@ private:
         static_cast<unsigned long long>(dropped_count_.load()));
       cv::putText(display, status, cv::Point(12, 30), cv::FONT_HERSHEY_SIMPLEX,
         0.54, text_color, 1, cv::LINE_AA);
-      const std::string stream_status = cv::format("RGB %dx%d  Depth %dx%d %s",
-        display.cols, display.rows, depth->image.cols, depth->image.rows,
-        message->depth.encoding.c_str());
+      const std::string stream_status = depth_ready
+        ? cv::format("RGB %dx%d  raw Depth %dx%d %s", display.cols, display.rows,
+          depth->image.cols, depth->image.rows, frame.depth->encoding.c_str())
+        : cv::format("RGB %dx%d  raw Depth unavailable/stale", display.cols, display.rows);
       cv::putText(display, stream_status, cv::Point(12, 56), cv::FONT_HERSHEY_SIMPLEX,
         0.54, text_color, 1, cv::LINE_AA);
       const std::string depth_status = center_depth.has_valid_depth
-        ? cv::format("Center depth %.3fm  RGBD aligned + intrinsics", center_depth.depth_m)
-        : std::string("Center depth n/a  RGBD aligned + intrinsics");
+        ? cv::format("Center depth %.3fm  raw-depth registered in node", center_depth.depth_m)
+        : std::string("Center depth n/a  raw-depth registration");
       cv::putText(display, depth_status, cv::Point(12, 82), cv::FONT_HERSHEY_SIMPLEX,
         0.54, text_color, 1, cv::LINE_AA);
       const std::string memory_status = cv::format(
@@ -333,10 +484,18 @@ private:
 
   RknnYoloDetector detector_;
   DepthProcessor depth_processor_;
-  rclcpp::Subscription<realsense2_camera_msgs::msg::RGBD>::SharedPtr rgbd_sub_;
+  rclcpp::Subscription<Image>::SharedPtr color_sub_;
+  rclcpp::Subscription<Image>::SharedPtr depth_sub_;
+  rclcpp::Subscription<CameraInfo>::SharedPtr color_info_sub_;
+  rclcpp::Subscription<CameraInfo>::SharedPtr depth_info_sub_;
+  rclcpp::Subscription<realsense2_camera_msgs::msg::Extrinsics>::SharedPtr extrinsics_sub_;
   std::mutex frame_mutex_;
   std::condition_variable frame_ready_;
-  realsense2_camera_msgs::msg::RGBD::ConstSharedPtr latest_frame_;
+  Image::ConstSharedPtr latest_color_;
+  Image::ConstSharedPtr latest_depth_;
+  CameraInfo::ConstSharedPtr latest_color_info_;
+  CameraInfo::ConstSharedPtr latest_depth_info_;
+  realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr latest_depth_to_color_;
   std::thread worker_;
   std::atomic<bool> running_{true};
   std::atomic<std::uint64_t> received_count_{0};

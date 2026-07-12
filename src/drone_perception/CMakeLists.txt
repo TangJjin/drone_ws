@@ -18,6 +18,7 @@ find_package(cv_bridge REQUIRED)
 find_package(image_geometry REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(realsense2_camera_msgs REQUIRED)
+find_package(realsense2 REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
 pkg_check_modules(ZBAR REQUIRED zbar)
@@ -177,6 +178,7 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     rknn_yolo_detector
     ${OpenCV_LIBS}
     ${RKNN_RUNTIME_SO}
+    realsense2::realsense2
   )
 
   install(TARGETS

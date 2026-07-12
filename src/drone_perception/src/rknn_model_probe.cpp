@@ -600,22 +600,29 @@ private:
       static_cast<unsigned long long>(result.frame_id), result.worker_index);
     cv::putText(result.display, core_status, cv::Point(12, 56), cv::FONT_HERSHEY_SIMPLEX,
       0.54, text_color, 1, cv::LINE_AA);
+    const std::string timing_status = cv::format(
+      "Pre %.2f  In %.2f  Run %.2f  Out %.2f  Post %.2f  Total %.2f ms",
+      result.timing.preprocess_ms, result.timing.input_set_ms,
+      result.timing.rknn_run_ms, result.timing.output_get_ms,
+      result.timing.postprocess_ms, result.timing.detector_total_ms);
+    cv::putText(result.display, timing_status, cv::Point(12, 82), cv::FONT_HERSHEY_SIMPLEX,
+      0.54, text_color, 1, cv::LINE_AA);
     const std::string stream_status = result.depth_ready
       ? cv::format("RGB %dx%d  raw Depth %dx%d %s", result.display.cols, result.display.rows,
         result.depth_width, result.depth_height, result.depth_encoding.c_str())
       : cv::format("RGB %dx%d  raw Depth unavailable/stale",
         result.display.cols, result.display.rows);
-    cv::putText(result.display, stream_status, cv::Point(12, 82), cv::FONT_HERSHEY_SIMPLEX,
+    cv::putText(result.display, stream_status, cv::Point(12, 108), cv::FONT_HERSHEY_SIMPLEX,
       0.54, text_color, 1, cv::LINE_AA);
     const std::string depth_status = result.center_depth_valid
       ? cv::format("Center depth %.3fm  raw-depth registered in node", result.center_depth_m)
       : std::string("Center depth n/a  raw-depth registration");
-    cv::putText(result.display, depth_status, cv::Point(12, 108), cv::FONT_HERSHEY_SIMPLEX,
+    cv::putText(result.display, depth_status, cv::Point(12, 134), cv::FONT_HERSHEY_SIMPLEX,
       0.54, text_color, 1, cv::LINE_AA);
     const std::string memory_status = cv::format(
       "3-context RKNN memory: weight %.1f MiB  internal %.1f MiB  DMA %.1f MiB",
       weight_mib_, internal_mib_, dma_mib_);
-    cv::putText(result.display, memory_status, cv::Point(12, 134), cv::FONT_HERSHEY_SIMPLEX,
+    cv::putText(result.display, memory_status, cv::Point(12, 160), cv::FONT_HERSHEY_SIMPLEX,
       0.54, text_color, 1, cv::LINE_AA);
     cv::imshow(window_name_, result.display);
 
@@ -627,7 +634,8 @@ private:
       RCLCPP_INFO(get_logger(),
         "parallel frames=%llu received=%llu queue_drop=%llu stale_result=%llu "
         "input_fps=%.2f process_fps=%.2f display_fps=%.2f npu_capacity_fps=%.2f "
-        "core_ms=[%.2f,%.2f,%.2f] preprocess_ms=%.2f detector_total_ms=%.2f "
+        "core_ms=[%.2f,%.2f,%.2f] preprocess_ms=%.2f input_set_ms=%.2f "
+        "rknn_run_ms=%.2f output_get_ms=%.2f postprocess_ms=%.2f detector_total_ms=%.2f "
         "latest_frame=%llu worker=%zu detections=%zu",
         static_cast<unsigned long long>(processed),
         static_cast<unsigned long long>(received_count_.load()),
@@ -635,7 +643,9 @@ private:
         static_cast<unsigned long long>(stale_result_count_.load()),
         input_fps_.load(), process_fps, display_fps_, npu_capacity_fps,
         run_ms[0], run_ms[1], run_ms[2],
-        result.timing.preprocess_ms, result.timing.detector_total_ms,
+        result.timing.preprocess_ms, result.timing.input_set_ms,
+        result.timing.rknn_run_ms, result.timing.output_get_ms,
+        result.timing.postprocess_ms, result.timing.detector_total_ms,
         static_cast<unsigned long long>(result.frame_id), result.worker_index,
         result.detection_count);
       last_report_processed_ = processed;

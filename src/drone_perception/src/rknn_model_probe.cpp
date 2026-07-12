@@ -147,7 +147,9 @@ class D435iRknnStream : public rclcpp::Node
 {
 public:
   explicit D435iRknnStream(const std::string &model_path)
-  : Node("rknn_d435i_stream"), detector_(model_path), started_at_(Clock::now())
+  : Node("rknn_d435i_stream"),
+    detector_(model_path, RKNN_NPU_CORE_0),
+    started_at_(Clock::now())
   {
     cv::namedWindow(window_name_, cv::WINDOW_AUTOSIZE);
     const std::string rgbd_topic = declare_parameter<std::string>(
@@ -185,6 +187,17 @@ private:
       ++frame_count_;
 
       const auto now = Clock::now();
+      const std::int64_t input_stamp_ns = rclcpp::Time(message->rgb.header.stamp).nanoseconds();
+      if (last_input_stamp_ns_ > 0 && input_stamp_ns > last_input_stamp_ns_) {
+        const double input_interval =
+          static_cast<double>(input_stamp_ns - last_input_stamp_ns_) * 1.0e-9;
+        const double current_input_fps = 1.0 / input_interval;
+        input_fps_ = input_fps_ <= 0.0
+          ? current_input_fps
+          : 0.9 * input_fps_ + 0.1 * current_input_fps;
+      }
+      last_input_stamp_ns_ = input_stamp_ns;
+
       if (last_frame_at_ != Clock::time_point{}) {
         const double interval = std::chrono::duration<double>(now - last_frame_at_).count();
         if (interval > 0.0) {
@@ -223,16 +236,23 @@ private:
 
       const DepthSampleResult center_depth = depth_processor_.sampleAt(
         depth->image, display.cols / 2, display.rows / 2, sample_radius_px_);
-      const std::string status = cv::format("FPS %.1f  RGB %dx%d  Depth %dx%d %s",
-        display_fps_, display.cols, display.rows, depth->image.cols, depth->image.rows,
-        message->depth.encoding.c_str());
+      const auto &timing = detector_.lastTiming();
+      const double npu_fps = timing.rknn_run_ms > 0.0 ? 1000.0 / timing.rknn_run_ms : 0.0;
+      const std::string status = cv::format(
+        "Input %.1f FPS  Process %.1f FPS  NPU %.1f FPS  CORE_0",
+        input_fps_, display_fps_, npu_fps);
       cv::putText(display, status, cv::Point(12, 30), cv::FONT_HERSHEY_SIMPLEX,
-        0.75, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+        0.58, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+      const std::string stream_status = cv::format("RGB %dx%d  Depth %dx%d %s",
+        display.cols, display.rows, depth->image.cols, depth->image.rows,
+        message->depth.encoding.c_str());
+      cv::putText(display, stream_status, cv::Point(12, 56), cv::FONT_HERSHEY_SIMPLEX,
+        0.58, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
       const std::string depth_status = center_depth.has_valid_depth
         ? cv::format("Center depth %.3fm  RGBD aligned + intrinsics", center_depth.depth_m)
         : std::string("Center depth n/a  RGBD aligned + intrinsics");
-      cv::putText(display, depth_status, cv::Point(12, 58), cv::FONT_HERSHEY_SIMPLEX,
-        0.65, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+      cv::putText(display, depth_status, cv::Point(12, 82), cv::FONT_HERSHEY_SIMPLEX,
+        0.58, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
       cv::imshow(window_name_, display);
       const int key = cv::waitKey(1) & 0xff;
       if (key == 'q' || key == 27) {
@@ -243,11 +263,12 @@ private:
       const double report_seconds = std::chrono::duration<double>(now - last_report_at_).count();
       if (report_seconds >= 1.0) {
         const double total_seconds = std::chrono::duration<double>(now - started_at_).count();
-        const auto &timing = detector_.lastTiming();
         RCLCPP_INFO(get_logger(),
-          "stream frames=%llu fps=%.2f detections=%zu preprocess=%.2fms input=%.2fms "
-          "rknn_run=%.2fms output=%.2fms postprocess=%.2fms total=%.2fms",
-          static_cast<unsigned long long>(frame_count_), frame_count_ / total_seconds,
+          "stream frames=%llu input_fps=%.2f process_fps=%.2f npu_fps=%.2f core=0 "
+          "detections=%zu preprocess=%.2fms input=%.2fms rknn_run=%.2fms "
+          "output=%.2fms postprocess=%.2fms total=%.2fms",
+          static_cast<unsigned long long>(frame_count_), input_fps_, frame_count_ / total_seconds,
+          npu_fps,
           detections.size(), timing.preprocess_ms, timing.input_set_ms, timing.rknn_run_ms,
           timing.output_get_ms, timing.postprocess_ms, timing.detector_total_ms);
         last_report_at_ = now;
@@ -266,6 +287,8 @@ private:
   Clock::time_point last_frame_at_{};
   std::uint64_t frame_count_ = 0;
   double display_fps_ = 0.0;
+  double input_fps_ = 0.0;
+  std::int64_t last_input_stamp_ns_ = 0;
   const std::string window_name_ = "D435i RKNN Detection";
 };
 

@@ -82,9 +82,11 @@ std::string outputModeName(uint32_t output_count)
 
 }  // namespace
 
-RknnYoloDetector::RknnYoloDetector(const std::string &model_path)
+RknnYoloDetector::RknnYoloDetector(
+    const std::string &model_path,
+    rknn_core_mask core_mask)
 {
-    loadModel(model_path);
+    loadModel(model_path, core_mask);
 }
 
 RknnYoloDetector::~RknnYoloDetector()
@@ -167,7 +169,9 @@ RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
     return result;
 }
 
-void RknnYoloDetector::loadModel(const std::string &model_path)
+void RknnYoloDetector::loadModel(
+    const std::string &model_path,
+    rknn_core_mask core_mask)
 {
     model_data_ = readFile(model_path);
 
@@ -184,12 +188,12 @@ void RknnYoloDetector::loadModel(const std::string &model_path)
         throw std::runtime_error("rknn_init failed, ret=" + std::to_string(ret));
     }
 
-    const int core_ret = rknn_set_core_mask(context_, RKNN_NPU_CORE_0_1_2);
+    const int core_ret = rknn_set_core_mask(context_, core_mask);
     if (core_ret != RKNN_SUCC)
     {
         throw std::runtime_error("rknn_set_core_mask failed, ret=" + std::to_string(core_ret));
     }
-    std::cout << "[RKNN] NPU core mask: RKNN_NPU_CORE_0_1_2" << std::endl;
+    std::cout << "[RKNN] NPU core mask: " << static_cast<int>(core_mask) << std::endl;
 
     rknn_input_output_num io_num;
     std::memset(&io_num, 0, sizeof(io_num));

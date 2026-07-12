@@ -16,7 +16,7 @@ public:
     struct InferenceTimingStats
     {
         double preprocess_ms = 0.0;
-        double input_set_ms = 0.0;
+        double input_prepare_ms = 0.0;
         double rknn_run_ms = 0.0;
         double output_get_ms = 0.0;
         double postprocess_ms = 0.0;
@@ -49,6 +49,8 @@ private:
 
     void loadModel(const std::string &model_path, rknn_core_mask core_mask);
 
+    void configureZeroCopyInput();
+
     static std::vector<unsigned char> readFile(const std::string &path);
 
     // 这些参数和当前 QR YOLO RKNN 模型绑定：
@@ -65,6 +67,10 @@ private:
     YoloPostprocessor postprocessor_{2, 0.75F, 0.35F};
 
     rknn_context context_ = 0;
+    rknn_tensor_mem *input_mem_ = nullptr;
+    rknn_tensor_attr native_input_attr_{};
+    cv::Mat input_fp16_view_;
+    bool zero_copy_input_ = false;
     std::vector<unsigned char> model_data_;
     InferenceTimingStats last_timing_;
     cv::Mat resized_buffer_;

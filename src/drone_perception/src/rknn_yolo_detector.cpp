@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -91,6 +92,11 @@ RknnYoloDetector::RknnYoloDetector(
 
 RknnYoloDetector::~RknnYoloDetector()
 {
+    if (input_mem_ != nullptr)
+    {
+        rknn_destroy_mem(context_, input_mem_);
+        input_mem_ = nullptr;
+    }
     if (context_ != 0)
     {
         rknn_destroy(context_);
@@ -331,6 +337,61 @@ void RknnYoloDetector::loadModel(
                   << bbox_output_index_ << "], class=output["
                   << class_output_index_ << "]" << std::endl;
     }
+
+    configureZeroCopyInput();
+}
+
+void RknnYoloDetector::configureZeroCopyInput()
+{
+    std::memset(&native_input_attr_, 0, sizeof(native_input_attr_));
+    native_input_attr_.index = 0;
+    const int query_ret = rknn_query(
+        context_,
+        RKNN_QUERY_NATIVE_INPUT_ATTR,
+        &native_input_attr_,
+        sizeof(native_input_attr_));
+    if (query_ret != RKNN_SUCC ||
+        native_input_attr_.n_dims != 4 ||
+        native_input_attr_.fmt != RKNN_TENSOR_NHWC ||
+        native_input_attr_.type != RKNN_TENSOR_FLOAT16 ||
+        native_input_attr_.dims[3] != 3)
+    {
+        std::cout << "[RKNN] native FP16 zero-copy input unavailable; "
+                  << "using rknn_inputs_set fallback" << std::endl;
+        return;
+    }
+
+    native_input_attr_.pass_through = 1;
+    input_mem_ = rknn_create_mem(context_, native_input_attr_.size_with_stride);
+    if (input_mem_ == nullptr)
+    {
+        throw std::runtime_error("rknn_create_mem for zero-copy input failed");
+    }
+    const int set_ret = rknn_set_io_mem(context_, input_mem_, &native_input_attr_);
+    if (set_ret != RKNN_SUCC)
+    {
+        rknn_destroy_mem(context_, input_mem_);
+        input_mem_ = nullptr;
+        throw std::runtime_error(
+            "rknn_set_io_mem for zero-copy input failed, ret=" +
+            std::to_string(set_ret));
+    }
+
+    const int height = static_cast<int>(native_input_attr_.dims[1]);
+    const int width = static_cast<int>(native_input_attr_.dims[2]);
+    const int width_stride = native_input_attr_.w_stride == 0 ?
+        width : static_cast<int>(native_input_attr_.w_stride);
+    input_fp16_view_ = cv::Mat(
+        height,
+        width,
+        CV_16FC3,
+        input_mem_->virt_addr,
+        static_cast<std::size_t>(width_stride) * 3U * sizeof(std::uint16_t));
+    zero_copy_input_ = true;
+    std::cout << "[RKNN] native FP16 zero-copy input enabled: "
+              << width << "x" << height
+              << " stride=" << width_stride
+              << " bytes=" << native_input_attr_.size_with_stride << std::endl;
 }
 
 std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &rgb_image)
@@ -343,24 +404,36 @@ std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &rgb_image)
     const auto preprocess_t1 = SteadyClock::now();
     timing.preprocess_ms = elapsedMs(preprocess_t0, preprocess_t1);
 
-    rknn_input input;
-    std::memset(&input, 0, sizeof(input));
-
-    input.index = 0;
-    input.type = RKNN_TENSOR_UINT8;
-    input.size = static_cast<unsigned int>(input_width_ * input_height_ * 3);
-    input.fmt = RKNN_TENSOR_NHWC;
-    input.buf = letterbox.image.data;
-
-    const auto input_set_t0 = SteadyClock::now();
-    int ret = rknn_inputs_set(context_, 1, &input);
-    const auto input_set_t1 = SteadyClock::now();
-    timing.input_set_ms = elapsedMs(input_set_t0, input_set_t1);
-
-    if (ret != RKNN_SUCC)
+    const auto input_prepare_t0 = SteadyClock::now();
+    int ret = RKNN_SUCC;
+    if (zero_copy_input_)
     {
-        throw std::runtime_error("rknn_inputs_set failed, ret=" + std::to_string(ret));
+        letterbox.image.convertTo(input_fp16_view_, CV_16FC3, 1.0 / 255.0);
+        ret = rknn_mem_sync(context_, input_mem_, RKNN_MEMORY_SYNC_TO_DEVICE);
+        if (ret != RKNN_SUCC)
+        {
+            throw std::runtime_error(
+                "rknn_mem_sync input failed, ret=" + std::to_string(ret));
+        }
     }
+    else
+    {
+        rknn_input input;
+        std::memset(&input, 0, sizeof(input));
+        input.index = 0;
+        input.type = RKNN_TENSOR_UINT8;
+        input.size = static_cast<unsigned int>(input_width_ * input_height_ * 3);
+        input.fmt = RKNN_TENSOR_NHWC;
+        input.buf = letterbox.image.data;
+        ret = rknn_inputs_set(context_, 1, &input);
+        if (ret != RKNN_SUCC)
+        {
+            throw std::runtime_error(
+                "rknn_inputs_set failed, ret=" + std::to_string(ret));
+        }
+    }
+    const auto input_prepare_t1 = SteadyClock::now();
+    timing.input_prepare_ms = elapsedMs(input_prepare_t0, input_prepare_t1);
 
     const auto rknn_run_t0 = SteadyClock::now();
     ret = rknn_run(context_, nullptr);

@@ -602,7 +602,7 @@ private:
       0.54, text_color, 1, cv::LINE_AA);
     const std::string timing_status = cv::format(
       "Pre %.2f  In %.2f  Run %.2f  Out %.2f  Post %.2f  Total %.2f ms",
-      result.timing.preprocess_ms, result.timing.input_set_ms,
+      result.timing.preprocess_ms, result.timing.input_prepare_ms,
       result.timing.rknn_run_ms, result.timing.output_get_ms,
       result.timing.postprocess_ms, result.timing.detector_total_ms);
     cv::putText(result.display, timing_status, cv::Point(12, 82), cv::FONT_HERSHEY_SIMPLEX,
@@ -634,7 +634,7 @@ private:
       RCLCPP_INFO(get_logger(),
         "parallel frames=%llu received=%llu queue_drop=%llu stale_result=%llu "
         "input_fps=%.2f process_fps=%.2f display_fps=%.2f npu_capacity_fps=%.2f "
-        "core_ms=[%.2f,%.2f,%.2f] preprocess_ms=%.2f input_set_ms=%.2f "
+        "core_ms=[%.2f,%.2f,%.2f] preprocess_ms=%.2f input_prepare_ms=%.2f "
         "rknn_run_ms=%.2f output_get_ms=%.2f postprocess_ms=%.2f detector_total_ms=%.2f "
         "latest_frame=%llu worker=%zu detections=%zu",
         static_cast<unsigned long long>(processed),
@@ -643,7 +643,7 @@ private:
         static_cast<unsigned long long>(stale_result_count_.load()),
         input_fps_.load(), process_fps, display_fps_, npu_capacity_fps,
         run_ms[0], run_ms[1], run_ms[2],
-        result.timing.preprocess_ms, result.timing.input_set_ms,
+        result.timing.preprocess_ms, result.timing.input_prepare_ms,
         result.timing.rknn_run_ms, result.timing.output_get_ms,
         result.timing.postprocess_ms, result.timing.detector_total_ms,
         static_cast<unsigned long long>(result.frame_id), result.worker_index,

@@ -15,11 +15,9 @@
 #include <cmath>
 #include <deque>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
-#include <vector>
 
 struct Mat3 {
   std::array<std::array<double, 3>, 3> m{{
@@ -73,8 +71,6 @@ class SlidingWindowAverage {
 
   size_t size() const { return data_queue_.size(); }
 
-  bool empty() const { return data_queue_.empty(); }
-
   double average() const {
     if (data_queue_.empty()) {
       return 0.0;
@@ -106,9 +102,10 @@ class SlidingWindowAverage {
   double last_value_ = 0.0;
 };
 
-class FastLioToMavros : public rclcpp::Node {
+class FastLioToMavrosOdomOut : public rclcpp::Node {
  public:
-  FastLioToMavros() : Node("fastlio_to_mavros"), yaw_window_(8, 0.15) {
+  FastLioToMavrosOdomOut()
+      : Node("fastlio_to_mavros_odom_out"), yaw_window_(8, 0.15) {
     declareAndLoadParameters();
     setupInterfaces();
     logConfiguration();
@@ -143,10 +140,10 @@ class FastLioToMavros : public rclcpp::Node {
         declare_parameter<std::string>("fastlio_odom_topic", "/Odometry");
     px4_odom_topic_ = declare_parameter<std::string>(
         "px4_odom_topic", "/mavros/local_position/odom");
-    vision_pose_topic_ = declare_parameter<std::string>(
-        "vision_pose_topic", "/mavros/vision_pose/pose");
     odom_out_topic_ = declare_parameter<std::string>(
         "odom_out_topic", "/mavros/odometry/out");
+    vision_pose_topic_ = declare_parameter<std::string>(
+        "vision_pose_topic", "/mavros/vision_pose/pose");
 
     fallback_zero_yaw_on_no_px4_ =
         declare_parameter<bool>("fallback_zero_yaw_on_no_px4", true);
@@ -171,12 +168,12 @@ class FastLioToMavros : public rclcpp::Node {
     max_yaw_rate_rps_ = declare_parameter<double>("max_yaw_rate_rps", 3.0);
     max_consecutive_bad_frames_ =
         declare_parameter<int>("max_consecutive_bad_frames", 5);
-
-    disabled_twist_covariance_ =
-        declare_parameter<double>("disabled_twist_covariance", 1e6);
+    near_zero_twist_speed_mps_ =
+        declare_parameter<double>("near_zero_twist_speed_mps", 1e-3);
+    near_zero_twist_ang_rps_ =
+        declare_parameter<double>("near_zero_twist_ang_rps", 1e-3);
 
     yaw_window_.reset(yaw_window_size_, yaw_jump_reset_rad_);
-
     updateMountTransform();
 
     pos_var_ = pos_sigma_ * pos_sigma_;
@@ -196,36 +193,39 @@ class FastLioToMavros : public rclcpp::Node {
 
     fastlio_sub_ = create_subscription<nav_msgs::msg::Odometry>(
         fastlio_topic_, fastlio_qos,
-        std::bind(&FastLioToMavros::fastlioCallback, this,
+        std::bind(&FastLioToMavrosOdomOut::fastlioCallback, this,
                   std::placeholders::_1));
 
     px4_odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
         px4_odom_topic_, px4_odom_qos,
-        std::bind(&FastLioToMavros::px4OdomCallback, this,
+        std::bind(&FastLioToMavrosOdomOut::px4OdomCallback, this,
                   std::placeholders::_1));
 
-    vision_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(vision_pose_topic_, 10);
     odom_pub_ = create_publisher<nav_msgs::msg::Odometry>(odom_out_topic_, 10);
+    vision_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
+        vision_pose_topic_, 10);
 
     reset_service_ = create_service<std_srvs::srv::Empty>(
         "reset_initialization",
-        std::bind(&FastLioToMavros::resetCallback, this,
+        std::bind(&FastLioToMavrosOdomOut::resetCallback, this,
                   std::placeholders::_1, std::placeholders::_2));
 
     init_timer_ = create_wall_timer(
         std::chrono::milliseconds(500),
-        std::bind(&FastLioToMavros::fallbackInitCheck, this));
+        std::bind(&FastLioToMavrosOdomOut::fallbackInitCheck, this));
   }
 
   void logConfiguration() const {
     std::ostringstream oss;
-    oss << "FastLioToMavros config"
+    oss << "FastLioToMavrosOdomOut config"
         << " | fastlio_topic=" << fastlio_topic_
         << " | px4_odom_topic=" << px4_odom_topic_
         << " | vision_pose_topic=" << vision_pose_topic_
         << " | odom_out_topic=" << odom_out_topic_
         << " | pose_frame_id=" << pose_frame_id_
         << " | child_frame_id=" << child_frame_id_
+        << " | outputs=vision_pose+odometry_out"
+        << " | twist_mode=passthrough_only"
         << " | mount_xyz=(" << mount_x_ << "," << mount_y_ << ","
         << mount_z_ << ")"
         << " | mount_rpy_deg=(" << mount_roll_deg_ << ","
@@ -276,32 +276,40 @@ class FastLioToMavros : public rclcpp::Node {
     }
 
     std::string reject_reason;
-    geometry_msgs::msg::PoseStamped vision_pose;
     nav_msgs::msg::Odometry odom_msg;
-
-    if (!buildOutputs(*msg, vision_pose, odom_msg, reject_reason)) {
+    geometry_msgs::msg::PoseStamped vision_pose;
+    bool input_twist_near_zero = false;
+    if (!buildOutput(*msg, odom_msg, vision_pose, input_twist_near_zero,
+                     reject_reason)) {
       handleBadFrame(reject_reason);
       return;
     }
 
     consecutive_bad_frames_ = 0;
+    odom_pub_->publish(odom_msg);
     vision_pub_->publish(vision_pose);
-    // Keep odometry construction code for future comparison, but do not
-    // publish /mavros/odometry/out in the current pose-only validation mode.
+
+    if (input_twist_near_zero) {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "Input /Odometry twist is near zero; /mavros/odometry/out is currently forwarding near-zero velocity from upstream FAST_LIO.");
+    }
 
     const auto& p = odom_msg.pose.pose.position;
     const auto& tw = odom_msg.twist.twist.linear;
     RCLCPP_INFO_THROTTLE(
         get_logger(), *get_clock(), 1000,
-        "Bridge OK | init=%s | bad=%d | ENU pos=(%+.3f,%+.3f,%+.3f) | v=(%+.3f,%+.3f,%+.3f)",
+        "Odom bridge OK | init=%s | bad=%d | ENU pos=(%+.3f,%+.3f,%+.3f) | v=(%+.3f,%+.3f,%+.3f) | source_twist=%s",
         initialized_ ? "true" : "false", consecutive_bad_frames_, p.x, p.y,
-        p.z, tw.x, tw.y, tw.z);
+        p.z, tw.x, tw.y, tw.z,
+        input_twist_near_zero ? "near_zero" : "valid");
   }
 
-  bool buildOutputs(const nav_msgs::msg::Odometry& msg,
-                    geometry_msgs::msg::PoseStamped& vision_pose,
-                    nav_msgs::msg::Odometry& odom_msg,
-                    std::string& reject_reason) {
+  bool buildOutput(const nav_msgs::msg::Odometry& msg,
+                   nav_msgs::msg::Odometry& odom_msg,
+                   geometry_msgs::msg::PoseStamped& vision_pose,
+                   bool& input_twist_near_zero,
+                   std::string& reject_reason) {
     const rclcpp::Time stamp(msg.header.stamp);
 
     if (last_input_stamp_valid_) {
@@ -353,7 +361,7 @@ class FastLioToMavros : public rclcpp::Node {
         p_sensor_in_world[2] + p_base_offset_in_world[2],
     };
 
-    std::array<double, 3> p_enu{
+    const std::array<double, 3> p_enu{
         init_cos_yaw_ * p_base_in_world[0] - init_sin_yaw_ * p_base_in_world[1],
         init_sin_yaw_ * p_base_in_world[0] + init_cos_yaw_ * p_base_in_world[1],
         p_base_in_world[2],
@@ -391,6 +399,11 @@ class FastLioToMavros : public rclcpp::Node {
     const std::array<double, 3> w_body = matVecMul(r_base_sensor_, w_sensor);
 
     const double lin_speed = norm3(v_body[0], v_body[1], v_body[2]);
+    const double ang_speed = norm3(w_body[0], w_body[1], w_body[2]);
+    input_twist_near_zero =
+        lin_speed <= near_zero_twist_speed_mps_ &&
+        ang_speed <= near_zero_twist_ang_rps_;
+
     if (lin_speed > max_linear_speed_mps_) {
       std::ostringstream oss;
       oss << "linear speed too large: " << lin_speed << " m/s";
@@ -398,7 +411,6 @@ class FastLioToMavros : public rclcpp::Node {
       return false;
     }
 
-    const double ang_speed = norm3(w_body[0], w_body[1], w_body[2]);
     if (ang_speed > max_angular_speed_rps_) {
       std::ostringstream oss;
       oss << "angular speed too large: " << ang_speed << " rad/s";
@@ -455,13 +467,6 @@ class FastLioToMavros : public rclcpp::Node {
       }
     }
 
-    vision_pose.header.stamp = msg.header.stamp;
-    vision_pose.header.frame_id = pose_frame_id_;
-    vision_pose.pose.position.x = p_enu[0];
-    vision_pose.pose.position.y = p_enu[1];
-    vision_pose.pose.position.z = p_enu[2];
-    vision_pose.pose.orientation = tf2::toMsg(q_enu);
-
     odom_msg.header.stamp = msg.header.stamp;
     odom_msg.header.frame_id = pose_frame_id_;
     odom_msg.child_frame_id = child_frame_id_;
@@ -480,6 +485,10 @@ class FastLioToMavros : public rclcpp::Node {
     odom_msg.twist.covariance = diagCov6x6(
         lin_vel_var_, lin_vel_var_, lin_vel_var_, ang_vel_var_,
         ang_vel_var_, ang_vel_var_);
+
+    vision_pose.header.stamp = msg.header.stamp;
+    vision_pose.header.frame_id = pose_frame_id_;
+    vision_pose.pose = odom_msg.pose.pose;
 
     accepted_state_.pos_enu = p_enu;
     accepted_state_.yaw_enu = yaw_enu;
@@ -645,8 +654,8 @@ class FastLioToMavros : public rclcpp::Node {
  private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr fastlio_sub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr px4_odom_sub_;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr vision_pub_;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr vision_pub_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr reset_service_;
   rclcpp::TimerBase::SharedPtr init_timer_;
 
@@ -663,15 +672,15 @@ class FastLioToMavros : public rclcpp::Node {
   std::string pose_frame_id_ = "map";
   std::string child_frame_id_ = "base_link";
   double mount_x_ = 0.0;
-  double mount_y_ = -0.09;
-  double mount_z_ = 0.0;
+  double mount_y_ = 0.0;
+  double mount_z_ = 0.05;
   double mount_roll_deg_ = 0.0;
   double mount_pitch_deg_ = 0.0;
   double mount_yaw_deg_ = 0.0;
   std::string fastlio_topic_ = "/Odometry";
   std::string px4_odom_topic_ = "/mavros/local_position/odom";
-  std::string vision_pose_topic_ = "/mavros/vision_pose/pose";
   std::string odom_out_topic_ = "/mavros/odometry/out";
+  std::string vision_pose_topic_ = "/mavros/vision_pose/pose";
 
   bool fallback_zero_yaw_on_no_px4_ = true;
 
@@ -687,7 +696,8 @@ class FastLioToMavros : public rclcpp::Node {
   double max_implied_speed_mps_ = 20.0;
   double max_yaw_rate_rps_ = 3.0;
   int max_consecutive_bad_frames_ = 5;
-  double disabled_twist_covariance_ = 1e6;
+  double near_zero_twist_speed_mps_ = 1e-3;
+  double near_zero_twist_ang_rps_ = 1e-3;
 
   SlidingWindowAverage yaw_window_;
 
@@ -717,7 +727,7 @@ class FastLioToMavros : public rclcpp::Node {
 
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
-  auto node = std::make_shared<FastLioToMavros>();
+  auto node = std::make_shared<FastLioToMavrosOdomOut>();
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;

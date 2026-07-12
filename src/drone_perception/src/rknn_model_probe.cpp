@@ -119,7 +119,7 @@ private:
         "D435i color frame received: topic=%s source_encoding=%s converted_encoding=bgr8 "
         "width=%u height=%u source_step=%u cv_step=%zu channels=%d",
         topic.c_str(), message->encoding.c_str(), message->width, message->height,
-        message->step, image->image.step, image->image.channels());
+        message->step, static_cast<std::size_t>(image->image.step), image->image.channels());
       rclcpp::shutdown();
     } catch (const cv_bridge::Exception &error) {
       RCLCPP_ERROR(get_logger(), "cv_bridge conversion to bgr8 failed: %s", error.what());

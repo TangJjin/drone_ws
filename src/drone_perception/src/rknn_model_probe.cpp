@@ -14,9 +14,11 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <realsense2_camera_msgs/msg/rgbd.hpp>
 #include <sensor_msgs/msg/image.hpp>
 
 #include "rknn_api.h"
+#include "drone_perception/depth_processor.hpp"
 #include "drone_perception/rknn_yolo_detector.hpp"
 
 namespace
@@ -148,13 +150,16 @@ public:
   : Node("rknn_d435i_stream"), detector_(model_path), started_at_(Clock::now())
   {
     cv::namedWindow(window_name_, cv::WINDOW_AUTOSIZE);
-    const std::string topic = declare_parameter<std::string>(
-      "color_topic", "/camera/camera/color/image_raw");
-    subscription_ = create_subscription<sensor_msgs::msg::Image>(
-      topic, rclcpp::SensorDataQoS(),
-      [this](const sensor_msgs::msg::Image::ConstSharedPtr message) { inferFrame(message); });
-    RCLCPP_INFO(get_logger(), "Streaming RKNN inference started: topic=%s model=%s",
-      topic.c_str(), model_path.c_str());
+    const std::string rgbd_topic = declare_parameter<std::string>(
+      "rgbd_topic", "/camera/camera/rgbd");
+    rgbd_sub_ = create_subscription<realsense2_camera_msgs::msg::RGBD>(
+      rgbd_topic, rclcpp::SensorDataQoS(),
+      [this](const realsense2_camera_msgs::msg::RGBD::ConstSharedPtr message) {
+        inferFrame(message);
+      });
+    RCLCPP_INFO(get_logger(),
+      "Streaming RGBD RKNN inference started: rgbd=%s model=%s",
+      rgbd_topic.c_str(), model_path.c_str());
   }
 
   ~D435iRknnStream() override
@@ -165,10 +170,17 @@ public:
 private:
   using Clock = std::chrono::steady_clock;
 
-  void inferFrame(const sensor_msgs::msg::Image::ConstSharedPtr &message)
+  void inferFrame(const realsense2_camera_msgs::msg::RGBD::ConstSharedPtr &message)
   {
     try {
-      const auto image = cv_bridge::toCvShare(message, "bgr8");
+      const auto image = cv_bridge::toCvShare(message->rgb, message, "bgr8");
+      const auto depth = cv_bridge::toCvShare(message->depth, message);
+      if (image->image.size() != depth->image.size()) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+          "RGBD size mismatch: color=%dx%d depth=%dx%d", image->image.cols, image->image.rows,
+          depth->image.cols, depth->image.rows);
+        return;
+      }
       const std::vector<Detection> detections = detector_.infer(image->image);
       ++frame_count_;
 
@@ -184,23 +196,43 @@ private:
 
       cv::Mat display = image->image.clone();
 
-      for (const Detection &detection : detections) {
+      for (Detection detection : detections) {
+        const DepthSampleResult sample = depth_processor_.sampleAt(
+          depth->image, detection.center.x, detection.center.y, sample_radius_px_);
+        detection.has_depth = sample.has_valid_depth;
+        detection.depth_m = sample.depth_m;
+        if (sample.has_valid_depth) {
+          detection.point_3d = depth_processor_.projectTo3D(
+            detection.center.x, detection.center.y, sample.depth_m, message->rgb_camera_info);
+        }
         cv::rectangle(display, detection.box, cv::Scalar(0, 255, 0), 2);
-        const std::string label = cv::format(
-          "class %d %.2f", detection.class_id, detection.score);
+        const std::string label = sample.has_valid_depth
+          ? cv::format("class %d %.2f  %.2fm XYZ(%.2f,%.2f,%.2f)",
+            detection.class_id, detection.score, sample.depth_m, detection.point_3d.x,
+            detection.point_3d.y, detection.point_3d.z)
+          : cv::format("class %d %.2f  depth n/a", detection.class_id, detection.score);
         const int label_y = std::max(20, detection.box.y - 6);
         cv::putText(display, label, cv::Point(detection.box.x, label_y),
           cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
         RCLCPP_INFO(get_logger(),
-          "detection class=%d score=%.3f box=(%d,%d,%d,%d) center=(%d,%d)",
+          "detection class=%d score=%.3f box=(%d,%d,%d,%d) center=(%d,%d) depth=%.3fm",
           detection.class_id, detection.score, detection.box.x, detection.box.y,
-          detection.box.width, detection.box.height, detection.center.x, detection.center.y);
+          detection.box.width, detection.box.height, detection.center.x, detection.center.y,
+          sample.has_valid_depth ? sample.depth_m : -1.0F);
       }
 
-      const std::string status = cv::format(
-        "FPS %.1f  %dx%d", display_fps_, display.cols, display.rows);
+      const DepthSampleResult center_depth = depth_processor_.sampleAt(
+        depth->image, display.cols / 2, display.rows / 2, sample_radius_px_);
+      const std::string status = cv::format("FPS %.1f  RGB %dx%d  Depth %dx%d %s",
+        display_fps_, display.cols, display.rows, depth->image.cols, depth->image.rows,
+        message->depth.encoding.c_str());
       cv::putText(display, status, cv::Point(12, 30), cv::FONT_HERSHEY_SIMPLEX,
         0.75, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+      const std::string depth_status = center_depth.has_valid_depth
+        ? cv::format("Center depth %.3fm  RGBD aligned + intrinsics", center_depth.depth_m)
+        : std::string("Center depth n/a  RGBD aligned + intrinsics");
+      cv::putText(display, depth_status, cv::Point(12, 58), cv::FONT_HERSHEY_SIMPLEX,
+        0.65, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
       cv::imshow(window_name_, display);
       const int key = cv::waitKey(1) & 0xff;
       if (key == 'q' || key == 27) {
@@ -226,7 +258,9 @@ private:
   }
 
   RknnYoloDetector detector_;
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
+  DepthProcessor depth_processor_;
+  rclcpp::Subscription<realsense2_camera_msgs::msg::RGBD>::SharedPtr rgbd_sub_;
+  int sample_radius_px_ = 10;
   Clock::time_point started_at_;
   Clock::time_point last_report_at_ = started_at_;
   Clock::time_point last_frame_at_{};

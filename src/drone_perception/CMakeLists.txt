@@ -133,6 +133,7 @@ set(RKNN_RUNTIME_SO "${RKNN_LIB}/librknnrt.so")
 if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   add_executable(rknn_model_probe
     src/rknn_model_probe.cpp
+    src/depth_processor.cpp
   )
 
   target_compile_features(rknn_model_probe PUBLIC cxx_std_17)
@@ -147,7 +148,9 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   ament_target_dependencies(rknn_model_probe
     ament_index_cpp
     cv_bridge
+    image_geometry
     rclcpp
+    realsense2_camera_msgs
     sensor_msgs
   )
 

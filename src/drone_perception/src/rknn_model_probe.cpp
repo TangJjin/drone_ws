@@ -453,7 +453,7 @@ private:
     try {
       RknnYoloDetector &detector = *detectors_[worker_index];
       DepthProcessor &depth_processor = depth_processors_[worker_index];
-      const auto image = cv_bridge::toCvShare(frame.color, "bgr8");
+      const auto image = cv_bridge::toCvShare(frame.color, "rgb8");
       const bool depth_ready = frame.depth && frame.color_info && frame.depth_info &&
         frame.depth_to_color && depthMatchesColor(frame);
       if (!depth_ready) {
@@ -465,7 +465,8 @@ private:
         : cv_bridge::CvImageConstPtr{};
       const std::vector<Detection> detections = detector.infer(image->image);
 
-      cv::Mat display = image->image.clone();
+      cv::Mat display;
+      cv::cvtColor(image->image, display, cv::COLOR_RGB2BGR);
 
       for (Detection detection : detections) {
         const DepthSampleResult sample = depth_ready
@@ -626,13 +627,15 @@ private:
       RCLCPP_INFO(get_logger(),
         "parallel frames=%llu received=%llu queue_drop=%llu stale_result=%llu "
         "input_fps=%.2f process_fps=%.2f display_fps=%.2f npu_capacity_fps=%.2f "
-        "core_ms=[%.2f,%.2f,%.2f] latest_frame=%llu worker=%zu detections=%zu",
+        "core_ms=[%.2f,%.2f,%.2f] preprocess_ms=%.2f detector_total_ms=%.2f "
+        "latest_frame=%llu worker=%zu detections=%zu",
         static_cast<unsigned long long>(processed),
         static_cast<unsigned long long>(received_count_.load()),
         static_cast<unsigned long long>(dropped_count_.load()),
         static_cast<unsigned long long>(stale_result_count_.load()),
         input_fps_.load(), process_fps, display_fps_, npu_capacity_fps,
         run_ms[0], run_ms[1], run_ms[2],
+        result.timing.preprocess_ms, result.timing.detector_total_ms,
         static_cast<unsigned long long>(result.frame_id), result.worker_index,
         result.detection_count);
       last_report_processed_ = processed;

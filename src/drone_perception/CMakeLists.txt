@@ -138,6 +138,7 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
 
   target_include_directories(rknn_model_probe
     PRIVATE
+    include
     ${OpenCV_INCLUDE_DIRS}
     ${RKNN_INCLUDE}
   )

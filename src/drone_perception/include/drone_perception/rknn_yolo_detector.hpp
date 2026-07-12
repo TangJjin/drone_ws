@@ -23,12 +23,18 @@ public:
         double detector_total_ms = 0.0;
     };
 
-    explicit RknnYoloDetector(const std::string &model_path);
+    explicit RknnYoloDetector(
+        const std::string &model_path,
+        rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2);
     ~RknnYoloDetector();
 
     std::vector<Detection> infer(const cv::Mat &bgr_image);
 
     const InferenceTimingStats &lastTiming() const;
+
+    rknn_mem_size memorySize() const;
+
+    double lastRknnRunMs() const;
 
 private:
     struct LetterboxResult
@@ -41,7 +47,7 @@ private:
 
     LetterboxResult makeLetterbox(const cv::Mat &bgr_image) const;
 
-    void loadModel(const std::string &model_path);
+    void loadModel(const std::string &model_path, rknn_core_mask core_mask);
 
     static std::vector<unsigned char> readFile(const std::string &path);
 

@@ -9,6 +9,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
+  <depend>ament_index_cpp</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>drone_msgs</depend>
@@ -17,6 +18,7 @@
   <depend>message_filters</depend>
   <depend>rcl_interfaces</depend>
   <depend>realsense2_camera_msgs</depend>
+  <depend>realsense2</depend>
   <depend>sensor_msgs</depend>
   <depend>zbar</depend>
 

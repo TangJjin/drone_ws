@@ -3,12 +3,14 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <cv_bridge/cv_bridge.h>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -22,6 +24,10 @@ namespace
 
 std::vector<std::uint8_t> readBinaryFile(const std::string &path)
 {
+  if (!std::filesystem::is_regular_file(path)) {
+    throw std::runtime_error("model path is not a regular file: " + path);
+  }
+
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file) {
     throw std::runtime_error("failed to open model: " + path);
@@ -233,6 +239,22 @@ private:
 
 int main(int argc, char **argv)
 {
+  if (argc == 1) {
+    const std::string model_path =
+      ament_index_cpp::get_package_share_directory("drone_perception") +
+      "/models/qr_rk3588_hybrid_bbox_fp16.rknn";
+    rclcpp::init(argc, argv);
+    try {
+      rclcpp::spin(std::make_shared<D435iRknnStream>(model_path));
+    } catch (const std::exception &error) {
+      std::cerr << "Error: " << error.what() << '\n';
+      rclcpp::shutdown();
+      return 1;
+    }
+    rclcpp::shutdown();
+    return 0;
+  }
+
   if (argc >= 3 && std::string(argv[1]) == "--infer") {
     const std::string model_path = argv[2];
     rclcpp::init(argc, argv);

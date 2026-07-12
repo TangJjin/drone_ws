@@ -6,6 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -144,6 +145,7 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   )
 
   ament_target_dependencies(rknn_model_probe
+    ament_index_cpp
     cv_bridge
     rclcpp
     sensor_msgs
@@ -180,6 +182,11 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION lib/${PROJECT_NAME}
+  )
+
+  install(FILES
+    qr_rk3588_hybrid_bbox_fp16.rknn
+    DESTINATION share/${PROJECT_NAME}/models
   )
 else()
   message(STATUS

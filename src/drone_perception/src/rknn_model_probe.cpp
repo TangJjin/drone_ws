@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -13,6 +14,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <sched.h>
 
 #include <cv_bridge/cv_bridge.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -61,6 +64,21 @@ void checkRknn(int result, const std::string &operation)
   if (result != RKNN_SUCC) {
     throw std::runtime_error(operation + " failed, ret=" + std::to_string(result));
   }
+}
+
+void bindToPerformanceCpus()
+{
+  cpu_set_t cpu_set;
+  CPU_ZERO(&cpu_set);
+  for (int cpu = 4; cpu <= 7; ++cpu) {
+    CPU_SET(cpu, &cpu_set);
+  }
+  if (sched_setaffinity(0, sizeof(cpu_set), &cpu_set) != 0) {
+    throw std::runtime_error(
+      "failed to bind CPU affinity to cores 4-7: " +
+      std::string(std::strerror(errno)));
+  }
+  std::cout << "CPU affinity : cores 4-7\n";
 }
 
 void printTensor(const char *kind, const rknn_tensor_attr &attr)
@@ -528,6 +546,13 @@ private:
 
 int main(int argc, char **argv)
 {
+  try {
+    bindToPerformanceCpus();
+  } catch (const std::exception &error) {
+    std::cerr << "Error: " << error.what() << '\n';
+    return 1;
+  }
+
   if (argc == 1) {
     const std::string model_path =
       ament_index_cpp::get_package_share_directory("drone_perception") +

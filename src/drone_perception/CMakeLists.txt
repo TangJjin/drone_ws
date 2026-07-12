@@ -130,6 +130,29 @@ set(RKNN_LIB $ENV{RKNN_LIB})
 set(RKNN_RUNTIME_SO "${RKNN_LIB}/librknnrt.so")
 
 if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
+  add_executable(rknn_model_probe
+    src/rknn_model_probe.cpp
+  )
+
+  target_compile_features(rknn_model_probe PUBLIC cxx_std_17)
+
+  target_include_directories(rknn_model_probe
+    PRIVATE
+    ${OpenCV_INCLUDE_DIRS}
+    ${RKNN_INCLUDE}
+  )
+
+  target_link_libraries(rknn_model_probe
+    ${OpenCV_LIBS}
+    ${RKNN_RUNTIME_SO}
+  )
+
+  ament_target_dependencies(rknn_model_probe
+    cv_bridge
+    rclcpp
+    sensor_msgs
+  )
+
   add_library(rknn_yolo_detector STATIC
     src/rknn_yolo_detector.cpp
     src/yolo_postprocessor.cpp
@@ -150,10 +173,11 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   )
 
   install(TARGETS
+    rknn_model_probe
     rknn_yolo_detector
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
+    RUNTIME DESTINATION lib/${PROJECT_NAME}
   )
 else()
   message(STATUS

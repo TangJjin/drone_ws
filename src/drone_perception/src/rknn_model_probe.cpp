@@ -6,6 +6,10 @@
 #include <string>
 #include <vector>
 
+#include <cv_bridge/cv_bridge.h>
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/image.hpp>
+
 #include "rknn_api.h"
 
 namespace
@@ -85,12 +89,61 @@ private:
   rknn_context context_ = 0;
 };
 
+class FirstColorFrameProbe : public rclcpp::Node
+{
+public:
+  FirstColorFrameProbe()
+  : Node("rknn_d435i_color_probe")
+  {
+    const std::string topic = declare_parameter<std::string>(
+      "color_topic", "/camera/camera/color/image_raw");
+    subscription_ = create_subscription<sensor_msgs::msg::Image>(
+      topic,
+      rclcpp::SensorDataQoS(),
+      [this, topic](const sensor_msgs::msg::Image::ConstSharedPtr message) {
+        handleFrame(message, topic);
+      });
+
+    RCLCPP_INFO(get_logger(), "Waiting for the first D435i color frame on %s", topic.c_str());
+  }
+
+private:
+  void handleFrame(
+    const sensor_msgs::msg::Image::ConstSharedPtr &message,
+    const std::string &topic)
+  {
+    try {
+      const cv_bridge::CvImageConstPtr image = cv_bridge::toCvShare(message, "bgr8");
+      RCLCPP_INFO(
+        get_logger(),
+        "D435i color frame received: topic=%s source_encoding=%s converted_encoding=bgr8 "
+        "width=%u height=%u source_step=%u cv_step=%zu channels=%d",
+        topic.c_str(), message->encoding.c_str(), message->width, message->height,
+        message->step, image->image.step, image->image.channels());
+      rclcpp::shutdown();
+    } catch (const cv_bridge::Exception &error) {
+      RCLCPP_ERROR(get_logger(), "cv_bridge conversion to bgr8 failed: %s", error.what());
+      rclcpp::shutdown();
+    }
+  }
+
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
+};
+
 }  // namespace
 
 int main(int argc, char **argv)
 {
+  if (argc >= 2 && std::string(argv[1]) == "--camera") {
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<FirstColorFrameProbe>());
+    return 0;
+  }
+
   if (argc != 2) {
-    std::cerr << "Usage: " << argv[0] << " <model.rknn>\n";
+    std::cerr << "Usage:\n"
+              << "  " << argv[0] << " <model.rknn>\n"
+              << "  " << argv[0] << " --camera [--ros-args -p color_topic:=<topic>]\n";
     return 2;
   }
 

@@ -6,6 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -17,6 +18,7 @@ find_package(cv_bridge REQUIRED)
 find_package(image_geometry REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(realsense2_camera_msgs REQUIRED)
+find_package(realsense2 REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
 pkg_check_modules(ZBAR REQUIRED zbar)
@@ -130,6 +132,29 @@ set(RKNN_LIB $ENV{RKNN_LIB})
 set(RKNN_RUNTIME_SO "${RKNN_LIB}/librknnrt.so")
 
 if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
+  add_executable(rknn_model_probe
+    src/rknn_model_probe.cpp
+    src/depth_processor.cpp
+  )
+
+  target_compile_features(rknn_model_probe PUBLIC cxx_std_17)
+
+  target_include_directories(rknn_model_probe
+    PRIVATE
+    include
+    ${OpenCV_INCLUDE_DIRS}
+    ${RKNN_INCLUDE}
+  )
+
+  ament_target_dependencies(rknn_model_probe
+    ament_index_cpp
+    cv_bridge
+    image_geometry
+    rclcpp
+    realsense2_camera_msgs
+    sensor_msgs
+  )
+
   add_library(rknn_yolo_detector STATIC
     src/rknn_yolo_detector.cpp
     src/yolo_postprocessor.cpp
@@ -149,11 +174,24 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     ${RKNN_RUNTIME_SO}
   )
 
+  target_link_libraries(rknn_model_probe
+    rknn_yolo_detector
+    ${OpenCV_LIBS}
+    ${RKNN_RUNTIME_SO}
+    realsense2::realsense2
+  )
+
   install(TARGETS
+    rknn_model_probe
     rknn_yolo_detector
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
-    RUNTIME DESTINATION bin
+    RUNTIME DESTINATION lib/${PROJECT_NAME}
+  )
+
+  install(FILES
+    qr_rk3588_hybrid_bbox_fp16.rknn
+    DESTINATION share/${PROJECT_NAME}/models
   )
 else()
   message(STATUS

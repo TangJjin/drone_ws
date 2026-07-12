@@ -157,23 +157,23 @@ std::vector<unsigned char> RknnYoloDetector::readFile(const std::string &path)
 }
 
 RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
-    const cv::Mat &bgr_image) const
+    const cv::Mat &rgb_image) const
 {
-    if (bgr_image.empty())
+    if (rgb_image.empty())
     {
         throw std::runtime_error("input image is empty");
     }
 
     // 保持原图比例并补边到 640x640，避免二维码/条码被拉伸变形。
     const float scale = std::min(
-        static_cast<float>(input_width_) / static_cast<float>(bgr_image.cols),
-        static_cast<float>(input_height_) / static_cast<float>(bgr_image.rows));
+        static_cast<float>(input_width_) / static_cast<float>(rgb_image.cols),
+        static_cast<float>(input_height_) / static_cast<float>(rgb_image.rows));
 
-    const int resized_width = static_cast<int>(static_cast<float>(bgr_image.cols) * scale);
-    const int resized_height = static_cast<int>(static_cast<float>(bgr_image.rows) * scale);
+    const int resized_width = static_cast<int>(static_cast<float>(rgb_image.cols) * scale);
+    const int resized_height = static_cast<int>(static_cast<float>(rgb_image.rows) * scale);
 
     cv::Mat resized;
-    cv::resize(bgr_image, resized, cv::Size(resized_width, resized_height));
+    cv::resize(rgb_image, resized, cv::Size(resized_width, resized_height));
 
     const int pad_x = (input_width_ - resized_width) / 2;
     const int pad_y = (input_height_ - resized_height) / 2;
@@ -181,7 +181,7 @@ RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
     cv::Mat letterbox(
         input_height_,
         input_width_,
-        bgr_image.type(),
+        rgb_image.type(),
         cv::Scalar(114, 114, 114));
 
     resized.copyTo(letterbox(cv::Rect(pad_x, pad_y, resized_width, resized_height)));
@@ -326,16 +326,13 @@ void RknnYoloDetector::loadModel(
     }
 }
 
-std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &bgr_image)
+std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &rgb_image)
 {
     InferenceTimingStats timing;
     const auto detector_t0 = SteadyClock::now();
 
     const auto preprocess_t0 = SteadyClock::now();
-    const LetterboxResult letterbox = makeLetterbox(bgr_image);
-
-    cv::Mat rgb_image;
-    cv::cvtColor(letterbox.image, rgb_image, cv::COLOR_BGR2RGB);
+    const LetterboxResult letterbox = makeLetterbox(rgb_image);
     const auto preprocess_t1 = SteadyClock::now();
     timing.preprocess_ms = elapsedMs(preprocess_t0, preprocess_t1);
 
@@ -346,7 +343,7 @@ std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &bgr_image)
     input.type = RKNN_TENSOR_UINT8;
     input.size = static_cast<unsigned int>(input_width_ * input_height_ * 3);
     input.fmt = RKNN_TENSOR_NHWC;
-    input.buf = rgb_image.data;
+    input.buf = letterbox.image.data;
 
     const auto input_set_t0 = SteadyClock::now();
     int ret = rknn_inputs_set(context_, 1, &input);
@@ -402,7 +399,7 @@ std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &bgr_image)
         detections = postprocessor_.parseOutput(
             output_data,
             candidate_count_,
-            bgr_image.size(),
+            rgb_image.size(),
             letterbox.scale,
             letterbox.pad_x,
             letterbox.pad_y);
@@ -415,7 +412,7 @@ std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &bgr_image)
             bbox_data,
             class_data,
             candidate_count_,
-            bgr_image.size(),
+            rgb_image.size(),
             letterbox.scale,
             letterbox.pad_x,
             letterbox.pad_y);

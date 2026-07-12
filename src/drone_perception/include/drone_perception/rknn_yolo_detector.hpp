@@ -28,7 +28,7 @@ public:
         rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2);
     ~RknnYoloDetector();
 
-    std::vector<Detection> infer(const cv::Mat &bgr_image);
+    std::vector<Detection> infer(const cv::Mat &rgb_image);
 
     const InferenceTimingStats &lastTiming() const;
 
@@ -45,7 +45,7 @@ private:
         int pad_y = 0;
     };
 
-    LetterboxResult makeLetterbox(const cv::Mat &bgr_image) const;
+    LetterboxResult makeLetterbox(const cv::Mat &rgb_image) const;
 
     void loadModel(const std::string &model_path, rknn_core_mask core_mask);
 

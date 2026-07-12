@@ -186,8 +186,9 @@ public:
     depth_info_sub_ = create_subscription<sensor_msgs::msg::CameraInfo>(
       depth_info_topic, rclcpp::SensorDataQoS(),
       [this](const sensor_msgs::msg::CameraInfo::ConstSharedPtr message) { receiveDepthInfo(message); });
+    const auto extrinsics_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
     extrinsics_sub_ = create_subscription<realsense2_camera_msgs::msg::Extrinsics>(
-      depth_to_color_topic, rclcpp::SensorDataQoS(),
+      depth_to_color_topic, extrinsics_qos,
       [this](const realsense2_camera_msgs::msg::Extrinsics::ConstSharedPtr message) {
         receiveExtrinsics(message);
       });

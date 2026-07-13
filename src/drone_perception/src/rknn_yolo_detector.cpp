@@ -415,6 +415,7 @@ void RknnYoloDetector::fillInt8ZeroCopyInput(const cv::Mat &rgb_u8_letterbox)
 {
   // float = pixel / 255（与 mean0/std255 一致）
   // int8  = clamp(round(float / scale) + zp)
+  // 当 zp=-128 且 scale≈1/255 时，等价于 int8 = uint8 - 128（XOR 0x80）
   if (input_mem_ == nullptr || input_mem_->virt_addr == nullptr) {
     throw std::runtime_error("INT8 zero-copy input mem is null");
   }
@@ -429,10 +430,30 @@ void RknnYoloDetector::fillInt8ZeroCopyInput(const cv::Mat &rgb_u8_letterbox)
   }
 
   auto *dst_base = static_cast<std::int8_t *>(input_mem_->virt_addr);
+  const int row_elems = input_width_stride_ * 3;
+  const int width_bytes = input_width_ * 3;
+  const bool fast_u8_minus_128 =
+    input_qnt_zp_ == -128 &&
+    std::fabs(input_qnt_scale_ - (1.0F / 255.0F)) < 1.0e-5F;
+
+  if (fast_u8_minus_128) {
+    for (int y = 0; y < input_height_; ++y) {
+      const auto *src = rgb_u8_letterbox.ptr<std::uint8_t>(y);
+      auto *dst = reinterpret_cast<std::uint8_t *>(
+        dst_base + static_cast<std::size_t>(y) * static_cast<std::size_t>(row_elems));
+      for (int i = 0; i < width_bytes; ++i) {
+        // uint8 ^ 0x80 == static_cast<int8_t>(uint8 - 128)
+        dst[i] = static_cast<std::uint8_t>(src[i] ^ 0x80U);
+      }
+      if (row_elems > width_bytes) {
+        std::memset(dst + width_bytes, 0, static_cast<std::size_t>(row_elems - width_bytes));
+      }
+    }
+    return;
+  }
+
   const float inv_scale = 1.0F / input_qnt_scale_;
   const int32_t zp = input_qnt_zp_;
-  const int row_elems = input_width_stride_ * 3;
-
   for (int y = 0; y < input_height_; ++y) {
     const auto *src = rgb_u8_letterbox.ptr<std::uint8_t>(y);
     auto *dst = dst_base + static_cast<std::size_t>(y) * static_cast<std::size_t>(row_elems);
@@ -446,8 +467,7 @@ void RknnYoloDetector::fillInt8ZeroCopyInput(const cv::Mat &rgb_u8_letterbox)
         dst[dx + c] = static_cast<std::int8_t>(q);
       }
     }
-    // 行尾 stride padding 置 0，避免脏数据
-    for (int p = input_width_ * 3; p < row_elems; ++p) {
+    for (int p = width_bytes; p < row_elems; ++p) {
       dst[p] = 0;
     }
   }

@@ -276,19 +276,52 @@ private:
     if (attr.n_dims != 4) {
       return false;
     }
-    if (attr.fmt == RKNN_TENSOR_NHWC ||
-      (attr.dims[3] <= 64 && attr.dims[1] >= 8 && attr.dims[2] >= 8))
-    {
+
+    // 优先信任 Runtime 的 fmt。
+    // 错误启发式会把 NCHW (1,64,40,40) 误判成 NHWC(H=64,W=40,C=40)。
+    if (attr.fmt == RKNN_TENSOR_NHWC) {
       layout = Layout::NHWC;
       height = static_cast<int>(attr.dims[1]);
       width = static_cast<int>(attr.dims[2]);
       channels = static_cast<int>(attr.dims[3]);
       return height > 0 && width > 0 && channels > 0;
     }
+
+    if (attr.fmt == RKNN_TENSOR_NCHW) {
+      layout = Layout::NCHW;
+      channels = static_cast<int>(attr.dims[1]);
+      height = static_cast<int>(attr.dims[2]);
+      width = static_cast<int>(attr.dims[3]);
+      return channels > 0 && height > 0 && width > 0;
+    }
+
+    // fmt 未知时：通道维通常是 1/3/64，用这个区分 NCHW/NHWC
+    const int d1 = static_cast<int>(attr.dims[1]);
+    const int d2 = static_cast<int>(attr.dims[2]);
+    const int d3 = static_cast<int>(attr.dims[3]);
+    const auto is_channel = [](int v) {
+      return v == 1 || v == 3 || v == 64;
+    };
+    if (is_channel(d1) && d2 >= 8 && d3 >= 8) {
+      layout = Layout::NCHW;
+      channels = d1;
+      height = d2;
+      width = d3;
+      return true;
+    }
+    if (is_channel(d3) && d1 >= 8 && d2 >= 8) {
+      layout = Layout::NHWC;
+      height = d1;
+      width = d2;
+      channels = d3;
+      return true;
+    }
+
+    // 最后回退 NCHW
     layout = Layout::NCHW;
-    channels = static_cast<int>(attr.dims[1]);
-    height = static_cast<int>(attr.dims[2]);
-    width = static_cast<int>(attr.dims[3]);
+    channels = d1;
+    height = d2;
+    width = d3;
     return channels > 0 && height > 0 && width > 0;
   }
 
@@ -557,7 +590,13 @@ private:
       } else if (slot.channels == 1) {
         ++sum_count;
       } else {
-        throw std::runtime_error("unexpected path-B output channels");
+        std::ostringstream message;
+        message << "unexpected path-B output channels=" << slot.channels
+                << " at index=" << i
+                << " parsed as " << slot.height << "x" << slot.width
+                << " layout=" << static_cast<int>(slot.layout)
+                << " fmt=" << static_cast<int>(attr.fmt);
+        throw std::runtime_error(message.str());
       }
       output_slots_.push_back(slot);
     }

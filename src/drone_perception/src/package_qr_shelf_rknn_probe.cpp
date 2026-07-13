@@ -86,6 +86,11 @@ public:
 
   ~RknnYolo11PathbDetector()
   {
+    // 与 rknn_yolo_detector / rknn_model_probe 一致：先释放 zero-copy 输入再 destroy context
+    if (input_mem_ != nullptr && context_ != 0) {
+      rknn_destroy_mem(context_, input_mem_);
+      input_mem_ = nullptr;
+    }
     if (context_ != 0) {
       rknn_destroy(context_);
       context_ = 0;
@@ -143,21 +148,32 @@ public:
     const auto preprocess_t1 = SteadyClock::now();
     timing.preprocess_ms = elapsedMs(preprocess_t0, preprocess_t1);
 
+    // 输入准备：优先 native FP16 zero-copy（与 rknn_model_probe / RknnYoloDetector 相同）
     const auto input_prepare_t0 = SteadyClock::now();
-    rknn_input input;
-    std::memset(&input, 0, sizeof(input));
-    input.index = 0;
-    input.type = RKNN_TENSOR_UINT8;
-    input.size = static_cast<unsigned int>(input_width_ * input_height_ * 3);
-    input.fmt = RKNN_TENSOR_NHWC;
-    input.buf = letterbox.image.data;
-    int ret = rknn_inputs_set(context_, 1, &input);
+    int ret = RKNN_SUCC;
+    if (zero_copy_input_) {
+      letterbox.image.convertTo(input_fp16_view_, CV_16FC3, 1.0 / 255.0);
+      ret = rknn_mem_sync(context_, input_mem_, RKNN_MEMORY_SYNC_TO_DEVICE);
+      if (ret != RKNN_SUCC) {
+        throw std::runtime_error(
+          "rknn_mem_sync input failed, ret=" + std::to_string(ret));
+      }
+    } else {
+      rknn_input input;
+      std::memset(&input, 0, sizeof(input));
+      input.index = 0;
+      input.type = RKNN_TENSOR_UINT8;
+      input.size = static_cast<unsigned int>(input_width_ * input_height_ * 3);
+      input.fmt = RKNN_TENSOR_NHWC;
+      input.buf = letterbox.image.data;
+      ret = rknn_inputs_set(context_, 1, &input);
+      if (ret != RKNN_SUCC) {
+        throw std::runtime_error(
+          "rknn_inputs_set failed, ret=" + std::to_string(ret));
+      }
+    }
     const auto input_prepare_t1 = SteadyClock::now();
     timing.input_prepare_ms = elapsedMs(input_prepare_t0, input_prepare_t1);
-    if (ret != RKNN_SUCC) {
-      throw std::runtime_error(
-        "rknn_inputs_set failed, ret=" + std::to_string(ret));
-    }
 
     const auto rknn_run_t0 = SteadyClock::now();
     ret = rknn_run(context_, nullptr);
@@ -603,9 +619,65 @@ private:
     if (box_count != 3 || cls_count != 3 || sum_count != 3) {
       throw std::runtime_error("path-B output role count mismatch");
     }
+
+    // 与 rknn_model_probe 使用的 RknnYoloDetector 相同：尝试 native FP16 zero-copy
+    configureZeroCopyInput();
+
     std::cout << "[RKNN-PATHB] model ready: " << input_width_ << "x" << input_height_
               << ", classes=3 (qrcode/package/shelf_tag), conf=" << kConfThresh
-              << " nms=" << kNmsThresh << std::endl;
+              << " nms=" << kNmsThresh
+              << ", zero_copy=" << (zero_copy_input_ ? "on" : "off") << std::endl;
+  }
+
+  // 对齐 rknn_yolo_detector.cpp::configureZeroCopyInput
+  void configureZeroCopyInput()
+  {
+    std::memset(&native_input_attr_, 0, sizeof(native_input_attr_));
+    native_input_attr_.index = 0;
+    const int query_ret = rknn_query(
+      context_,
+      RKNN_QUERY_NATIVE_INPUT_ATTR,
+      &native_input_attr_,
+      sizeof(native_input_attr_));
+    if (query_ret != RKNN_SUCC ||
+      native_input_attr_.n_dims != 4 ||
+      native_input_attr_.fmt != RKNN_TENSOR_NHWC ||
+      native_input_attr_.type != RKNN_TENSOR_FLOAT16 ||
+      native_input_attr_.dims[3] != 3)
+    {
+      std::cout << "[RKNN-PATHB] native FP16 zero-copy input unavailable; "
+                << "using rknn_inputs_set fallback" << std::endl;
+      return;
+    }
+
+    native_input_attr_.pass_through = 1;
+    input_mem_ = rknn_create_mem(context_, native_input_attr_.size_with_stride);
+    if (input_mem_ == nullptr) {
+      throw std::runtime_error("rknn_create_mem for zero-copy input failed");
+    }
+    const int set_ret = rknn_set_io_mem(context_, input_mem_, &native_input_attr_);
+    if (set_ret != RKNN_SUCC) {
+      rknn_destroy_mem(context_, input_mem_);
+      input_mem_ = nullptr;
+      throw std::runtime_error(
+        "rknn_set_io_mem for zero-copy input failed, ret=" + std::to_string(set_ret));
+    }
+
+    const int height = static_cast<int>(native_input_attr_.dims[1]);
+    const int width = static_cast<int>(native_input_attr_.dims[2]);
+    const int width_stride = native_input_attr_.w_stride == 0 ?
+      width : static_cast<int>(native_input_attr_.w_stride);
+    input_fp16_view_ = cv::Mat(
+      height,
+      width,
+      CV_16FC3,
+      input_mem_->virt_addr,
+      static_cast<std::size_t>(width_stride) * 3U * sizeof(std::uint16_t));
+    zero_copy_input_ = true;
+    std::cout << "[RKNN-PATHB] native FP16 zero-copy input enabled: "
+              << width << "x" << height
+              << " stride=" << width_stride
+              << " bytes=" << native_input_attr_.size_with_stride << std::endl;
   }
 
   void bindScaleBranches(
@@ -653,6 +725,10 @@ private:
   uint32_t output_count_ = 0;
   std::vector<OutputSlot> output_slots_;
   rknn_context context_ = 0;
+  rknn_tensor_mem *input_mem_ = nullptr;
+  rknn_tensor_attr native_input_attr_{};
+  cv::Mat input_fp16_view_;
+  bool zero_copy_input_ = false;
   std::vector<unsigned char> model_data_;
   InferenceTimingStats last_timing_;
   cv::Mat resized_buffer_;

@@ -711,7 +711,7 @@ int main(int argc, char **argv)
   if (argc == 1) {
     const std::string model_path =
       ament_index_cpp::get_package_share_directory("drone_perception") +
-      "/models/package_qrcode_shelf_tag_fp16.rknn";
+      "/models/package_qrcode_shelf_tag_i8.rknn";
     rclcpp::init(argc, argv);
     try {
       rclcpp::spin(std::make_shared<D435iRknnStream>(model_path));
@@ -749,7 +749,7 @@ int main(int argc, char **argv)
               << "  " << argv[0] << " <model.rknn>\n"
               << "  " << argv[0] << " --infer <model.rknn> [--ros-args -p color_topic:=<topic>]\n"
               << "  " << argv[0] << " --camera [--ros-args -p color_topic:=<topic>]\n"
-              << "Default model: share/drone_perception/models/package_qrcode_shelf_tag_fp16.rknn\n";
+              << "Default model: share/drone_perception/models/package_qrcode_shelf_tag_i8.rknn\n";
     return 2;
   }
 

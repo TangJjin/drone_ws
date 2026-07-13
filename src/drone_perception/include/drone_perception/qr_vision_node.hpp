@@ -184,6 +184,9 @@ private:
       const sensor_msgs::msg::Image::ConstSharedPtr &color_msg,
       const sensor_msgs::msg::Image::ConstSharedPtr &depth_msg);
 
+  void handleColorFrame(
+      const sensor_msgs::msg::Image::ConstSharedPtr &color_msg);
+
   void handleRgbdFrame(
       const realsense2_camera_msgs::msg::RGBD::ConstSharedPtr &rgbd_msg);
 
@@ -299,7 +302,13 @@ private:
       const cv::Mat &color_image,
       const std::vector<Detection> &detections);
 
-  void drawRknnDetections(cv::Mat &display) const;
+  void drawRknnDetections(
+      cv::Mat &display,
+      const DepthSampleResult &center_depth) const;
+
+  void drawRknnProbeHud(
+      cv::Mat &display,
+      const DepthSampleResult &center_depth) const;
 #endif
 
   void updateFps();
@@ -324,6 +333,8 @@ private:
   bool enable_bpu_ = false;
   bool enable_bpu_ocr_ = false;
   bool enable_rknn_ = false;
+  bool require_depth_ = false;
+  bool require_camera_info_ = true;
   bool use_rgbd_ = false;
   bool qr_preprocess_enabled_ = true;
   bool hover_active_ = false;
@@ -352,6 +363,8 @@ private:
 
   rclcpp::Time last_frame_time_;
   double smoothed_fps_ = 0.0;
+  double last_callback_ms_ = 0.0;
+  std::string last_input_mode_{"color"};
   std::string last_published_package_barcode_;
 
   CodeStabilityState shelf_code_state_;
@@ -383,6 +396,10 @@ private:
 #if DRONE_PERCEPTION_HAS_RKNN
   std::unique_ptr<RknnYoloDetector> rknn_detector_;
   std::vector<Detection> last_rknn_detections_;
+  RknnYoloDetector::InferenceTimingStats last_rknn_timing_{};
+  double rknn_weight_mib_ = 0.0;
+  double rknn_internal_mib_ = 0.0;
+  double rknn_dma_mib_ = 0.0;
 #endif
 
   // ZBar 调试字段（BPU / RKNN 共用）
@@ -396,6 +413,7 @@ private:
   message_filters::Subscriber<sensor_msgs::msg::Image> color_sub_;
   message_filters::Subscriber<sensor_msgs::msg::Image> depth_sub_;
   std::shared_ptr<message_filters::Synchronizer<ColorDepthSyncPolicy>> color_depth_sync_;
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr color_only_sub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
   rclcpp::Subscription<realsense2_camera_msgs::msg::RGBD>::SharedPtr rgbd_sub_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr hover_active_sub_;

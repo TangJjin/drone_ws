@@ -135,7 +135,7 @@ bool isValidShelfCaptureCode(const std::string &code)
       std::all_of(tail.begin(), tail.end(), is_digit);
 }
 
-#if DRONE_PERCEPTION_HAS_BPU
+// ZBar 解析辅助（BPU / RKNN 共用）
 struct ParsedVisualCode
 {
   std::string category;

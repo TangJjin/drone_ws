@@ -743,19 +743,34 @@ void QrVisionNode::rknnWorkerLoop(std::size_t worker_index)
       const auto wall_t1 = SteadyClock::now();
       const double wall_ms = elapsedMs(wall_t0, wall_t1);
 
+      // 深度：在所有预测框中取分数最高框，采样其几何中心深度（软对齐 depth）
       DepthSampleResult center_depth{};
-      if (task.depth) {
+      int best_det_index = -1;
+      float best_det_score = -1.0F;
+      for (std::size_t di = 0; di < detections.size(); ++di) {
+        if (detections[di].score > best_det_score) {
+          best_det_score = detections[di].score;
+          best_det_index = static_cast<int>(di);
+        }
+      }
+      if (task.depth && best_det_index >= 0) {
         try {
           const auto depth_bridge = cv_bridge::toCvShare(task.depth);
           if (depth_bridge && !depth_bridge->image.empty() &&
               depth_bridge->image.cols == color_bridge->image.cols &&
               depth_bridge->image.rows == color_bridge->image.rows)
           {
+            const Detection &best = detections[static_cast<std::size_t>(best_det_index)];
             center_depth = depth_processor_.sampleAt(
                 depth_bridge->image,
-                color_bridge->image.cols / 2,
-                color_bridge->image.rows / 2,
+                best.center.x,
+                best.center.y,
                 sample_radius_px_);
+            if (center_depth.has_valid_depth) {
+              detections[static_cast<std::size_t>(best_det_index)].has_depth = true;
+              detections[static_cast<std::size_t>(best_det_index)].depth_m =
+                  center_depth.depth_m;
+            }
           }
         } catch (const cv_bridge::Exception &) {
         }
@@ -1612,17 +1627,20 @@ void QrVisionNode::drawRknnDetections(
     cv::Mat &display,
     const DepthSampleResult &center_depth) const
 {
-  // 与 rknn_model_probe 一致：绿框 + 类名/分数/深度提示
+  // 绿框 + 类名/分数；仅最高分框显示其中心深度
   for (const Detection &detection : last_rknn_detections_) {
     cv::rectangle(display, detection.box, cv::Scalar(0, 255, 0), 2);
     const char *class_name = RknnYoloDetector::className(detection.class_id);
-    const std::string label = center_depth.has_valid_depth
-        ? cv::format(
-            "%s %.2f  center_depth %.2fm",
-            class_name,
-            detection.score,
-            center_depth.depth_m)
-        : cv::format("%s %.2f  depth n/a", class_name, detection.score);
+    std::string label;
+    if (detection.has_depth) {
+      label = cv::format(
+          "%s %.2f  depth %.2fm (best)",
+          class_name,
+          detection.score,
+          detection.depth_m);
+    } else {
+      label = cv::format("%s %.2f", class_name, detection.score);
+    }
     const int label_y = std::max(20, detection.box.y - 6);
     cv::putText(
         display,
@@ -1634,6 +1652,7 @@ void QrVisionNode::drawRknnDetections(
         1,
         cv::LINE_AA);
   }
+  (void)center_depth;
 }
 
 void QrVisionNode::drawRknnProbeHud(
@@ -1694,8 +1713,10 @@ void QrVisionNode::drawRknnProbeHud(
       has_camera_info_ ? "ready" : "waiting"));
   put_line(
       center_depth.has_valid_depth
-          ? cv::format("Center depth %.3fm (soft-aligned latest depth)", center_depth.depth_m)
-          : std::string("Center depth n/a (soft depth unavailable/mismatch)"));
+          ? cv::format(
+              "Best-box depth %.3fm (max-score det center, soft depth)",
+              center_depth.depth_m)
+          : std::string("Best-box depth n/a (no det / soft depth unavailable)"));
   put_line(cv::format(
       "3-context RKNN memory: weight %.1f MiB  internal %.1f MiB  DMA %.1f MiB",
       rknn_weight_mib_,

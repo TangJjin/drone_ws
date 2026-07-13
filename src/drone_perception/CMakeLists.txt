@@ -110,6 +110,7 @@ target_compile_options(qr_vision_node
 )
 
 ament_target_dependencies(qr_vision_node
+  ament_index_cpp
   cv_bridge
   drone_msgs
   image_geometry
@@ -155,9 +156,9 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     sensor_msgs
   )
 
+  # 路径 B：9 输出 YOLO11（实现在 rknn_yolo_detector.*）
   add_library(rknn_yolo_detector STATIC
     src/rknn_yolo_detector.cpp
-    src/yolo_postprocessor.cpp
   )
 
   target_compile_features(rknn_yolo_detector PUBLIC cxx_std_17)
@@ -181,8 +182,6 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     realsense2::realsense2
   )
 
-  # 路径 B：package/qrcode/shelf_tag 三类 9 输出 YOLO11
-  # 检测器+后处理都在 package_qr_shelf_rknn_probe.cpp 单文件内（不改 rknn_model_probe）
   add_executable(package_qr_shelf_rknn_probe
     src/package_qr_shelf_rknn_probe.cpp
     src/depth_processor.cpp
@@ -207,9 +206,24 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   )
 
   target_link_libraries(package_qr_shelf_rknn_probe
+    rknn_yolo_detector
     ${OpenCV_LIBS}
     ${RKNN_RUNTIME_SO}
     realsense2::realsense2
+  )
+
+  # 业务节点接入路径 B RKNN（仅 ZBar 解二维码，不接 OCR）
+  target_include_directories(qr_vision_node
+    PRIVATE
+    ${RKNN_INCLUDE}
+  )
+  target_link_libraries(qr_vision_node
+    rknn_yolo_detector
+    ${RKNN_RUNTIME_SO}
+  )
+  target_compile_definitions(qr_vision_node
+    PRIVATE
+    DRONE_PERCEPTION_HAS_RKNN=1
   )
 
   install(TARGETS
@@ -228,6 +242,10 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     DESTINATION share/${PROJECT_NAME}/models
   )
 else()
+  target_compile_definitions(qr_vision_node
+    PRIVATE
+    DRONE_PERCEPTION_HAS_RKNN=0
+  )
   message(STATUS
     "Skipping standalone RKNN detector library because RKNN runtime is unavailable. "
     "Set RKNN_INCLUDE and RKNN_LIB so that ${RKNN_RUNTIME_SO} exists to enable it.")

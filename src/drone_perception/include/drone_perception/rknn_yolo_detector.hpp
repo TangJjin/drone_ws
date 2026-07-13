@@ -8,71 +8,125 @@
 #include "rknn_api.h"
 
 #include "drone_perception/detection.hpp"
-#include "drone_perception/yolo_postprocessor.hpp"
 
+// 路径 B：YOLO11 9 输出（box/cls/sum × 3 尺度）+ DFL 后处理。
+// 类别：0=qrcode, 1=package, 2=shelf_tag
+// 默认 conf=0.5；原生 FP16 zero-copy + RKNN_FLAG_PRIOR_HIGH。
 class RknnYoloDetector
 {
 public:
-    struct InferenceTimingStats
-    {
-        double preprocess_ms = 0.0;
-        double input_prepare_ms = 0.0;
-        double rknn_run_ms = 0.0;
-        double output_get_ms = 0.0;
-        double postprocess_ms = 0.0;
-        double detector_total_ms = 0.0;
-    };
+  static constexpr int kClassCount = 3;
+  static constexpr float kConfThresh = 0.5F;
+  static constexpr float kNmsThresh = 0.45F;
 
-    explicit RknnYoloDetector(
-        const std::string &model_path,
-        rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2);
-    ~RknnYoloDetector();
+  struct InferenceTimingStats
+  {
+    double preprocess_ms = 0.0;
+    double input_prepare_ms = 0.0;
+    double rknn_run_ms = 0.0;
+    double output_get_ms = 0.0;
+    double postprocess_ms = 0.0;
+    double detector_total_ms = 0.0;
+  };
 
-    std::vector<Detection> infer(const cv::Mat &rgb_image);
+  explicit RknnYoloDetector(
+    const std::string &model_path,
+    rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2);
+  ~RknnYoloDetector();
 
-    const InferenceTimingStats &lastTiming() const;
+  RknnYoloDetector(const RknnYoloDetector &) = delete;
+  RknnYoloDetector &operator=(const RknnYoloDetector &) = delete;
 
-    rknn_mem_size memorySize() const;
+  std::vector<Detection> infer(const cv::Mat &rgb_image);
 
-    double lastRknnRunMs() const;
+  const InferenceTimingStats &lastTiming() const;
+  rknn_mem_size memorySize() const;
+  double lastRknnRunMs() const;
+
+  static const char *className(int class_id);
 
 private:
-    struct LetterboxResult
-    {
-        cv::Mat image;
-        float scale = 1.0F;
-        int pad_x = 0;
-        int pad_y = 0;
-    };
+  enum class Layout
+  {
+    NCHW = 0,
+    NHWC = 1,
+  };
 
-    LetterboxResult makeLetterbox(const cv::Mat &rgb_image);
+  struct LetterboxResult
+  {
+    cv::Mat image;
+    float scale = 1.0F;
+    int pad_x = 0;
+    int pad_y = 0;
+  };
 
-    void loadModel(const std::string &model_path, rknn_core_mask core_mask);
+  struct OutputSlot
+  {
+    uint32_t index = 0;
+    int channels = 0;
+    int height = 0;
+    int width = 0;
+    Layout layout = Layout::NCHW;
+  };
 
-    void configureZeroCopyInput();
+  struct BranchTensor
+  {
+    const float *data = nullptr;
+    int channels = 0;
+    int height = 0;
+    int width = 0;
+    Layout layout = Layout::NCHW;
+  };
 
-    static std::vector<unsigned char> readFile(const std::string &path);
+  struct ScaleBranch
+  {
+    BranchTensor box;
+    BranchTensor cls;
+  };
 
-    // 这些参数和当前 QR YOLO RKNN 模型绑定：
-    // 输入 640x640，类别数 2，候选数 8400。
-    // 支持单输出 [1,6,8400] 和双输出 [1,4,8400] + [1,2,8400]。
-    int input_width_ = 640;
-    int input_height_ = 640;
-    int candidate_count_ = 8400;
-    uint32_t output_count_ = 0;
-    uint32_t bbox_output_index_ = 0;
-    uint32_t class_output_index_ = 0;
-    bool bbox_output_found_ = false;
-    bool class_output_found_ = false;
-    YoloPostprocessor postprocessor_{2, 0.75F, 0.35F};
+  static constexpr int kDflLen = 16;
+  static constexpr int kBoxChannels = 4 * kDflLen;
 
-    rknn_context context_ = 0;
-    rknn_tensor_mem *input_mem_ = nullptr;
-    rknn_tensor_attr native_input_attr_{};
-    cv::Mat input_fp16_view_;
-    bool zero_copy_input_ = false;
-    std::vector<unsigned char> model_data_;
-    InferenceTimingStats last_timing_;
-    cv::Mat resized_buffer_;
-    cv::Mat letterbox_buffer_;
+  LetterboxResult makeLetterbox(const cv::Mat &rgb_image);
+  void loadModel(const std::string &model_path, rknn_core_mask core_mask);
+  void configureZeroCopyInput();
+  static std::vector<unsigned char> readFile(const std::string &path);
+  static bool parseSpatialChannels(
+    const rknn_tensor_attr &attr,
+    int &channels,
+    int &height,
+    int &width,
+    Layout &layout);
+  static float readValue(const BranchTensor &tensor, int channel, int y, int x);
+  static void dflDecodeBox(
+    const BranchTensor &box,
+    int y,
+    int x,
+    float stride_x,
+    float stride_y,
+    float *xyxy);
+  std::vector<Detection> parseBranches(
+    const std::vector<ScaleBranch> &branches,
+    const cv::Size &original_size,
+    float scale,
+    int pad_x,
+    int pad_y) const;
+  void bindScaleBranches(
+    const std::vector<rknn_output> &outputs,
+    std::vector<ScaleBranch> &branches) const;
+
+  int input_width_ = 640;
+  int input_height_ = 640;
+  uint32_t output_count_ = 0;
+  std::vector<OutputSlot> output_slots_;
+
+  rknn_context context_ = 0;
+  rknn_tensor_mem *input_mem_ = nullptr;
+  rknn_tensor_attr native_input_attr_{};
+  cv::Mat input_fp16_view_;
+  bool zero_copy_input_ = false;
+  std::vector<unsigned char> model_data_;
+  InferenceTimingStats last_timing_;
+  cv::Mat resized_buffer_;
+  cv::Mat letterbox_buffer_;
 };

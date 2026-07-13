@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -48,16 +49,16 @@ static constexpr std::size_t kCameraAutoExposurePriorityControlIndex = 2U;
 static constexpr int kCameraControlsPanelWidthPx = 720;
 static constexpr int kCameraControlsPanelHeightPx = 360;
 static constexpr int kCameraControlsSendDebounceMs = 120;
-#if DRONE_PERCEPTION_HAS_BPU
+// 路径 B / BPU 共用类别 ID
 static constexpr int32_t kYoloClassQrcode = 0;
 static constexpr int32_t kYoloClassPackage = 1;
 static constexpr int32_t kYoloClassShelfTag = 2;
 static constexpr float kVisualCodeRoiPaddingXRatio = 0.15F;
 static constexpr float kVisualCodeRoiPaddingYRatio = 0.15F;
+#if DRONE_PERCEPTION_HAS_BPU
 static constexpr int kQrAdaptiveThresholdBlockSizePx = 31;
 static constexpr double kQrAdaptiveThresholdOffset = 5.0;
 static constexpr int kQrPreprocessPreviewMaxSizePx = 180;
-
 #endif
 static constexpr std::size_t kBpuInputYSize =
     static_cast<std::size_t>(kBpuInputWidthPx) *
@@ -134,7 +135,7 @@ bool isValidShelfCaptureCode(const std::string &code)
       std::all_of(tail.begin(), tail.end(), is_digit);
 }
 
-#if DRONE_PERCEPTION_HAS_BPU
+// ZBar 解析辅助（BPU / RKNN 共用）
 struct ParsedVisualCode
 {
   std::string category;
@@ -288,7 +289,6 @@ std::string formatParsedVisualCodeCategories(
 
   return categories;
 }
-#endif
 }  // namespace
 
 QrVisionNode::QrVisionNode()
@@ -298,7 +298,9 @@ QrVisionNode::QrVisionNode()
   barcode_capture_pub_ = this->create_publisher<drone_msgs::msg::BarcodeCapture>(
       barcode_capture_topic_,
       rclcpp::QoS(rclcpp::KeepLast(10)).reliable());
+  initializeRknnDetector();
   initializeBpuDetector();
+  // 本阶段不接 OCR：即使编译了 BPU 也默认关；initialize 内部会再检查 enable_bpu_ocr_
   initializeBpuOcrPipeline();
   initializeSubscriptions();
 
@@ -318,14 +320,20 @@ QrVisionNode::QrVisionNode()
 
   RCLCPP_INFO(
       get_logger(),
-      "QR D435i video stream ready. mode=%s qr_decode=true yolo_bpu=%s ocr_rec_bpu=%s color=%s depth=%s rgbd=%s camera_info=%s",
-      use_rgbd_ ? "rgbd" : "synced",
+      "QR D435i video stream ready. mode=%s qr_decode=true yolo_rknn=%s yolo_bpu=%s "
+      "ocr_rec_bpu=%s require_depth=%s require_camera_info=%s color=%s depth=%s "
+      "rgbd=%s camera_info=%s rknn_model=%s",
+      use_rgbd_ ? "rgbd" : (require_depth_ ? "synced" : "color"),
+      enable_rknn_ ? "true" : "false",
       enable_bpu_ ? "true" : "false",
       enable_bpu_ocr_ ? "true" : "false",
+      require_depth_ ? "true" : "false",
+      require_camera_info_ ? "true" : "false",
       color_topic_.c_str(),
       depth_topic_.c_str(),
       rgbd_topic_.c_str(),
-      camera_info_topic_.c_str());
+      camera_info_topic_.c_str(),
+      rknn_model_path_.c_str());
 }
 
 QrVisionNode::~QrVisionNode()
@@ -343,13 +351,17 @@ void QrVisionNode::declareParameters()
   color_topic_ = this->declare_parameter<std::string>(
       "color_topic", "/camera/camera/color/image_raw");
   depth_topic_ = this->declare_parameter<std::string>(
-      "depth_topic", "/camera/camera/aligned_depth_to_color/image_raw");
+      "depth_topic", "/camera/camera/depth/image_rect_raw");
   camera_info_topic_ = this->declare_parameter<std::string>(
       "camera_info_topic", "/camera/camera/color/camera_info");
+  // 默认不依赖 depth 同步：只订 color，并用 camera_info 作为相机就绪条件。
+  // 需要深度中心测距时：-p require_depth:=true
+  require_depth_ = this->declare_parameter<bool>("require_depth", false);
+  require_camera_info_ = this->declare_parameter<bool>("require_camera_info", true);
   rgbd_topic_ = this->declare_parameter<std::string>(
       "rgbd_topic", "/camera/camera/rgbd");
   window_name_ = this->declare_parameter<std::string>(
-      "window_name", "QR D435i View");
+      "window_name", "QR RKNN Detection");
   debug_view_ = this->declare_parameter<bool>("debug_view", true);
   qr_preprocess_enabled_ = this->declare_parameter<bool>(
       "qr_preprocess_enabled",
@@ -387,15 +399,32 @@ void QrVisionNode::declareParameters()
       "barcode_capture_jpeg_quality",
       kDefaultBarcodeCaptureJpegQuality);
 
+  // OrangePi：优先 RKNN 路径 B；OCR 本阶段默认关闭
+  enable_rknn_ = this->declare_parameter<bool>(
+      "enable_rknn",
+      DRONE_PERCEPTION_HAS_RKNN != 0);
   enable_bpu_ = this->declare_parameter<bool>(
       "enable_bpu",
-      DRONE_PERCEPTION_HAS_BPU != 0);
+      DRONE_PERCEPTION_HAS_BPU != 0 && DRONE_PERCEPTION_HAS_RKNN == 0);
   enable_bpu_ocr_ = this->declare_parameter<bool>(
       "enable_bpu_ocr",
-      DRONE_PERCEPTION_HAS_BPU != 0);
+      false);
   bpu_model_path_ = this->declare_parameter<std::string>(
       "bpu_model_path",
       "/home/sunrise/drone_ws/src/drone_perception/new_640x640_nv12.bin");
+  {
+    std::string default_rknn_model;
+    try {
+      default_rknn_model =
+          ament_index_cpp::get_package_share_directory("drone_perception") +
+          "/models/package_qrcode_shelf_tag_fp16.rknn";
+    } catch (const std::exception &) {
+      default_rknn_model = "package_qrcode_shelf_tag_fp16.rknn";
+    }
+    rknn_model_path_ = this->declare_parameter<std::string>(
+        "rknn_model_path",
+        default_rknn_model);
+  }
   ocr_rec_model_path_ = this->declare_parameter<std::string>(
       "ocr_rec_model_path",
       "/home/sunrise/drone_ws/src/drone_perception/en_PP-OCRv3_rec_48x320_rgb.bin");
@@ -513,6 +542,61 @@ void QrVisionNode::declareParameters()
         kDefaultBarcodeCaptureJpegQuality);
     barcode_capture_jpeg_quality_ = kDefaultBarcodeCaptureJpegQuality;
   }
+}
+
+void QrVisionNode::initializeRknnDetector()
+{
+#if DRONE_PERCEPTION_HAS_RKNN
+  if (!enable_rknn_) {
+    return;
+  }
+
+  if (rknn_model_path_.empty()) {
+    RCLCPP_WARN(
+        get_logger(),
+        "RKNN inference is enabled but rknn_model_path is empty");
+    enable_rknn_ = false;
+    return;
+  }
+
+  try {
+    rknn_detector_ = std::make_unique<RknnYoloDetector>(rknn_model_path_);
+    try {
+      const rknn_mem_size memory = rknn_detector_->memorySize();
+      rknn_weight_mib_ = static_cast<double>(memory.total_weight_size) / (1024.0 * 1024.0);
+      rknn_internal_mib_ = static_cast<double>(memory.total_internal_size) / (1024.0 * 1024.0);
+      rknn_dma_mib_ = static_cast<double>(memory.total_dma_allocated_size) / (1024.0 * 1024.0);
+    } catch (const std::exception &) {
+      rknn_weight_mib_ = 0.0;
+      rknn_internal_mib_ = 0.0;
+      rknn_dma_mib_ = 0.0;
+    }
+    RCLCPP_INFO(
+        get_logger(),
+        "RKNN path-B detector initialized. model=%s conf=%.2f classes=qrcode/package/shelf_tag "
+        "mem weight=%.1fMiB internal=%.1fMiB dma=%.1fMiB",
+        rknn_model_path_.c_str(),
+        RknnYoloDetector::kConfThresh,
+        rknn_weight_mib_,
+        rknn_internal_mib_,
+        rknn_dma_mib_);
+  } catch (const std::exception &e) {
+    rknn_detector_.reset();
+    enable_rknn_ = false;
+    RCLCPP_ERROR(
+        get_logger(),
+        "Failed to initialize RKNN detector: %s",
+        e.what());
+  }
+#else
+  if (enable_rknn_) {
+    RCLCPP_WARN(
+        get_logger(),
+        "RKNN inference requested but this build has no RKNN runtime "
+        "(set RKNN_INCLUDE/RKNN_LIB when building)");
+    enable_rknn_ = false;
+  }
+#endif
 }
 
 void QrVisionNode::initializeBpuDetector()
@@ -1150,7 +1234,227 @@ std::vector<QrVisionNode::DecodedVisualCode> QrVisionNode::decodeVisualCodesFrom
 
   return decoded_codes;
 }
+#endif
 
+#if DRONE_PERCEPTION_HAS_RKNN
+std::vector<QrVisionNode::DecodedVisualCode>
+QrVisionNode::decodeVisualCodesFromRknnDetections(
+    const cv::Mat &color_image,
+    const std::vector<Detection> &detections)
+{
+  std::vector<DecodedVisualCode> decoded_codes;
+  debug_qr_preprocess_preview_.release();
+  debug_qr_preprocess_mode_.clear();
+
+  if (color_image.empty() || detections.empty()) {
+    return decoded_codes;
+  }
+
+  zbar::ImageScanner scanner;
+  configureVisualCodeScanner(scanner);
+
+  const cv::Point2f image_center(
+      static_cast<float>(color_image.cols) * 0.5F,
+      static_cast<float>(color_image.rows) * 0.5F);
+
+  for (const Detection &detection : detections) {
+    if (detection.class_id != kYoloClassQrcode) {
+      continue;
+    }
+
+    const cv::Rect &box = detection.box;
+    if (box.width <= 1 || box.height <= 1) {
+      continue;
+    }
+
+    const float pad_x = static_cast<float>(box.width) * kVisualCodeRoiPaddingXRatio;
+    const float pad_y = static_cast<float>(box.height) * kVisualCodeRoiPaddingYRatio;
+    const int roi_x_min = std::max(0, static_cast<int>(box.x - pad_x));
+    const int roi_y_min = std::max(0, static_cast<int>(box.y - pad_y));
+    const int roi_x_max = std::min(
+        color_image.cols, static_cast<int>(box.x + box.width + pad_x));
+    const int roi_y_max = std::min(
+        color_image.rows, static_cast<int>(box.y + box.height + pad_y));
+    const cv::Rect roi(
+        roi_x_min,
+        roi_y_min,
+        std::max(1, roi_x_max - roi_x_min),
+        std::max(1, roi_y_max - roi_y_min));
+
+    if (roi.x + roi.width > color_image.cols ||
+        roi.y + roi.height > color_image.rows)
+    {
+      continue;
+    }
+
+    cv::Mat raw_gray_roi;
+    cv::cvtColor(color_image(roi), raw_gray_roi, cv::COLOR_BGR2GRAY);
+    if (!raw_gray_roi.isContinuous()) {
+      raw_gray_roi = raw_gray_roi.clone();
+    }
+
+    debug_qr_preprocess_preview_ = raw_gray_roi.clone();
+    debug_qr_preprocess_mode_ = "rknn_raw_gray";
+
+    zbar::Image zbar_image(
+        static_cast<unsigned int>(raw_gray_roi.cols),
+        static_cast<unsigned int>(raw_gray_roi.rows),
+        "Y800",
+        raw_gray_roi.data,
+        static_cast<unsigned long>(raw_gray_roi.total()));
+
+    const int raw_count = scanner.scan(zbar_image);
+    if (raw_count <= 0) {
+      RCLCPP_DEBUG_THROTTLE(
+          get_logger(),
+          *get_clock(),
+          log_throttle_ms_,
+          "zbar no code rknn roi=%dx%d at=%d,%d score=%.3f",
+          raw_gray_roi.cols,
+          raw_gray_roi.rows,
+          roi.x,
+          roi.y,
+          detection.score);
+      zbar_image.set_data(nullptr, 0U);
+      continue;
+    }
+
+    for (auto symbol = zbar_image.symbol_begin();
+         symbol != zbar_image.symbol_end();
+         ++symbol)
+    {
+      const std::string raw_code = symbol->get_data();
+      const std::string code = trimAndUppercase(raw_code);
+      const std::string symbol_type = symbol->get_type_name();
+      const bool is_qr_code = symbol_type.find("QR") != std::string::npos;
+      const std::vector<ParsedVisualCode> parsed_codes = parseVisualCodes(code);
+
+      debug_raw_symbol_ = code;
+      debug_raw_symbol_type_ = symbol_type;
+
+      if (!is_qr_code || parsed_codes.empty()) {
+        continue;
+      }
+
+      const float dx = static_cast<float>(detection.center.x) - image_center.x;
+      const float dy = static_cast<float>(detection.center.y) - image_center.y;
+      for (const ParsedVisualCode &parsed_code : parsed_codes) {
+        decoded_codes.push_back({
+            parsed_code.code,
+            parsed_code.category,
+            symbol_type,
+            static_cast<double>(dx * dx + dy * dy)});
+      }
+    }
+    zbar_image.set_data(nullptr, 0U);
+  }
+
+  std::sort(
+      decoded_codes.begin(),
+      decoded_codes.end(),
+      [](const DecodedVisualCode &a, const DecodedVisualCode &b) {
+        return a.center_distance_sq < b.center_distance_sq;
+      });
+  return decoded_codes;
+}
+
+void QrVisionNode::drawRknnDetections(
+    cv::Mat &display,
+    const DepthSampleResult &center_depth) const
+{
+  // 与 rknn_model_probe 一致：绿框 + 类名/分数/深度提示
+  for (const Detection &detection : last_rknn_detections_) {
+    cv::rectangle(display, detection.box, cv::Scalar(0, 255, 0), 2);
+    const char *class_name = RknnYoloDetector::className(detection.class_id);
+    const std::string label = center_depth.has_valid_depth
+        ? cv::format(
+            "%s %.2f  center_depth %.2fm",
+            class_name,
+            detection.score,
+            center_depth.depth_m)
+        : cv::format("%s %.2f  depth n/a", class_name, detection.score);
+    const int label_y = std::max(20, detection.box.y - 6);
+    cv::putText(
+        display,
+        label,
+        cv::Point(detection.box.x, label_y),
+        cv::FONT_HERSHEY_SIMPLEX,
+        0.52,
+        cv::Scalar(255, 0, 255),
+        1,
+        cv::LINE_AA);
+  }
+}
+
+void QrVisionNode::drawRknnProbeHud(
+    cv::Mat &display,
+    const DepthSampleResult &center_depth) const
+{
+  // 对齐 rknn_model_probe::displayResult 的 HUD 风格
+  const cv::Scalar text_color(255, 0, 255);
+  const double npu_capacity_fps = last_rknn_timing_.rknn_run_ms > 0.0
+      ? 1000.0 / last_rknn_timing_.rknn_run_ms
+      : 0.0;
+
+  int y = 30;
+  const auto put_line = [&](const std::string &line) {
+    cv::putText(
+        display,
+        line,
+        cv::Point(12, y),
+        cv::FONT_HERSHEY_SIMPLEX,
+        0.54,
+        text_color,
+        1,
+        cv::LINE_AA);
+    y += 26;
+  };
+
+  put_line(cv::format(
+      "FPS %.1f  Callback %.1f ms  NPU cap %.1f FPS  mode=%s",
+      smoothed_fps_,
+      last_callback_ms_,
+      npu_capacity_fps,
+      last_input_mode_.c_str()));
+  put_line(cv::format(
+      "Pre %.2f  In %.2f  Run %.2f  Out %.2f  Post %.2f  Total %.2f ms",
+      last_rknn_timing_.preprocess_ms,
+      last_rknn_timing_.input_prepare_ms,
+      last_rknn_timing_.rknn_run_ms,
+      last_rknn_timing_.output_get_ms,
+      last_rknn_timing_.postprocess_ms,
+      last_rknn_timing_.detector_total_ms));
+  put_line(cv::format(
+      "RGB %dx%d  detections=%zu  camera_info=%s",
+      display.cols,
+      display.rows,
+      last_rknn_detections_.size(),
+      has_camera_info_ ? "ready" : "waiting"));
+  put_line(
+      center_depth.has_valid_depth
+          ? cv::format("Center depth %.3fm", center_depth.depth_m)
+          : std::string("Center depth n/a (color-only, no depth sync)"));
+  put_line(cv::format(
+      "RKNN memory: weight %.1f MiB  internal %.1f MiB  DMA %.1f MiB",
+      rknn_weight_mib_,
+      rknn_internal_mib_,
+      rknn_dma_mib_));
+
+  // 稳定解码结果（业务侧额外信息）
+  if (!pkg_code_state_.stable_code.empty() ||
+      !sku_code_state_.stable_code.empty() ||
+      !debug_raw_symbol_.empty())
+  {
+    put_line(cv::format(
+        "QR pkg=%s sku=%s raw=%s",
+        pkg_code_state_.stable_code.empty() ? "-" : pkg_code_state_.stable_code.c_str(),
+        sku_code_state_.stable_code.empty() ? "-" : sku_code_state_.stable_code.c_str(),
+        debug_raw_symbol_.empty() ? "-" : debug_raw_symbol_.c_str()));
+  }
+}
+#endif
+
+#if DRONE_PERCEPTION_HAS_BPU
 bool QrVisionNode::encodeFrameCaptureJpeg(
     const cv::Mat &color_image,
     std::vector<uint8_t> &jpeg_data)
@@ -1360,6 +1664,14 @@ void QrVisionNode::initializeSubscriptions()
           this,
           std::placeholders::_1));
 
+  camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+      camera_info_topic_,
+      rclcpp::SensorDataQoS(),
+      std::bind(
+          &QrVisionNode::handleCameraInfo,
+          this,
+          std::placeholders::_1));
+
   if (use_rgbd_) {
     rgbd_sub_ = this->create_subscription<realsense2_camera_msgs::msg::RGBD>(
         rgbd_topic_,
@@ -1371,44 +1683,67 @@ void QrVisionNode::initializeSubscriptions()
 
     RCLCPP_INFO(
         get_logger(),
-        "Using RGBD input. rgbd=%s",
-        rgbd_topic_.c_str());
+        "Using RGBD input. rgbd=%s camera_info=%s require_camera_info=%s",
+        rgbd_topic_.c_str(),
+        camera_info_topic_.c_str(),
+        require_camera_info_ ? "true" : "false");
     return;
   }
 
-  color_sub_.subscribe(this, color_topic_, rmw_qos_profile_sensor_data);
-  depth_sub_.subscribe(this, depth_topic_, rmw_qos_profile_sensor_data);
+  if (require_depth_) {
+    color_sub_.subscribe(this, color_topic_, rmw_qos_profile_sensor_data);
+    depth_sub_.subscribe(this, depth_topic_, rmw_qos_profile_sensor_data);
 
-  color_depth_sync_ = std::make_shared<message_filters::Synchronizer<ColorDepthSyncPolicy>>(
-      ColorDepthSyncPolicy(10),
-      color_sub_,
-      depth_sub_);
-  color_depth_sync_->registerCallback(std::bind(
-      &QrVisionNode::handleSyncedFrame,
-      this,
-      std::placeholders::_1,
-      std::placeholders::_2));
+    color_depth_sync_ = std::make_shared<message_filters::Synchronizer<ColorDepthSyncPolicy>>(
+        ColorDepthSyncPolicy(10),
+        color_sub_,
+        depth_sub_);
+    color_depth_sync_->registerCallback(std::bind(
+        &QrVisionNode::handleSyncedFrame,
+        this,
+        std::placeholders::_1,
+        std::placeholders::_2));
 
-  camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
-      camera_info_topic_,
+    RCLCPP_INFO(
+        get_logger(),
+        "Using synced color+depth. color=%s depth=%s camera_info=%s require_camera_info=%s",
+        color_topic_.c_str(),
+        depth_topic_.c_str(),
+        camera_info_topic_.c_str(),
+        require_camera_info_ ? "true" : "false");
+    return;
+  }
+
+  // 默认：仅 color，相机就绪看 camera_info
+  color_only_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
+      color_topic_,
       rclcpp::SensorDataQoS(),
       std::bind(
-          &QrVisionNode::handleCameraInfo,
+          &QrVisionNode::handleColorFrame,
           this,
           std::placeholders::_1));
 
   RCLCPP_INFO(
       get_logger(),
-      "Using synced image input. color=%s depth=%s camera_info=%s",
+      "Using color-only input (no depth sync). color=%s camera_info=%s "
+      "require_camera_info=%s",
       color_topic_.c_str(),
-      depth_topic_.c_str(),
-      camera_info_topic_.c_str());
+      camera_info_topic_.c_str(),
+      require_camera_info_ ? "true" : "false");
 }
 
 void QrVisionNode::handleCameraInfo(
     const sensor_msgs::msg::CameraInfo::ConstSharedPtr &camera_info_msg)
 {
   (void)camera_info_msg;
+  if (!has_camera_info_) {
+    RCLCPP_INFO(
+        get_logger(),
+        "camera_info received: topic=%s size=%ux%u — camera ready for color pipeline",
+        camera_info_topic_.c_str(),
+        camera_info_msg->width,
+        camera_info_msg->height);
+  }
   has_camera_info_ = true;
 }
 
@@ -1431,6 +1766,16 @@ void QrVisionNode::handleSyncedFrame(
     const sensor_msgs::msg::Image::ConstSharedPtr &color_msg,
     const sensor_msgs::msg::Image::ConstSharedPtr &depth_msg)
 {
+  if (require_camera_info_ && !has_camera_info_) {
+    RCLCPP_WARN_THROTTLE(
+        get_logger(),
+        *get_clock(),
+        log_throttle_ms_,
+        "waiting for camera_info on %s before processing frames",
+        camera_info_topic_.c_str());
+    return;
+  }
+
   const auto callback_t0 = SteadyClock::now();
 
   cv_bridge::CvImageConstPtr color_bridge;
@@ -1453,6 +1798,36 @@ void QrVisionNode::handleSyncedFrame(
   }
 
   processFrame(color_bridge, depth_bridge, callback_t0, "synced");
+}
+
+void QrVisionNode::handleColorFrame(
+    const sensor_msgs::msg::Image::ConstSharedPtr &color_msg)
+{
+  if (require_camera_info_ && !has_camera_info_) {
+    RCLCPP_WARN_THROTTLE(
+        get_logger(),
+        *get_clock(),
+        log_throttle_ms_,
+        "waiting for camera_info on %s before processing color frames",
+        camera_info_topic_.c_str());
+    return;
+  }
+
+  const auto callback_t0 = SteadyClock::now();
+  cv_bridge::CvImageConstPtr color_bridge;
+  try {
+    color_bridge = cv_bridge::toCvShare(color_msg, "bgr8");
+  } catch (const cv_bridge::Exception &ex) {
+    RCLCPP_ERROR_THROTTLE(
+        get_logger(),
+        *get_clock(),
+        log_throttle_ms_,
+        "cv_bridge color conversion failed: %s",
+        ex.what());
+    return;
+  }
+
+  processFrame(color_bridge, cv_bridge::CvImageConstPtr{}, callback_t0, "color");
 }
 
 void QrVisionNode::handleRgbdFrame(
@@ -1489,8 +1864,14 @@ void QrVisionNode::processFrame(
     const std::chrono::steady_clock::time_point &callback_t0,
     const char *input_mode)
 {
-  if (color_bridge->image.cols != depth_bridge->image.cols ||
-      color_bridge->image.rows != depth_bridge->image.rows)
+  if (!color_bridge || color_bridge->image.empty()) {
+    return;
+  }
+
+  const bool has_depth = static_cast<bool>(depth_bridge) && !depth_bridge->image.empty();
+  if (has_depth &&
+      (color_bridge->image.cols != depth_bridge->image.cols ||
+       color_bridge->image.rows != depth_bridge->image.rows))
   {
     RCLCPP_WARN_THROTTLE(
         get_logger(),
@@ -1506,18 +1887,76 @@ void QrVisionNode::processFrame(
 
   updateFps();
 
-  const int center_u = color_bridge->image.cols / 2;
-  const int center_v = color_bridge->image.rows / 2;
-  const DepthSampleResult center_depth = depth_processor_.sampleAt(
-      depth_bridge->image,
-      center_u,
-      center_v,
-      sample_radius_px_);
+  DepthSampleResult center_depth{};
+  if (has_depth) {
+    const int center_u = color_bridge->image.cols / 2;
+    const int center_v = color_bridge->image.rows / 2;
+    center_depth = depth_processor_.sampleAt(
+        depth_bridge->image,
+        center_u,
+        center_v,
+        sample_radius_px_);
+  }
+
+#if DRONE_PERCEPTION_HAS_RKNN
+  last_rknn_detections_.clear();
+  if (enable_rknn_ && rknn_detector_) {
+    try {
+      cv::Mat rgb;
+      if (color_bridge->image.channels() == 3) {
+        // 业务 color 一般为 BGR；检测器要求 RGB
+        cv::cvtColor(color_bridge->image, rgb, cv::COLOR_BGR2RGB);
+      } else {
+        rgb = color_bridge->image;
+      }
+      const auto infer_t0 = SteadyClock::now();
+      last_rknn_detections_ = rknn_detector_->infer(rgb);
+      const auto infer_t1 = SteadyClock::now();
+      last_rknn_timing_ = rknn_detector_->lastTiming();
+      const auto &timing = last_rknn_timing_;
+      int qrcode_count = 0;
+      int package_count = 0;
+      int shelf_tag_count = 0;
+      for (const Detection &detection : last_rknn_detections_) {
+        if (detection.class_id == kYoloClassQrcode) {
+          ++qrcode_count;
+        } else if (detection.class_id == kYoloClassPackage) {
+          ++package_count;
+        } else if (detection.class_id == kYoloClassShelfTag) {
+          ++shelf_tag_count;
+        }
+      }
+      RCLCPP_INFO_THROTTLE(
+          get_logger(),
+          *get_clock(),
+          log_throttle_ms_,
+          "RKNN path-B ok mode=%s total_ms=%.2f run_ms=%.2f prepare_ms=%.2f "
+          "det=%zu qr=%d pkg=%d shelf=%d",
+          input_mode,
+          timing.detector_total_ms,
+          timing.rknn_run_ms,
+          timing.input_prepare_ms,
+          last_rknn_detections_.size(),
+          qrcode_count,
+          package_count,
+          shelf_tag_count);
+      (void)infer_t0;
+      (void)infer_t1;
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR_THROTTLE(
+          get_logger(),
+          *get_clock(),
+          log_throttle_ms_,
+          "RKNN inference failed: %s",
+          e.what());
+    }
+  }
+#endif
 
 #if DRONE_PERCEPTION_HAS_BPU
   last_bpu_detections_.clear();
 
-  if (enable_bpu_ && bpu_detector_) {
+  if (!enable_rknn_ && enable_bpu_ && bpu_detector_) {
     const auto preprocess_t0 = SteadyClock::now();
     const bool input_ready = prepareBpuInput(color_bridge->image);
     const auto preprocess_t1 = SteadyClock::now();
@@ -1575,49 +2014,41 @@ void QrVisionNode::processFrame(
     }
   }
 
-  if (enable_bpu_ocr_ && bpu_ocr_pipeline_) {
-    try {
-      recognizeShelfTagFromDetections(
-          color_bridge->image,
-          last_bpu_detections_,
-          input_mode);
-    } catch (const std::exception &e) {
-      last_ocr_regions_.clear();
-      updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
-
-      RCLCPP_ERROR_THROTTLE(
-          get_logger(),
-          *get_clock(),
-          log_throttle_ms_,
-          "BPU OCR failed: %s",
-          e.what());
-    }
-  } else {
-    last_ocr_regions_.clear();
-    updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
-  }
+  // 本阶段不接 OCR 文字识别
+  last_ocr_regions_.clear();
+  updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
 #endif
 
+#if DRONE_PERCEPTION_HAS_RKNN
+  if (enable_rknn_) {
+    updateVisualCodeStability(
+        decodeVisualCodesFromRknnDetections(
+            color_bridge->image, last_rknn_detections_));
+  }
+#endif
 #if DRONE_PERCEPTION_HAS_BPU
-  updateVisualCodeStability(
-      decodeVisualCodesFromDetections(color_bridge->image, last_bpu_detections_));
-#else
+  if (!enable_rknn_) {
+    updateVisualCodeStability(
+        decodeVisualCodesFromDetections(color_bridge->image, last_bpu_detections_));
+  }
+#endif
+#if !DRONE_PERCEPTION_HAS_RKNN && !DRONE_PERCEPTION_HAS_BPU
   updateVisualCodeStability({});
   updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
 #endif
 
-#if DRONE_PERCEPTION_HAS_BPU
-  bufferPackageCaptureCandidate(color_bridge->image);
-#else
+  // 第一版：不做 package 抓拍缓冲，仅保留现有发布钩子
   publishBarcodeCapture(color_bridge->image);
-#endif
+
+  const auto callback_t1 = SteadyClock::now();
+  last_callback_ms_ = elapsedMs(callback_t0, callback_t1);
+  last_input_mode_ = input_mode != nullptr ? input_mode : "color";
 
   if (debug_view_)
   {
     displayDebugFrame(color_bridge->image, center_depth);
   }
 
-  const auto callback_t1 = SteadyClock::now();
   if (center_depth.has_valid_depth)
   {
     RCLCPP_INFO_THROTTLE(
@@ -1632,7 +2063,7 @@ void QrVisionNode::processFrame(
         color_bridge->image.rows,
         center_depth.depth_m,
         has_camera_info_ ? "true" : "false",
-        elapsedMs(callback_t0, callback_t1),
+        last_callback_ms_,
         debug_view_ ? "true" : "false");
   }
   else
@@ -1648,7 +2079,7 @@ void QrVisionNode::processFrame(
         color_bridge->image.cols,
         color_bridge->image.rows,
         has_camera_info_ ? "true" : "false",
-        elapsedMs(callback_t0, callback_t1),
+        last_callback_ms_,
         debug_view_ ? "true" : "false");
   }
 }
@@ -1658,6 +2089,17 @@ void QrVisionNode::displayDebugFrame(
     const DepthSampleResult &center_depth)
 {
   cv::Mat display = color_image.clone();
+
+#if DRONE_PERCEPTION_HAS_RKNN
+  // RKNN 模式：完整搬迁 rknn_model_probe 风格 HUD + 检测框
+  if (enable_rknn_) {
+    drawRknnDetections(display, center_depth);
+    drawRknnProbeHud(display, center_depth);
+    cv::imshow(window_name_, display);
+    cv::waitKey(1);
+    return;
+  }
+#endif
 
   cv::Mat overlay = display.clone();
   const int panel_bottom = enable_bpu_ocr_ ? 236 : 164;
@@ -1740,10 +2182,9 @@ void QrVisionNode::displayDebugFrame(
   visual_code_y = draw_visual_code_line(sku_code_state_, "sku", visual_code_y);
   (void)draw_visual_code_line(pkg_code_state_, "pkg", visual_code_y);
 
-#if DRONE_PERCEPTION_HAS_BPU
-  // Show raw zbar output before parsing filter
   if (!debug_raw_symbol_.empty()) {
-    const std::string raw_line = cv::format("Raw zbar: %s %s",
+    const std::string raw_line = cv::format(
+        "Raw zbar: %s %s",
         debug_raw_symbol_type_.c_str(),
         fit_status_text(debug_raw_symbol_).c_str());
     cv::putText(
@@ -1756,6 +2197,7 @@ void QrVisionNode::displayDebugFrame(
         1);
   }
 
+#if DRONE_PERCEPTION_HAS_BPU
   drawBpuDetections(display);
   drawOcrRegions(display);
   drawQrPreprocessPreview(display);

@@ -480,11 +480,12 @@ private:
             detection.center.x, detection.center.y, sample.depth_m, *frame.color_info);
         }
         cv::rectangle(display, detection.box, cv::Scalar(0, 255, 0), 2);
+        const char *class_name = RknnYoloDetector::className(detection.class_id);
         const std::string label = sample.has_valid_depth
-          ? cv::format("class %d %.2f  %.2fm XYZ(%.2f,%.2f,%.2f)",
-            detection.class_id, detection.score, sample.depth_m, detection.point_3d.x,
+          ? cv::format("%s %.2f  %.2fm XYZ(%.2f,%.2f,%.2f)",
+            class_name, detection.score, sample.depth_m, detection.point_3d.x,
             detection.point_3d.y, detection.point_3d.z)
-          : cv::format("class %d %.2f  depth n/a", detection.class_id, detection.score);
+          : cv::format("%s %.2f  depth n/a", class_name, detection.score);
         const int label_y = std::max(20, detection.box.y - 6);
         cv::putText(display, label, cv::Point(detection.box.x, label_y),
           cv::FONT_HERSHEY_SIMPLEX, 0.52, cv::Scalar(255, 0, 255), 1, cv::LINE_AA);
@@ -709,7 +710,7 @@ int main(int argc, char **argv)
   if (argc == 1) {
     const std::string model_path =
       ament_index_cpp::get_package_share_directory("drone_perception") +
-      "/models/qr_rk3588_FP16.rknn";
+      "/models/package_qrcode_shelf_tag_fp16.rknn";
     rclcpp::init(argc, argv);
     try {
       rclcpp::spin(std::make_shared<D435iRknnStream>(model_path));

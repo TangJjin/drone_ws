@@ -430,6 +430,10 @@ void QrVisionNode::declareParameters()
     rknn_model_path_ = this->declare_parameter<std::string>(
         "rknn_model_path",
         default_rknn_model);
+    // true：按模型 native 输入类型自动 FP16/INT8 zero-copy；false：强制 rknn_inputs_set
+    rknn_enable_zero_copy_ = this->declare_parameter<bool>(
+        "rknn_enable_zero_copy",
+        true);
   }
   ocr_rec_model_path_ = this->declare_parameter<std::string>(
       "ocr_rec_model_path",
@@ -573,7 +577,7 @@ void QrVisionNode::initializeRknnDetector()
     rknn_dma_mib_ = 0.0;
     for (std::size_t i = 0; i < kRknnWorkerCount; ++i) {
       rknn_detectors_[i] = std::make_unique<RknnYoloDetector>(
-          rknn_model_path_, core_masks[i]);
+          rknn_model_path_, core_masks[i], rknn_enable_zero_copy_);
       try {
         const rknn_mem_size memory = rknn_detectors_[i]->memorySize();
         rknn_weight_mib_ +=
@@ -586,6 +590,8 @@ void QrVisionNode::initializeRknnDetector()
       }
       rknn_core_run_ms_[i].store(0.0);
     }
+    rknn_zero_copy_mode_ = rknn_detectors_[0] ?
+      rknn_detectors_[0]->zeroCopyModeName() : "off";
     startRknnWorkers();
     rknn_consume_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(10),
@@ -594,12 +600,15 @@ void QrVisionNode::initializeRknnDetector()
         get_logger(),
         "RKNN path-B 3-worker pipeline ready. model=%s conf=%.2f "
         "workers=%zu queue_cap=%zu soft_depth_match_ms=%.0f "
+        "zero_copy=%s enable_flag=%d "
         "mem weight=%.1fMiB internal=%.1fMiB dma=%.1fMiB",
         rknn_model_path_.c_str(),
         RknnYoloDetector::kConfThresh,
         kRknnWorkerCount,
         kRknnTaskQueueCapacity,
         static_cast<double>(kDepthSoftMatchNs) / 1.0e6,
+        rknn_zero_copy_mode_.c_str(),
+        rknn_enable_zero_copy_ ? 1 : 0,
         rknn_weight_mib_,
         rknn_internal_mib_,
         rknn_dma_mib_);
@@ -945,7 +954,7 @@ void QrVisionNode::maybeReportRknnBaseline()
 
   RCLCPP_INFO(
       get_logger(),
-      "RKNN_BASELINE model=%s path=9out_3w "
+      "RKNN_BASELINE model=%s path=9out_3w zc=%s "
       "input_fps=%.2f process_fps=%.2f consume_fps=%.2f publish_fps=%.2f "
       "npu_capacity_fps=%.2f frame_age_ms=%.1f "
       "queue_drop_delta=%llu stale_delta=%llu "
@@ -956,6 +965,7 @@ void QrVisionNode::maybeReportRknnBaseline()
       "pre=%.2f in=%.2f run=%.2f out=%.2f post=%.2f total=%.2f "
       "det=%zu depth=%s debug_view=%d qr_preprocess=%d",
       model_tag.c_str(),
+      rknn_zero_copy_mode_.c_str(),
       input_fps,
       process_fps,
       consume_fps,

@@ -420,6 +420,7 @@ private:
   bool enable_bpu_ = false;
   bool enable_bpu_ocr_ = false;
   bool enable_rknn_ = false;
+  bool rknn_enable_zero_copy_ = true;
   bool require_depth_ = false;
   bool require_camera_info_ = true;
   bool use_rgbd_ = false;
@@ -525,6 +526,7 @@ private:
   double rknn_weight_mib_ = 0.0;
   double rknn_internal_mib_ = 0.0;
   double rknn_dma_mib_ = 0.0;
+  std::string rknn_zero_copy_mode_{"off"};
 #endif
 
   // ZBar 调试字段（BPU / RKNN 共用）

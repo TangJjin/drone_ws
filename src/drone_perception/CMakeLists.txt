@@ -181,9 +181,41 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     realsense2::realsense2
   )
 
+  # 路径 B：package/qrcode/shelf_tag 三类 9 输出 YOLO11
+  # 检测器+后处理都在 package_qr_shelf_rknn_probe.cpp 单文件内（不改 rknn_model_probe）
+  add_executable(package_qr_shelf_rknn_probe
+    src/package_qr_shelf_rknn_probe.cpp
+    src/depth_processor.cpp
+  )
+
+  target_compile_features(package_qr_shelf_rknn_probe PUBLIC cxx_std_17)
+
+  target_include_directories(package_qr_shelf_rknn_probe
+    PRIVATE
+    include
+    ${OpenCV_INCLUDE_DIRS}
+    ${RKNN_INCLUDE}
+  )
+
+  ament_target_dependencies(package_qr_shelf_rknn_probe
+    ament_index_cpp
+    cv_bridge
+    image_geometry
+    rclcpp
+    realsense2_camera_msgs
+    sensor_msgs
+  )
+
+  target_link_libraries(package_qr_shelf_rknn_probe
+    ${OpenCV_LIBS}
+    ${RKNN_RUNTIME_SO}
+    realsense2::realsense2
+  )
+
   install(TARGETS
     rknn_model_probe
     rknn_yolo_detector
+    package_qr_shelf_rknn_probe
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION lib/${PROJECT_NAME}
@@ -192,6 +224,7 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
   install(FILES
     qr_rk3588_FP16.rknn
     qr_rk3588_hybrid_bbox_fp16.rknn
+    package_qrcode_shelf_tag_fp16.rknn
     DESTINATION share/${PROJECT_NAME}/models
   )
 else()

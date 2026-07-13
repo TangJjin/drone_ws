@@ -1,11 +1,17 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstddef>
+#include <deque>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <cv_bridge/cv_bridge.h>
@@ -293,11 +299,45 @@ private:
       std::vector<uint8_t> &jpeg_data);
 
   void drawOcrRegions(cv::Mat &display) const;
-
-  void drawQrPreprocessPreview(cv::Mat &display) const;
 #endif
 
+  // BPU / RKNN 共用：右下角显示当前 ZBar 预处理阶段预览
+  void drawQrPreprocessPreview(cv::Mat &display) const;
+
 #if DRONE_PERCEPTION_HAS_RKNN
+  // 对齐 package_qr_shelf_rknn_probe：3 worker × 3 NPU + 队列丢旧 + stale 丢弃
+  // 深度：软对齐（color 驱动 + 最新 depth，时间窗匹配），不是硬同步、也不是永久丢弃深度
+  static constexpr std::size_t kRknnWorkerCount = 3;
+  static constexpr std::size_t kRknnTaskQueueCapacity = 3;
+  static constexpr std::int64_t kDepthSoftMatchNs = 50'000'000;  // 50ms
+
+  struct RknnFrameTask
+  {
+    std::uint64_t frame_id = 0;
+    sensor_msgs::msg::Image::ConstSharedPtr color;
+    sensor_msgs::msg::Image::ConstSharedPtr depth;  // 软附着的最新 depth
+  };
+
+  struct RknnInferResult
+  {
+    std::uint64_t frame_id = 0;
+    std::size_t worker_index = 0;
+    std::vector<Detection> detections;
+    RknnYoloDetector::InferenceTimingStats timing;
+    DepthSampleResult center_depth;
+    cv::Mat bgr_image;
+  };
+
+  void startRknnWorkers();
+  void stopRknnWorkers();
+  void rknnWorkerLoop(std::size_t worker_index);
+  void enqueueRknnColorFrame(const sensor_msgs::msg::Image::ConstSharedPtr &color_msg);
+  void handleDepthFrameSoft(const sensor_msgs::msg::Image::ConstSharedPtr &depth_msg);
+  void consumeRknnResults();
+  static bool depthSoftMatchesColor(
+      const sensor_msgs::msg::Image &color,
+      const sensor_msgs::msg::Image &depth);
+
   std::vector<DecodedVisualCode> decodeVisualCodesFromRknnDetections(
       const cv::Mat &color_image,
       const std::vector<Detection> &detections);
@@ -394,9 +434,27 @@ private:
 #endif
 
 #if DRONE_PERCEPTION_HAS_RKNN
-  std::unique_ptr<RknnYoloDetector> rknn_detector_;
+  std::array<std::unique_ptr<RknnYoloDetector>, kRknnWorkerCount> rknn_detectors_;
+  std::array<std::thread, kRknnWorkerCount> rknn_workers_;
+  std::array<std::atomic<double>, kRknnWorkerCount> rknn_core_run_ms_{};
+  std::atomic<bool> rknn_running_{false};
+  std::mutex rknn_task_mutex_;
+  std::condition_variable rknn_task_cv_;
+  std::deque<RknnFrameTask> rknn_task_queue_;
+  std::mutex rknn_result_mutex_;
+  std::optional<RknnInferResult> rknn_latest_result_;
+  std::uint64_t rknn_next_frame_id_ = 1;
+  std::uint64_t rknn_consumed_frame_id_ = 0;
+  std::atomic<std::uint64_t> rknn_dropped_count_{0};
+  std::atomic<std::uint64_t> rknn_stale_count_{0};
+  std::atomic<std::uint64_t> rknn_processed_count_{0};
+  sensor_msgs::msg::Image::ConstSharedPtr rknn_latest_depth_;
+  std::mutex rknn_depth_mutex_;
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr rknn_depth_sub_;
+  rclcpp::TimerBase::SharedPtr rknn_consume_timer_;
   std::vector<Detection> last_rknn_detections_;
   RknnYoloDetector::InferenceTimingStats last_rknn_timing_{};
+  DepthSampleResult last_rknn_center_depth_{};
   double rknn_weight_mib_ = 0.0;
   double rknn_internal_mib_ = 0.0;
   double rknn_dma_mib_ = 0.0;

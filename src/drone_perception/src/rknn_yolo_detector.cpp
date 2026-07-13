@@ -60,9 +60,10 @@ struct RknnOutputGuard
 
 RknnYoloDetector::RknnYoloDetector(
   const std::string &model_path,
-  rknn_core_mask core_mask)
+  rknn_core_mask core_mask,
+  bool enable_zero_copy)
 {
-  loadModel(model_path, core_mask);
+  loadModel(model_path, core_mask, enable_zero_copy);
 }
 
 RknnYoloDetector::~RknnYoloDetector()
@@ -116,6 +117,36 @@ const char *RknnYoloDetector::className(int class_id)
     return "unknown";
   }
   return kNames[class_id];
+}
+
+const char *RknnYoloDetector::zeroCopyModeToString(ZeroCopyMode mode)
+{
+  switch (mode) {
+    case ZeroCopyMode::Fp16:
+      return "fp16";
+    case ZeroCopyMode::Int8:
+      return "int8";
+    case ZeroCopyMode::Uint8:
+      return "uint8";
+    case ZeroCopyMode::Off:
+    default:
+      return "off";
+  }
+}
+
+RknnYoloDetector::ZeroCopyMode RknnYoloDetector::zeroCopyMode() const
+{
+  return zero_copy_mode_;
+}
+
+const char *RknnYoloDetector::zeroCopyModeName() const
+{
+  return zeroCopyModeToString(zero_copy_mode_);
+}
+
+rknn_tensor_type RknnYoloDetector::nativeInputType() const
+{
+  return native_input_type_;
 }
 
 std::vector<unsigned char> RknnYoloDetector::readFile(const std::string &path)
@@ -380,8 +411,100 @@ RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
   return LetterboxResult{letterbox_buffer_, scale, pad_x, pad_y};
 }
 
-void RknnYoloDetector::configureZeroCopyInput()
+void RknnYoloDetector::fillInt8ZeroCopyInput(const cv::Mat &rgb_u8_letterbox)
 {
+  // float = pixel / 255（与 mean0/std255 一致）
+  // int8  = clamp(round(float / scale) + zp)
+  // 当 zp=-128 且 scale≈1/255 时，等价于 int8 = uint8 - 128（XOR 0x80）
+  if (input_mem_ == nullptr || input_mem_->virt_addr == nullptr) {
+    throw std::runtime_error("INT8 zero-copy input mem is null");
+  }
+  if (rgb_u8_letterbox.empty() || rgb_u8_letterbox.type() != CV_8UC3) {
+    throw std::runtime_error("INT8 zero-copy expects CV_8UC3 letterbox");
+  }
+  if (rgb_u8_letterbox.rows != input_height_ || rgb_u8_letterbox.cols != input_width_) {
+    throw std::runtime_error("INT8 zero-copy letterbox size mismatch");
+  }
+  if (input_qnt_scale_ == 0.0F) {
+    throw std::runtime_error("INT8 zero-copy scale is zero");
+  }
+
+  auto *dst_base = static_cast<std::int8_t *>(input_mem_->virt_addr);
+  const int row_elems = input_width_stride_ * 3;
+  const int width_bytes = input_width_ * 3;
+  const bool fast_u8_minus_128 =
+    input_qnt_zp_ == -128 &&
+    std::fabs(input_qnt_scale_ - (1.0F / 255.0F)) < 1.0e-5F;
+
+  if (fast_u8_minus_128) {
+    for (int y = 0; y < input_height_; ++y) {
+      const auto *src = rgb_u8_letterbox.ptr<std::uint8_t>(y);
+      auto *dst = reinterpret_cast<std::uint8_t *>(
+        dst_base + static_cast<std::size_t>(y) * static_cast<std::size_t>(row_elems));
+      for (int i = 0; i < width_bytes; ++i) {
+        // uint8 ^ 0x80 == static_cast<int8_t>(uint8 - 128)
+        dst[i] = static_cast<std::uint8_t>(src[i] ^ 0x80U);
+      }
+      if (row_elems > width_bytes) {
+        std::memset(dst + width_bytes, 0, static_cast<std::size_t>(row_elems - width_bytes));
+      }
+    }
+    return;
+  }
+
+  const float inv_scale = 1.0F / input_qnt_scale_;
+  const int32_t zp = input_qnt_zp_;
+  for (int y = 0; y < input_height_; ++y) {
+    const auto *src = rgb_u8_letterbox.ptr<std::uint8_t>(y);
+    auto *dst = dst_base + static_cast<std::size_t>(y) * static_cast<std::size_t>(row_elems);
+    for (int x = 0; x < input_width_; ++x) {
+      const int sx = x * 3;
+      const int dx = x * 3;
+      for (int c = 0; c < 3; ++c) {
+        const float f = static_cast<float>(src[sx + c]) * (1.0F / 255.0F);
+        int q = static_cast<int>(std::lround(static_cast<double>(f * inv_scale))) + zp;
+        q = std::max(-128, std::min(127, q));
+        dst[dx + c] = static_cast<std::int8_t>(q);
+      }
+    }
+    for (int p = width_bytes; p < row_elems; ++p) {
+      dst[p] = 0;
+    }
+  }
+}
+
+void RknnYoloDetector::fillUint8ZeroCopyInput(const cv::Mat &rgb_u8_letterbox)
+{
+  if (input_mem_ == nullptr || input_mem_->virt_addr == nullptr) {
+    throw std::runtime_error("UINT8 zero-copy input mem is null");
+  }
+  if (rgb_u8_letterbox.empty() || rgb_u8_letterbox.type() != CV_8UC3) {
+    throw std::runtime_error("UINT8 zero-copy expects CV_8UC3 letterbox");
+  }
+  auto *dst_base = static_cast<std::uint8_t *>(input_mem_->virt_addr);
+  const int row_elems = input_width_stride_ * 3;
+  for (int y = 0; y < input_height_; ++y) {
+    const auto *src = rgb_u8_letterbox.ptr<std::uint8_t>(y);
+    auto *dst = dst_base + static_cast<std::size_t>(y) * static_cast<std::size_t>(row_elems);
+    std::memcpy(dst, src, static_cast<std::size_t>(input_width_) * 3U);
+    if (row_elems > input_width_ * 3) {
+      std::memset(
+        dst + input_width_ * 3,
+        0,
+        static_cast<std::size_t>(row_elems - input_width_ * 3));
+    }
+  }
+}
+
+void RknnYoloDetector::configureZeroCopyInput(bool enable_zero_copy)
+{
+  zero_copy_mode_ = ZeroCopyMode::Off;
+  if (!enable_zero_copy) {
+    std::cout << "[RKNN-PATHB] zero-copy disabled by config; "
+              << "using rknn_inputs_set fallback" << std::endl;
+    return;
+  }
+
   std::memset(&native_input_attr_, 0, sizeof(native_input_attr_));
   native_input_attr_.index = 0;
   const int query_ret = rknn_query(
@@ -392,11 +515,33 @@ void RknnYoloDetector::configureZeroCopyInput()
   if (query_ret != RKNN_SUCC ||
     native_input_attr_.n_dims != 4 ||
     native_input_attr_.fmt != RKNN_TENSOR_NHWC ||
-    native_input_attr_.type != RKNN_TENSOR_FLOAT16 ||
     native_input_attr_.dims[3] != 3)
   {
-    std::cout << "[RKNN-PATHB] native FP16 zero-copy input unavailable; "
+    std::cout << "[RKNN-PATHB] native NHWC RGB input attr unavailable; "
               << "using rknn_inputs_set fallback" << std::endl;
+    return;
+  }
+
+  native_input_type_ = native_input_attr_.type;
+  input_qnt_scale_ = native_input_attr_.scale;
+  input_qnt_zp_ = native_input_attr_.zp;
+
+  const int height = static_cast<int>(native_input_attr_.dims[1]);
+  const int width = static_cast<int>(native_input_attr_.dims[2]);
+  input_width_stride_ = native_input_attr_.w_stride == 0 ?
+    width : static_cast<int>(native_input_attr_.w_stride);
+
+  ZeroCopyMode mode = ZeroCopyMode::Off;
+  if (native_input_attr_.type == RKNN_TENSOR_FLOAT16) {
+    mode = ZeroCopyMode::Fp16;
+  } else if (native_input_attr_.type == RKNN_TENSOR_INT8) {
+    mode = ZeroCopyMode::Int8;
+  } else if (native_input_attr_.type == RKNN_TENSOR_UINT8) {
+    mode = ZeroCopyMode::Uint8;
+  } else {
+    std::cout << "[RKNN-PATHB] unsupported native input type="
+              << static_cast<int>(native_input_attr_.type)
+              << "; using rknn_inputs_set fallback" << std::endl;
     return;
   }
 
@@ -413,26 +558,30 @@ void RknnYoloDetector::configureZeroCopyInput()
       "rknn_set_io_mem for zero-copy input failed, ret=" + std::to_string(set_ret));
   }
 
-  const int height = static_cast<int>(native_input_attr_.dims[1]);
-  const int width = static_cast<int>(native_input_attr_.dims[2]);
-  const int width_stride = native_input_attr_.w_stride == 0 ?
-    width : static_cast<int>(native_input_attr_.w_stride);
-  input_fp16_view_ = cv::Mat(
-    height,
-    width,
-    CV_16FC3,
-    input_mem_->virt_addr,
-    static_cast<std::size_t>(width_stride) * 3U * sizeof(std::uint16_t));
-  zero_copy_input_ = true;
-  std::cout << "[RKNN-PATHB] native FP16 zero-copy input enabled: "
-            << width << "x" << height
-            << " stride=" << width_stride
+  if (mode == ZeroCopyMode::Fp16) {
+    input_fp16_view_ = cv::Mat(
+      height,
+      width,
+      CV_16FC3,
+      input_mem_->virt_addr,
+      static_cast<std::size_t>(input_width_stride_) * 3U * sizeof(std::uint16_t));
+  }
+
+  zero_copy_mode_ = mode;
+  std::cout << "[RKNN-PATHB] native zero-copy input enabled: mode="
+            << zeroCopyModeToString(mode)
+            << " type=" << static_cast<int>(native_input_type_)
+            << " " << width << "x" << height
+            << " stride=" << input_width_stride_
+            << " zp=" << input_qnt_zp_
+            << " scale=" << input_qnt_scale_
             << " bytes=" << native_input_attr_.size_with_stride << std::endl;
 }
 
 void RknnYoloDetector::loadModel(
   const std::string &model_path,
-  rknn_core_mask core_mask)
+  rknn_core_mask core_mask,
+  bool enable_zero_copy)
 {
   model_data_ = readFile(model_path);
   const int ret = rknn_init(
@@ -526,12 +675,12 @@ void RknnYoloDetector::loadModel(
     throw std::runtime_error("path-B output role count mismatch");
   }
 
-  configureZeroCopyInput();
+  configureZeroCopyInput(enable_zero_copy);
 
   std::cout << "[RKNN-PATHB] model ready: " << input_width_ << "x" << input_height_
             << ", classes=3 (qrcode/package/shelf_tag), conf=" << kConfThresh
             << " nms=" << kNmsThresh
-            << ", zero_copy=" << (zero_copy_input_ ? "on" : "off") << std::endl;
+            << ", zero_copy=" << zeroCopyModeName() << std::endl;
 }
 
 void RknnYoloDetector::bindScaleBranches(
@@ -586,12 +735,26 @@ std::vector<Detection> RknnYoloDetector::infer(const cv::Mat &rgb_image)
 
   const auto input_prepare_t0 = SteadyClock::now();
   int ret = RKNN_SUCC;
-  if (zero_copy_input_) {
+  if (zero_copy_mode_ == ZeroCopyMode::Fp16) {
     letterbox.image.convertTo(input_fp16_view_, CV_16FC3, 1.0 / 255.0);
     ret = rknn_mem_sync(context_, input_mem_, RKNN_MEMORY_SYNC_TO_DEVICE);
     if (ret != RKNN_SUCC) {
       throw std::runtime_error(
-        "rknn_mem_sync input failed, ret=" + std::to_string(ret));
+        "rknn_mem_sync FP16 input failed, ret=" + std::to_string(ret));
+    }
+  } else if (zero_copy_mode_ == ZeroCopyMode::Int8) {
+    fillInt8ZeroCopyInput(letterbox.image);
+    ret = rknn_mem_sync(context_, input_mem_, RKNN_MEMORY_SYNC_TO_DEVICE);
+    if (ret != RKNN_SUCC) {
+      throw std::runtime_error(
+        "rknn_mem_sync INT8 input failed, ret=" + std::to_string(ret));
+    }
+  } else if (zero_copy_mode_ == ZeroCopyMode::Uint8) {
+    fillUint8ZeroCopyInput(letterbox.image);
+    ret = rknn_mem_sync(context_, input_mem_, RKNN_MEMORY_SYNC_TO_DEVICE);
+    if (ret != RKNN_SUCC) {
+      throw std::runtime_error(
+        "rknn_mem_sync UINT8 input failed, ret=" + std::to_string(ret));
     }
   } else {
     rknn_input input;

@@ -239,6 +239,7 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}")
     qr_rk3588_FP16.rknn
     qr_rk3588_hybrid_bbox_fp16.rknn
     package_qrcode_shelf_tag_fp16.rknn
+    package_qrcode_shelf_tag_i8.rknn
     DESTINATION share/${PROJECT_NAME}/models
   )
 else()

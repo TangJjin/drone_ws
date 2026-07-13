@@ -1,8 +1,10 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstddef>
@@ -13,6 +15,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <builtin_interfaces/msg/time.hpp>
 
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/core/types.hpp>
@@ -326,6 +330,48 @@ private:
     RknnYoloDetector::InferenceTimingStats timing;
     DepthSampleResult center_depth;
     cv::Mat bgr_image;
+    // Color 消息时间戳，用于 frame age（图像时刻 -> 结果消费时刻）
+    builtin_interfaces::msg::Time color_stamp{};
+  };
+
+  // P0 基线：rknn_run_ms 滚动窗口，用于 median / P95
+  static constexpr std::size_t kRknnRunMsWindowCap = 256;
+  struct RknnRunMsWindow
+  {
+    std::array<double, kRknnRunMsWindowCap> samples{};
+    std::size_t count = 0;
+    std::size_t next = 0;
+
+    void push(double ms)
+    {
+      samples[next] = ms;
+      next = (next + 1U) % kRknnRunMsWindowCap;
+      if (count < kRknnRunMsWindowCap) {
+        ++count;
+      }
+    }
+
+    void stats(double &median_ms, double &p95_ms, double &avg_ms) const
+    {
+      median_ms = 0.0;
+      p95_ms = 0.0;
+      avg_ms = 0.0;
+      if (count == 0U) {
+        return;
+      }
+      std::vector<double> sorted(samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(count));
+      std::sort(sorted.begin(), sorted.end());
+      double sum = 0.0;
+      for (double v : sorted) {
+        sum += v;
+      }
+      avg_ms = sum / static_cast<double>(sorted.size());
+      median_ms = sorted[sorted.size() / 2U];
+      const std::size_t p95_index = static_cast<std::size_t>(
+          std::min(sorted.size() - 1U,
+                   static_cast<std::size_t>(std::ceil(0.95 * static_cast<double>(sorted.size())) - 1.0)));
+      p95_ms = sorted[p95_index];
+    }
   };
 
   void startRknnWorkers();
@@ -334,6 +380,7 @@ private:
   void enqueueRknnColorFrame(const sensor_msgs::msg::Image::ConstSharedPtr &color_msg);
   void handleDepthFrameSoft(const sensor_msgs::msg::Image::ConstSharedPtr &depth_msg);
   void consumeRknnResults();
+  void maybeReportRknnBaseline();
   static bool depthSoftMatchesColor(
       const sensor_msgs::msg::Image &color,
       const sensor_msgs::msg::Image &depth);
@@ -373,6 +420,7 @@ private:
   bool enable_bpu_ = false;
   bool enable_bpu_ocr_ = false;
   bool enable_rknn_ = false;
+  bool rknn_enable_zero_copy_ = true;
   bool require_depth_ = false;
   bool require_camera_info_ = true;
   bool use_rgbd_ = false;
@@ -448,6 +496,26 @@ private:
   std::atomic<std::uint64_t> rknn_dropped_count_{0};
   std::atomic<std::uint64_t> rknn_stale_count_{0};
   std::atomic<std::uint64_t> rknn_processed_count_{0};
+  std::atomic<std::uint64_t> rknn_received_count_{0};
+  std::atomic<std::uint64_t> rknn_consumed_count_{0};
+  std::atomic<std::uint64_t> rknn_publish_path_count_{0};
+  std::atomic<double> rknn_input_fps_{0.0};
+  std::atomic<double> rknn_process_fps_{0.0};
+  std::atomic<double> rknn_consume_fps_{0.0};
+  std::atomic<double> rknn_publish_fps_{0.0};
+  std::atomic<double> rknn_last_frame_age_ms_{0.0};
+  // 各核心 rknn_run_ms 滚动窗口（worker 写，基线报告读）
+  std::array<RknnRunMsWindow, kRknnWorkerCount> rknn_core_run_windows_{};
+  std::array<std::mutex, kRknnWorkerCount> rknn_core_run_window_mutexes_{};
+  // 1 Hz 基线报告快照（仅 consume 定时器线程写）
+  std::uint64_t rknn_baseline_last_received_{0};
+  std::uint64_t rknn_baseline_last_processed_{0};
+  std::uint64_t rknn_baseline_last_consumed_{0};
+  std::uint64_t rknn_baseline_last_publish_{0};
+  std::uint64_t rknn_baseline_last_dropped_{0};
+  std::uint64_t rknn_baseline_last_stale_{0};
+  std::chrono::steady_clock::time_point rknn_baseline_last_report_at_{};
+  bool rknn_baseline_report_started_{false};
   sensor_msgs::msg::Image::ConstSharedPtr rknn_latest_depth_;
   std::mutex rknn_depth_mutex_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr rknn_depth_sub_;
@@ -458,6 +526,7 @@ private:
   double rknn_weight_mib_ = 0.0;
   double rknn_internal_mib_ = 0.0;
   double rknn_dma_mib_ = 0.0;
+  std::string rknn_zero_copy_mode_{"off"};
 #endif
 
   // ZBar 调试字段（BPU / RKNN 共用）

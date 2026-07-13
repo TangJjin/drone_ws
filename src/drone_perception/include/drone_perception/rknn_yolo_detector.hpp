@@ -11,13 +11,21 @@
 
 // 路径 B：YOLO11 9 输出（box/cls/sum × 3 尺度）+ DFL 后处理。
 // 类别：0=qrcode, 1=package, 2=shelf_tag
-// 默认 conf=0.5；原生 FP16 zero-copy + RKNN_FLAG_PRIOR_HIGH。
+// 默认 conf=0.5；按模型 native 输入类型自动选择 FP16/INT8 zero-copy。
 class RknnYoloDetector
 {
 public:
   static constexpr int kClassCount = 3;
   static constexpr float kConfThresh = 0.5F;
   static constexpr float kNmsThresh = 0.45F;
+
+  enum class ZeroCopyMode
+  {
+    Off = 0,
+    Fp16 = 1,
+    Int8 = 2,
+    Uint8 = 3,
+  };
 
   struct InferenceTimingStats
   {
@@ -31,7 +39,8 @@ public:
 
   explicit RknnYoloDetector(
     const std::string &model_path,
-    rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2);
+    rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2,
+    bool enable_zero_copy = true);
   ~RknnYoloDetector();
 
   RknnYoloDetector(const RknnYoloDetector &) = delete;
@@ -42,8 +51,12 @@ public:
   const InferenceTimingStats &lastTiming() const;
   rknn_mem_size memorySize() const;
   double lastRknnRunMs() const;
+  ZeroCopyMode zeroCopyMode() const;
+  const char *zeroCopyModeName() const;
+  rknn_tensor_type nativeInputType() const;
 
   static const char *className(int class_id);
+  static const char *zeroCopyModeToString(ZeroCopyMode mode);
 
 private:
   enum class Layout
@@ -88,8 +101,13 @@ private:
   static constexpr int kBoxChannels = 4 * kDflLen;
 
   LetterboxResult makeLetterbox(const cv::Mat &rgb_image);
-  void loadModel(const std::string &model_path, rknn_core_mask core_mask);
-  void configureZeroCopyInput();
+  void loadModel(
+    const std::string &model_path,
+    rknn_core_mask core_mask,
+    bool enable_zero_copy);
+  void configureZeroCopyInput(bool enable_zero_copy);
+  void fillInt8ZeroCopyInput(const cv::Mat &rgb_u8_letterbox);
+  void fillUint8ZeroCopyInput(const cv::Mat &rgb_u8_letterbox);
   static std::vector<unsigned char> readFile(const std::string &path);
   static bool parseSpatialChannels(
     const rknn_tensor_attr &attr,
@@ -124,7 +142,11 @@ private:
   rknn_tensor_mem *input_mem_ = nullptr;
   rknn_tensor_attr native_input_attr_{};
   cv::Mat input_fp16_view_;
-  bool zero_copy_input_ = false;
+  ZeroCopyMode zero_copy_mode_ = ZeroCopyMode::Off;
+  rknn_tensor_type native_input_type_ = RKNN_TENSOR_FLOAT16;
+  float input_qnt_scale_ = 1.0F;
+  int32_t input_qnt_zp_ = 0;
+  int input_width_stride_ = 640;
   std::vector<unsigned char> model_data_;
   InferenceTimingStats last_timing_;
   cv::Mat resized_buffer_;

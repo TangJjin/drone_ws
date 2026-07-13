@@ -430,6 +430,10 @@ void QrVisionNode::declareParameters()
     rknn_model_path_ = this->declare_parameter<std::string>(
         "rknn_model_path",
         default_rknn_model);
+    // true：按模型 native 输入类型自动 FP16/INT8 zero-copy；false：强制 rknn_inputs_set
+    rknn_enable_zero_copy_ = this->declare_parameter<bool>(
+        "rknn_enable_zero_copy",
+        true);
   }
   ocr_rec_model_path_ = this->declare_parameter<std::string>(
       "ocr_rec_model_path",
@@ -573,7 +577,7 @@ void QrVisionNode::initializeRknnDetector()
     rknn_dma_mib_ = 0.0;
     for (std::size_t i = 0; i < kRknnWorkerCount; ++i) {
       rknn_detectors_[i] = std::make_unique<RknnYoloDetector>(
-          rknn_model_path_, core_masks[i]);
+          rknn_model_path_, core_masks[i], rknn_enable_zero_copy_);
       try {
         const rknn_mem_size memory = rknn_detectors_[i]->memorySize();
         rknn_weight_mib_ +=
@@ -586,6 +590,8 @@ void QrVisionNode::initializeRknnDetector()
       }
       rknn_core_run_ms_[i].store(0.0);
     }
+    rknn_zero_copy_mode_ = rknn_detectors_[0] ?
+      rknn_detectors_[0]->zeroCopyModeName() : "off";
     startRknnWorkers();
     rknn_consume_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(10),
@@ -594,12 +600,15 @@ void QrVisionNode::initializeRknnDetector()
         get_logger(),
         "RKNN path-B 3-worker pipeline ready. model=%s conf=%.2f "
         "workers=%zu queue_cap=%zu soft_depth_match_ms=%.0f "
+        "zero_copy=%s enable_flag=%d "
         "mem weight=%.1fMiB internal=%.1fMiB dma=%.1fMiB",
         rknn_model_path_.c_str(),
         RknnYoloDetector::kConfThresh,
         kRknnWorkerCount,
         kRknnTaskQueueCapacity,
         static_cast<double>(kDepthSoftMatchNs) / 1.0e6,
+        rknn_zero_copy_mode_.c_str(),
+        rknn_enable_zero_copy_ ? 1 : 0,
         rknn_weight_mib_,
         rknn_internal_mib_,
         rknn_dma_mib_);
@@ -689,6 +698,8 @@ void QrVisionNode::enqueueRknnColorFrame(
         camera_info_topic_.c_str());
     return;
   }
+
+  rknn_received_count_.fetch_add(1);
 
   RknnFrameTask task;
   task.frame_id = rknn_next_frame_id_++;
@@ -782,7 +793,13 @@ void QrVisionNode::rknnWorkerLoop(std::size_t worker_index)
       result.timing = detector.lastTiming();
       result.center_depth = center_depth;
       result.bgr_image = color_bridge->image.clone();
+      result.color_stamp = task.color->header.stamp;
       rknn_core_run_ms_[worker_index].store(result.timing.rknn_run_ms);
+      {
+        std::lock_guard<std::mutex> window_lock(
+            rknn_core_run_window_mutexes_[worker_index]);
+        rknn_core_run_windows_[worker_index].push(result.timing.rknn_run_ms);
+      }
       rknn_processed_count_.fetch_add(1);
       (void)wall_ms;
 
@@ -817,14 +834,18 @@ void QrVisionNode::consumeRknnResults()
   std::optional<RknnInferResult> result;
   {
     std::lock_guard<std::mutex> lock(rknn_result_mutex_);
-    if (!rknn_latest_result_) {
-      return;
+    if (rknn_latest_result_ &&
+        rknn_latest_result_->frame_id > rknn_consumed_frame_id_)
+    {
+      result = std::move(rknn_latest_result_);
+      rknn_latest_result_.reset();
     }
-    if (rknn_latest_result_->frame_id <= rknn_consumed_frame_id_) {
-      return;
-    }
-    result = std::move(rknn_latest_result_);
-    rknn_latest_result_.reset();
+  }
+
+  if (!result) {
+    // 无新结果时仍按 1 Hz 刷新 FPS（输入可能仍在、处理可能卡住）
+    maybeReportRknnBaseline();
+    return;
   }
 
   rknn_consumed_frame_id_ = result->frame_id;
@@ -833,33 +854,159 @@ void QrVisionNode::consumeRknnResults()
   last_rknn_center_depth_ = result->center_depth;
   last_input_mode_ = "rknn3w";
   last_callback_ms_ = result->timing.detector_total_ms;
+  rknn_consumed_count_.fetch_add(1);
   updateFps();
+
+  // frame age：Color 时间戳 -> 本节点消费/业务处理时刻
+  double frame_age_ms = -1.0;
+  if (result->color_stamp.sec != 0 || result->color_stamp.nanosec != 0) {
+    try {
+      const rclcpp::Time stamp(result->color_stamp, get_clock()->get_clock_type());
+      frame_age_ms = (this->now() - stamp).seconds() * 1000.0;
+      if (frame_age_ms >= 0.0) {
+        rknn_last_frame_age_ms_.store(frame_age_ms);
+      }
+    } catch (const std::exception &) {
+      frame_age_ms = -1.0;
+    }
+  }
 
   // ZBar 只在最新结果上跑一次，避免 3 worker 重复解码
   updateVisualCodeStability(
       decodeVisualCodesFromRknnDetections(result->bgr_image, last_rknn_detections_));
   publishBarcodeCapture(result->bgr_image);
+  // Publish 口径：完成一次消费后的业务路径次数（含 ZBar/发布尝试）
+  rknn_publish_path_count_.fetch_add(1);
 
   if (debug_view_) {
     displayDebugFrame(result->bgr_image, last_rknn_center_depth_);
   }
 
-  RCLCPP_INFO_THROTTLE(
+  maybeReportRknnBaseline();
+  (void)frame_age_ms;
+}
+
+void QrVisionNode::maybeReportRknnBaseline()
+{
+  const auto now = SteadyClock::now();
+  if (!rknn_baseline_report_started_) {
+    rknn_baseline_last_report_at_ = now;
+    rknn_baseline_last_received_ = rknn_received_count_.load();
+    rknn_baseline_last_processed_ = rknn_processed_count_.load();
+    rknn_baseline_last_consumed_ = rknn_consumed_count_.load();
+    rknn_baseline_last_publish_ = rknn_publish_path_count_.load();
+    rknn_baseline_last_dropped_ = rknn_dropped_count_.load();
+    rknn_baseline_last_stale_ = rknn_stale_count_.load();
+    rknn_baseline_report_started_ = true;
+    return;
+  }
+
+  const double report_seconds =
+      std::chrono::duration<double>(now - rknn_baseline_last_report_at_).count();
+  if (report_seconds < 1.0) {
+    return;
+  }
+
+  const std::uint64_t received = rknn_received_count_.load();
+  const std::uint64_t processed = rknn_processed_count_.load();
+  const std::uint64_t consumed = rknn_consumed_count_.load();
+  const std::uint64_t publish_path = rknn_publish_path_count_.load();
+  const std::uint64_t dropped = rknn_dropped_count_.load();
+  const std::uint64_t stale = rknn_stale_count_.load();
+
+  const double input_fps =
+      static_cast<double>(received - rknn_baseline_last_received_) / report_seconds;
+  const double process_fps =
+      static_cast<double>(processed - rknn_baseline_last_processed_) / report_seconds;
+  const double consume_fps =
+      static_cast<double>(consumed - rknn_baseline_last_consumed_) / report_seconds;
+  const double publish_fps =
+      static_cast<double>(publish_path - rknn_baseline_last_publish_) / report_seconds;
+
+  rknn_input_fps_.store(input_fps);
+  rknn_process_fps_.store(process_fps);
+  rknn_consume_fps_.store(consume_fps);
+  rknn_publish_fps_.store(publish_fps);
+
+  double npu_capacity_fps = 0.0;
+  std::array<double, kRknnWorkerCount> core_latest{};
+  std::array<double, kRknnWorkerCount> core_med{};
+  std::array<double, kRknnWorkerCount> core_p95{};
+  std::array<double, kRknnWorkerCount> core_avg{};
+  for (std::size_t i = 0; i < kRknnWorkerCount; ++i) {
+    core_latest[i] = rknn_core_run_ms_[i].load();
+    if (core_latest[i] > 0.0) {
+      npu_capacity_fps += 1000.0 / core_latest[i];
+    }
+    std::lock_guard<std::mutex> window_lock(rknn_core_run_window_mutexes_[i]);
+    rknn_core_run_windows_[i].stats(core_med[i], core_p95[i], core_avg[i]);
+  }
+
+  // 从路径取文件名，便于 FP16 / INT8 A/B 对照
+  std::string model_tag = rknn_model_path_;
+  const auto slash = model_tag.find_last_of("/\\");
+  if (slash != std::string::npos) {
+    model_tag = model_tag.substr(slash + 1);
+  }
+  if (model_tag.empty()) {
+    model_tag = "unknown.rknn";
+  }
+
+  RCLCPP_INFO(
       get_logger(),
-      *get_clock(),
-      log_throttle_ms_,
-      "RKNN 3-worker mode=rknn3w fps=%.1f total_ms=%.2f run_ms=%.2f prepare_ms=%.2f "
-      "det=%zu drop=%llu stale=%llu processed=%llu worker=%zu depth=%s",
-      smoothed_fps_,
-      last_rknn_timing_.detector_total_ms,
-      last_rknn_timing_.rknn_run_ms,
+      "RKNN_BASELINE model=%s path=9out_3w zc=%s "
+      "input_fps=%.2f process_fps=%.2f consume_fps=%.2f publish_fps=%.2f "
+      "npu_capacity_fps=%.2f frame_age_ms=%.1f "
+      "queue_drop_delta=%llu stale_delta=%llu "
+      "drop_total=%llu stale_total=%llu processed_total=%llu "
+      "core_latest_ms=[%.2f,%.2f,%.2f] "
+      "core_med_ms=[%.2f,%.2f,%.2f] core_p95_ms=[%.2f,%.2f,%.2f] "
+      "core_avg_ms=[%.2f,%.2f,%.2f] "
+      "pre=%.2f in=%.2f run=%.2f out=%.2f post=%.2f total=%.2f "
+      "det=%zu depth=%s debug_view=%d qr_preprocess=%d",
+      model_tag.c_str(),
+      rknn_zero_copy_mode_.c_str(),
+      input_fps,
+      process_fps,
+      consume_fps,
+      publish_fps,
+      npu_capacity_fps,
+      rknn_last_frame_age_ms_.load(),
+      static_cast<unsigned long long>(dropped - rknn_baseline_last_dropped_),
+      static_cast<unsigned long long>(stale - rknn_baseline_last_stale_),
+      static_cast<unsigned long long>(dropped),
+      static_cast<unsigned long long>(stale),
+      static_cast<unsigned long long>(processed),
+      core_latest[0],
+      core_latest[1],
+      core_latest[2],
+      core_med[0],
+      core_med[1],
+      core_med[2],
+      core_p95[0],
+      core_p95[1],
+      core_p95[2],
+      core_avg[0],
+      core_avg[1],
+      core_avg[2],
+      last_rknn_timing_.preprocess_ms,
       last_rknn_timing_.input_prepare_ms,
+      last_rknn_timing_.rknn_run_ms,
+      last_rknn_timing_.output_get_ms,
+      last_rknn_timing_.postprocess_ms,
+      last_rknn_timing_.detector_total_ms,
       last_rknn_detections_.size(),
-      static_cast<unsigned long long>(rknn_dropped_count_.load()),
-      static_cast<unsigned long long>(rknn_stale_count_.load()),
-      static_cast<unsigned long long>(rknn_processed_count_.load()),
-      result->worker_index,
-      last_rknn_center_depth_.has_valid_depth ? "soft_ok" : "n/a");
+      last_rknn_center_depth_.has_valid_depth ? "soft_ok" : "n/a",
+      debug_view_ ? 1 : 0,
+      qr_preprocess_enabled_ ? 1 : 0);
+
+  rknn_baseline_last_received_ = received;
+  rknn_baseline_last_processed_ = processed;
+  rknn_baseline_last_consumed_ = consumed;
+  rknn_baseline_last_publish_ = publish_path;
+  rknn_baseline_last_dropped_ = dropped;
+  rknn_baseline_last_stale_ = stale;
+  rknn_baseline_last_report_at_ = now;
 }
 #endif
 
@@ -1757,18 +1904,24 @@ void QrVisionNode::drawRknnProbeHud(
   };
 
   put_line(cv::format(
-      "FPS %.1f  NPU cap %.1f  Drop %llu  Stale %llu  mode=%s",
-      smoothed_fps_,
+      "In %.1f  Proc %.1f  Cons %.1f  Pub %.1f  NPU cap %.1f  mode=%s",
+      rknn_input_fps_.load(),
+      rknn_process_fps_.load(),
+      rknn_consume_fps_.load(),
+      rknn_publish_fps_.load(),
       npu_capacity_fps,
-      static_cast<unsigned long long>(rknn_dropped_count_.load()),
-      static_cast<unsigned long long>(rknn_stale_count_.load()),
       last_input_mode_.c_str()));
   put_line(cv::format(
-      "C0 %.2fms  C1 %.2fms  C2 %.2fms  processed %llu",
+      "Drop %llu  Stale %llu  age %.0fms  processed %llu",
+      static_cast<unsigned long long>(rknn_dropped_count_.load()),
+      static_cast<unsigned long long>(rknn_stale_count_.load()),
+      rknn_last_frame_age_ms_.load(),
+      static_cast<unsigned long long>(rknn_processed_count_.load())));
+  put_line(cv::format(
+      "C0 %.2fms  C1 %.2fms  C2 %.2fms",
       core_ms[0],
       core_ms[1],
-      core_ms[2],
-      static_cast<unsigned long long>(rknn_processed_count_.load())));
+      core_ms[2]));
   put_line(cv::format(
       "Pre %.2f  In %.2f  Run %.2f  Out %.2f  Post %.2f  Total %.2f ms",
       last_rknn_timing_.preprocess_ms,

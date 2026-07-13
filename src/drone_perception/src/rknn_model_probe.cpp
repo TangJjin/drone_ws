@@ -710,7 +710,7 @@ int main(int argc, char **argv)
   if (argc == 1) {
     const std::string model_path =
       ament_index_cpp::get_package_share_directory("drone_perception") +
-      "/models/package_qrcode_shelf_tag_fp16.rknn";
+      "/models/package_qrcode_shelf_tag_i8.rknn";
     rclcpp::init(argc, argv);
     try {
       rclcpp::spin(std::make_shared<D435iRknnStream>(model_path));

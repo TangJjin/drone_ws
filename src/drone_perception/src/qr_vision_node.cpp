@@ -423,9 +423,9 @@ void QrVisionNode::declareParameters()
     try {
       default_rknn_model =
           ament_index_cpp::get_package_share_directory("drone_perception") +
-          "/models/package_qrcode_shelf_tag_fp16.rknn";
+          "/models/package_qrcode_shelf_tag_i8.rknn";
     } catch (const std::exception &) {
-      default_rknn_model = "package_qrcode_shelf_tag_fp16.rknn";
+      default_rknn_model = "package_qrcode_shelf_tag_i8.rknn";
     }
     rknn_model_path_ = this->declare_parameter<std::string>(
         "rknn_model_path",

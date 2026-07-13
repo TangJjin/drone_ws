@@ -59,9 +59,10 @@ static constexpr int32_t kYoloClassPackage = 1;
 static constexpr int32_t kYoloClassShelfTag = 2;
 static constexpr float kVisualCodeRoiPaddingXRatio = 0.15F;
 static constexpr float kVisualCodeRoiPaddingYRatio = 0.15F;
-#if DRONE_PERCEPTION_HAS_BPU
+// ZBar 三阶段预处理（BPU / RKNN 共用）
 static constexpr int kQrAdaptiveThresholdBlockSizePx = 31;
 static constexpr double kQrAdaptiveThresholdOffset = 5.0;
+#if DRONE_PERCEPTION_HAS_BPU
 static constexpr int kQrPreprocessPreviewMaxSizePx = 180;
 #endif
 static constexpr std::size_t kBpuInputYSize =
@@ -1558,60 +1559,133 @@ QrVisionNode::decodeVisualCodesFromRknnDetections(
       raw_gray_roi = raw_gray_roi.clone();
     }
 
-    debug_qr_preprocess_preview_ = raw_gray_roi.clone();
-    debug_qr_preprocess_mode_ = "rknn_raw_gray";
+    // 与 BPU 路径一致：raw_gray → clahe_gray → adaptive_binary
+    auto scan_gray_roi = [&](
+        const cv::Mat &scan_roi,
+        float coordinate_scale,
+        const char *scan_mode) {
+      cv::Mat continuous_roi = scan_roi;
+      if (!continuous_roi.isContinuous()) {
+        continuous_roi = continuous_roi.clone();
+      }
 
-    zbar::Image zbar_image(
-        static_cast<unsigned int>(raw_gray_roi.cols),
-        static_cast<unsigned int>(raw_gray_roi.rows),
-        "Y800",
-        raw_gray_roi.data,
-        static_cast<unsigned long>(raw_gray_roi.total()));
+      debug_qr_preprocess_preview_ = continuous_roi.clone();
+      debug_qr_preprocess_mode_ = scan_mode;
 
-    const int raw_count = scanner.scan(zbar_image);
-    if (raw_count <= 0) {
-      RCLCPP_DEBUG_THROTTLE(
-          get_logger(),
-          *get_clock(),
-          log_throttle_ms_,
-          "zbar no code rknn roi=%dx%d at=%d,%d score=%.3f",
-          raw_gray_roi.cols,
-          raw_gray_roi.rows,
-          roi.x,
-          roi.y,
-          detection.score);
+      zbar::Image zbar_image(
+          static_cast<unsigned int>(continuous_roi.cols),
+          static_cast<unsigned int>(continuous_roi.rows),
+          "Y800",
+          continuous_roi.data,
+          static_cast<unsigned long>(continuous_roi.total()));
+
+      const int raw_count = scanner.scan(zbar_image);
+      VisualCodeScanStats stats{};
+      stats.symbol_count = raw_count;
+
+      if (raw_count <= 0) {
+        RCLCPP_DEBUG_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            log_throttle_ms_,
+            "zbar no code scan=%s roi=%dx%d at=%d,%d detection_score=%.3f",
+            scan_mode,
+            continuous_roi.cols,
+            continuous_roi.rows,
+            roi.x,
+            roi.y,
+            detection.score);
+      }
+
+      for (auto symbol = zbar_image.symbol_begin();
+           symbol != zbar_image.symbol_end();
+           ++symbol)
+      {
+        const std::string raw_code = symbol->get_data();
+        const std::string code = trimAndUppercase(raw_code);
+        const std::string symbol_type = symbol->get_type_name();
+        const bool is_qr_code = symbol_type.find("QR") != std::string::npos;
+        const std::vector<ParsedVisualCode> parsed_codes = parseVisualCodes(code);
+
+        debug_raw_symbol_ = code;
+        debug_raw_symbol_type_ = symbol_type;
+
+        if (!is_qr_code || parsed_codes.empty()) {
+          continue;
+        }
+
+        cv::Point2f code_center(
+            static_cast<float>(roi.x) + static_cast<float>(roi.width) * 0.5F,
+            static_cast<float>(roi.y) + static_cast<float>(roi.height) * 0.5F);
+        const int location_size = symbol->get_location_size();
+        if (location_size > 0) {
+          code_center = cv::Point2f(0.0F, 0.0F);
+          for (int i = 0; i < location_size; ++i) {
+            code_center.x += static_cast<float>(roi.x) +
+                static_cast<float>(symbol->get_location_x(i)) / coordinate_scale;
+            code_center.y += static_cast<float>(roi.y) +
+                static_cast<float>(symbol->get_location_y(i)) / coordinate_scale;
+          }
+          code_center.x /= static_cast<float>(location_size);
+          code_center.y /= static_cast<float>(location_size);
+        }
+
+        const float dx = code_center.x - image_center.x;
+        const float dy = code_center.y - image_center.y;
+        for (const ParsedVisualCode &parsed_code : parsed_codes) {
+          decoded_codes.push_back({
+              parsed_code.code,
+              parsed_code.category,
+              symbol_type,
+              static_cast<double>(dx * dx + dy * dy)});
+          ++stats.accepted_count;
+        }
+      }
+
       zbar_image.set_data(nullptr, 0U);
+      return stats;
+    };
+
+    VisualCodeScanStats scan_stats = scan_gray_roi(raw_gray_roi, 1.0F, "raw_gray");
+    if (scan_stats.accepted_count > 0 || !qr_preprocess_enabled_) {
       continue;
     }
 
-    for (auto symbol = zbar_image.symbol_begin();
-         symbol != zbar_image.symbol_end();
-         ++symbol)
-    {
-      const std::string raw_code = symbol->get_data();
-      const std::string code = trimAndUppercase(raw_code);
-      const std::string symbol_type = symbol->get_type_name();
-      const bool is_qr_code = symbol_type.find("QR") != std::string::npos;
-      const std::vector<ParsedVisualCode> parsed_codes = parseVisualCodes(code);
-
-      debug_raw_symbol_ = code;
-      debug_raw_symbol_type_ = symbol_type;
-
-      if (!is_qr_code || parsed_codes.empty()) {
+    try {
+      cv::Mat clahe_roi;
+      cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+      clahe->apply(raw_gray_roi, clahe_roi);
+      scan_stats = scan_gray_roi(clahe_roi, 1.0F, "clahe_gray");
+      if (scan_stats.accepted_count > 0) {
         continue;
       }
 
-      const float dx = static_cast<float>(detection.center.x) - image_center.x;
-      const float dy = static_cast<float>(detection.center.y) - image_center.y;
-      for (const ParsedVisualCode &parsed_code : parsed_codes) {
-        decoded_codes.push_back({
-            parsed_code.code,
-            parsed_code.category,
-            symbol_type,
-            static_cast<double>(dx * dx + dy * dy)});
+      const int min_side_px = std::min(clahe_roi.cols, clahe_roi.rows);
+      int adaptive_block_size_px =
+          std::min(kQrAdaptiveThresholdBlockSizePx, min_side_px);
+      if (adaptive_block_size_px % 2 == 0) {
+        --adaptive_block_size_px;
       }
+      if (adaptive_block_size_px >= 3) {
+        cv::Mat adaptive_binary_roi;
+        cv::adaptiveThreshold(
+            clahe_roi,
+            adaptive_binary_roi,
+            255.0,
+            cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv::THRESH_BINARY,
+            adaptive_block_size_px,
+            kQrAdaptiveThresholdOffset);
+        (void)scan_gray_roi(adaptive_binary_roi, 1.0F, "adaptive_binary");
+      }
+    } catch (const cv::Exception &e) {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(),
+          *get_clock(),
+          log_throttle_ms_,
+          "QR preprocess failed (rknn): %s",
+          e.what());
     }
-    zbar_image.set_data(nullptr, 0U);
   }
 
   std::sort(

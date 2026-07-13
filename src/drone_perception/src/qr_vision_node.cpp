@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -48,16 +49,16 @@ static constexpr std::size_t kCameraAutoExposurePriorityControlIndex = 2U;
 static constexpr int kCameraControlsPanelWidthPx = 720;
 static constexpr int kCameraControlsPanelHeightPx = 360;
 static constexpr int kCameraControlsSendDebounceMs = 120;
-#if DRONE_PERCEPTION_HAS_BPU
+// 路径 B / BPU 共用类别 ID
 static constexpr int32_t kYoloClassQrcode = 0;
 static constexpr int32_t kYoloClassPackage = 1;
 static constexpr int32_t kYoloClassShelfTag = 2;
 static constexpr float kVisualCodeRoiPaddingXRatio = 0.15F;
 static constexpr float kVisualCodeRoiPaddingYRatio = 0.15F;
+#if DRONE_PERCEPTION_HAS_BPU
 static constexpr int kQrAdaptiveThresholdBlockSizePx = 31;
 static constexpr double kQrAdaptiveThresholdOffset = 5.0;
 static constexpr int kQrPreprocessPreviewMaxSizePx = 180;
-
 #endif
 static constexpr std::size_t kBpuInputYSize =
     static_cast<std::size_t>(kBpuInputWidthPx) *
@@ -298,7 +299,9 @@ QrVisionNode::QrVisionNode()
   barcode_capture_pub_ = this->create_publisher<drone_msgs::msg::BarcodeCapture>(
       barcode_capture_topic_,
       rclcpp::QoS(rclcpp::KeepLast(10)).reliable());
+  initializeRknnDetector();
   initializeBpuDetector();
+  // 本阶段不接 OCR：即使编译了 BPU 也默认关；initialize 内部会再检查 enable_bpu_ocr_
   initializeBpuOcrPipeline();
   initializeSubscriptions();
 
@@ -318,14 +321,17 @@ QrVisionNode::QrVisionNode()
 
   RCLCPP_INFO(
       get_logger(),
-      "QR D435i video stream ready. mode=%s qr_decode=true yolo_bpu=%s ocr_rec_bpu=%s color=%s depth=%s rgbd=%s camera_info=%s",
+      "QR D435i video stream ready. mode=%s qr_decode=true yolo_rknn=%s yolo_bpu=%s "
+      "ocr_rec_bpu=%s color=%s depth=%s rgbd=%s camera_info=%s rknn_model=%s",
       use_rgbd_ ? "rgbd" : "synced",
+      enable_rknn_ ? "true" : "false",
       enable_bpu_ ? "true" : "false",
       enable_bpu_ocr_ ? "true" : "false",
       color_topic_.c_str(),
       depth_topic_.c_str(),
       rgbd_topic_.c_str(),
-      camera_info_topic_.c_str());
+      camera_info_topic_.c_str(),
+      rknn_model_path_.c_str());
 }
 
 QrVisionNode::~QrVisionNode()
@@ -387,15 +393,32 @@ void QrVisionNode::declareParameters()
       "barcode_capture_jpeg_quality",
       kDefaultBarcodeCaptureJpegQuality);
 
+  // OrangePi：优先 RKNN 路径 B；OCR 本阶段默认关闭
+  enable_rknn_ = this->declare_parameter<bool>(
+      "enable_rknn",
+      DRONE_PERCEPTION_HAS_RKNN != 0);
   enable_bpu_ = this->declare_parameter<bool>(
       "enable_bpu",
-      DRONE_PERCEPTION_HAS_BPU != 0);
+      DRONE_PERCEPTION_HAS_BPU != 0 && DRONE_PERCEPTION_HAS_RKNN == 0);
   enable_bpu_ocr_ = this->declare_parameter<bool>(
       "enable_bpu_ocr",
-      DRONE_PERCEPTION_HAS_BPU != 0);
+      false);
   bpu_model_path_ = this->declare_parameter<std::string>(
       "bpu_model_path",
       "/home/sunrise/drone_ws/src/drone_perception/new_640x640_nv12.bin");
+  {
+    std::string default_rknn_model;
+    try {
+      default_rknn_model =
+          ament_index_cpp::get_package_share_directory("drone_perception") +
+          "/models/package_qrcode_shelf_tag_fp16.rknn";
+    } catch (const std::exception &) {
+      default_rknn_model = "package_qrcode_shelf_tag_fp16.rknn";
+    }
+    rknn_model_path_ = this->declare_parameter<std::string>(
+        "rknn_model_path",
+        default_rknn_model);
+  }
   ocr_rec_model_path_ = this->declare_parameter<std::string>(
       "ocr_rec_model_path",
       "/home/sunrise/drone_ws/src/drone_perception/en_PP-OCRv3_rec_48x320_rgb.bin");
@@ -513,6 +536,47 @@ void QrVisionNode::declareParameters()
         kDefaultBarcodeCaptureJpegQuality);
     barcode_capture_jpeg_quality_ = kDefaultBarcodeCaptureJpegQuality;
   }
+}
+
+void QrVisionNode::initializeRknnDetector()
+{
+#if DRONE_PERCEPTION_HAS_RKNN
+  if (!enable_rknn_) {
+    return;
+  }
+
+  if (rknn_model_path_.empty()) {
+    RCLCPP_WARN(
+        get_logger(),
+        "RKNN inference is enabled but rknn_model_path is empty");
+    enable_rknn_ = false;
+    return;
+  }
+
+  try {
+    rknn_detector_ = std::make_unique<RknnYoloDetector>(rknn_model_path_);
+    RCLCPP_INFO(
+        get_logger(),
+        "RKNN path-B detector initialized. model=%s conf=%.2f classes=qrcode/package/shelf_tag",
+        rknn_model_path_.c_str(),
+        RknnYoloDetector::kConfThresh);
+  } catch (const std::exception &e) {
+    rknn_detector_.reset();
+    enable_rknn_ = false;
+    RCLCPP_ERROR(
+        get_logger(),
+        "Failed to initialize RKNN detector: %s",
+        e.what());
+  }
+#else
+  if (enable_rknn_) {
+    RCLCPP_WARN(
+        get_logger(),
+        "RKNN inference requested but this build has no RKNN runtime "
+        "(set RKNN_INCLUDE/RKNN_LIB when building)");
+    enable_rknn_ = false;
+  }
+#endif
 }
 
 void QrVisionNode::initializeBpuDetector()
@@ -1150,7 +1214,155 @@ std::vector<QrVisionNode::DecodedVisualCode> QrVisionNode::decodeVisualCodesFrom
 
   return decoded_codes;
 }
+#endif
 
+#if DRONE_PERCEPTION_HAS_RKNN
+std::vector<QrVisionNode::DecodedVisualCode>
+QrVisionNode::decodeVisualCodesFromRknnDetections(
+    const cv::Mat &color_image,
+    const std::vector<Detection> &detections)
+{
+  std::vector<DecodedVisualCode> decoded_codes;
+  debug_qr_preprocess_preview_.release();
+  debug_qr_preprocess_mode_.clear();
+
+  if (color_image.empty() || detections.empty()) {
+    return decoded_codes;
+  }
+
+  zbar::ImageScanner scanner;
+  configureVisualCodeScanner(scanner);
+
+  const cv::Point2f image_center(
+      static_cast<float>(color_image.cols) * 0.5F,
+      static_cast<float>(color_image.rows) * 0.5F);
+
+  for (const Detection &detection : detections) {
+    if (detection.class_id != kYoloClassQrcode) {
+      continue;
+    }
+
+    const cv::Rect &box = detection.box;
+    if (box.width <= 1 || box.height <= 1) {
+      continue;
+    }
+
+    const float pad_x = static_cast<float>(box.width) * kVisualCodeRoiPaddingXRatio;
+    const float pad_y = static_cast<float>(box.height) * kVisualCodeRoiPaddingYRatio;
+    const int roi_x_min = std::max(0, static_cast<int>(box.x - pad_x));
+    const int roi_y_min = std::max(0, static_cast<int>(box.y - pad_y));
+    const int roi_x_max = std::min(
+        color_image.cols, static_cast<int>(box.x + box.width + pad_x));
+    const int roi_y_max = std::min(
+        color_image.rows, static_cast<int>(box.y + box.height + pad_y));
+    const cv::Rect roi(
+        roi_x_min,
+        roi_y_min,
+        std::max(1, roi_x_max - roi_x_min),
+        std::max(1, roi_y_max - roi_y_min));
+
+    if (roi.x + roi.width > color_image.cols ||
+        roi.y + roi.height > color_image.rows)
+    {
+      continue;
+    }
+
+    cv::Mat raw_gray_roi;
+    cv::cvtColor(color_image(roi), raw_gray_roi, cv::COLOR_BGR2GRAY);
+    if (!raw_gray_roi.isContinuous()) {
+      raw_gray_roi = raw_gray_roi.clone();
+    }
+
+    debug_qr_preprocess_preview_ = raw_gray_roi.clone();
+    debug_qr_preprocess_mode_ = "rknn_raw_gray";
+
+    zbar::Image zbar_image(
+        static_cast<unsigned int>(raw_gray_roi.cols),
+        static_cast<unsigned int>(raw_gray_roi.rows),
+        "Y800",
+        raw_gray_roi.data,
+        static_cast<unsigned long>(raw_gray_roi.total()));
+
+    const int raw_count = scanner.scan(zbar_image);
+    if (raw_count <= 0) {
+      RCLCPP_DEBUG_THROTTLE(
+          get_logger(),
+          *get_clock(),
+          log_throttle_ms_,
+          "zbar no code rknn roi=%dx%d at=%d,%d score=%.3f",
+          raw_gray_roi.cols,
+          raw_gray_roi.rows,
+          roi.x,
+          roi.y,
+          detection.score);
+      zbar_image.set_data(nullptr, 0U);
+      continue;
+    }
+
+    for (auto symbol = zbar_image.symbol_begin();
+         symbol != zbar_image.symbol_end();
+         ++symbol)
+    {
+      const std::string raw_code = symbol->get_data();
+      const std::string code = trimAndUppercase(raw_code);
+      const std::string symbol_type = symbol->get_type_name();
+      const bool is_qr_code = symbol_type.find("QR") != std::string::npos;
+      const std::vector<ParsedVisualCode> parsed_codes = parseVisualCodes(code);
+
+      debug_raw_symbol_ = code;
+      debug_raw_symbol_type_ = symbol_type;
+
+      if (!is_qr_code || parsed_codes.empty()) {
+        continue;
+      }
+
+      const float dx = static_cast<float>(detection.center.x) - image_center.x;
+      const float dy = static_cast<float>(detection.center.y) - image_center.y;
+      for (const ParsedVisualCode &parsed_code : parsed_codes) {
+        decoded_codes.push_back({
+            parsed_code.code,
+            parsed_code.category,
+            symbol_type,
+            static_cast<double>(dx * dx + dy * dy)});
+      }
+    }
+    zbar_image.set_data(nullptr, 0U);
+  }
+
+  std::sort(
+      decoded_codes.begin(),
+      decoded_codes.end(),
+      [](const DecodedVisualCode &a, const DecodedVisualCode &b) {
+        return a.center_distance_sq < b.center_distance_sq;
+      });
+  return decoded_codes;
+}
+
+void QrVisionNode::drawRknnDetections(cv::Mat &display) const
+{
+  for (const Detection &detection : last_rknn_detections_) {
+    const cv::Scalar color =
+        detection.class_id == kYoloClassQrcode ? cv::Scalar(0, 255, 0) :
+        detection.class_id == kYoloClassPackage ? cv::Scalar(255, 128, 0) :
+        cv::Scalar(255, 0, 255);
+    cv::rectangle(display, detection.box, color, 2);
+    const std::string label = cv::format(
+        "%s %.2f",
+        RknnYoloDetector::className(detection.class_id),
+        detection.score);
+    cv::putText(
+        display,
+        label,
+        cv::Point(detection.box.x, std::max(20, detection.box.y - 6)),
+        cv::FONT_HERSHEY_SIMPLEX,
+        0.5,
+        color,
+        1);
+  }
+}
+#endif
+
+#if DRONE_PERCEPTION_HAS_BPU
 bool QrVisionNode::encodeFrameCaptureJpeg(
     const cv::Mat &color_image,
     std::vector<uint8_t> &jpeg_data)
@@ -1514,10 +1726,64 @@ void QrVisionNode::processFrame(
       center_v,
       sample_radius_px_);
 
+#if DRONE_PERCEPTION_HAS_RKNN
+  last_rknn_detections_.clear();
+  if (enable_rknn_ && rknn_detector_) {
+    try {
+      cv::Mat rgb;
+      if (color_bridge->image.channels() == 3) {
+        // 业务 color 一般为 BGR；检测器要求 RGB
+        cv::cvtColor(color_bridge->image, rgb, cv::COLOR_BGR2RGB);
+      } else {
+        rgb = color_bridge->image;
+      }
+      const auto infer_t0 = SteadyClock::now();
+      last_rknn_detections_ = rknn_detector_->infer(rgb);
+      const auto infer_t1 = SteadyClock::now();
+      const auto &timing = rknn_detector_->lastTiming();
+      int qrcode_count = 0;
+      int package_count = 0;
+      int shelf_tag_count = 0;
+      for (const Detection &detection : last_rknn_detections_) {
+        if (detection.class_id == kYoloClassQrcode) {
+          ++qrcode_count;
+        } else if (detection.class_id == kYoloClassPackage) {
+          ++package_count;
+        } else if (detection.class_id == kYoloClassShelfTag) {
+          ++shelf_tag_count;
+        }
+      }
+      RCLCPP_INFO_THROTTLE(
+          get_logger(),
+          *get_clock(),
+          log_throttle_ms_,
+          "RKNN path-B ok mode=%s total_ms=%.2f run_ms=%.2f prepare_ms=%.2f "
+          "det=%zu qr=%d pkg=%d shelf=%d",
+          input_mode,
+          timing.detector_total_ms,
+          timing.rknn_run_ms,
+          timing.input_prepare_ms,
+          last_rknn_detections_.size(),
+          qrcode_count,
+          package_count,
+          shelf_tag_count);
+      (void)infer_t0;
+      (void)infer_t1;
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR_THROTTLE(
+          get_logger(),
+          *get_clock(),
+          log_throttle_ms_,
+          "RKNN inference failed: %s",
+          e.what());
+    }
+  }
+#endif
+
 #if DRONE_PERCEPTION_HAS_BPU
   last_bpu_detections_.clear();
 
-  if (enable_bpu_ && bpu_detector_) {
+  if (!enable_rknn_ && enable_bpu_ && bpu_detector_) {
     const auto preprocess_t0 = SteadyClock::now();
     const bool input_ready = prepareBpuInput(color_bridge->image);
     const auto preprocess_t1 = SteadyClock::now();
@@ -1575,42 +1841,31 @@ void QrVisionNode::processFrame(
     }
   }
 
-  if (enable_bpu_ocr_ && bpu_ocr_pipeline_) {
-    try {
-      recognizeShelfTagFromDetections(
-          color_bridge->image,
-          last_bpu_detections_,
-          input_mode);
-    } catch (const std::exception &e) {
-      last_ocr_regions_.clear();
-      updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
-
-      RCLCPP_ERROR_THROTTLE(
-          get_logger(),
-          *get_clock(),
-          log_throttle_ms_,
-          "BPU OCR failed: %s",
-          e.what());
-    }
-  } else {
-    last_ocr_regions_.clear();
-    updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
-  }
+  // 本阶段不接 OCR 文字识别
+  last_ocr_regions_.clear();
+  updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
 #endif
 
+#if DRONE_PERCEPTION_HAS_RKNN
+  if (enable_rknn_) {
+    updateVisualCodeStability(
+        decodeVisualCodesFromRknnDetections(
+            color_bridge->image, last_rknn_detections_));
+  }
+#endif
 #if DRONE_PERCEPTION_HAS_BPU
-  updateVisualCodeStability(
-      decodeVisualCodesFromDetections(color_bridge->image, last_bpu_detections_));
-#else
+  if (!enable_rknn_) {
+    updateVisualCodeStability(
+        decodeVisualCodesFromDetections(color_bridge->image, last_bpu_detections_));
+  }
+#endif
+#if !DRONE_PERCEPTION_HAS_RKNN && !DRONE_PERCEPTION_HAS_BPU
   updateVisualCodeStability({});
   updateVisualCodeCategoryStability({}, "shelf", shelf_code_state_, "ocr");
 #endif
 
-#if DRONE_PERCEPTION_HAS_BPU
-  bufferPackageCaptureCandidate(color_bridge->image);
-#else
+  // 第一版：不做 package 抓拍缓冲，仅保留现有发布钩子
   publishBarcodeCapture(color_bridge->image);
-#endif
 
   if (debug_view_)
   {
@@ -1740,10 +1995,9 @@ void QrVisionNode::displayDebugFrame(
   visual_code_y = draw_visual_code_line(sku_code_state_, "sku", visual_code_y);
   (void)draw_visual_code_line(pkg_code_state_, "pkg", visual_code_y);
 
-#if DRONE_PERCEPTION_HAS_BPU
-  // Show raw zbar output before parsing filter
   if (!debug_raw_symbol_.empty()) {
-    const std::string raw_line = cv::format("Raw zbar: %s %s",
+    const std::string raw_line = cv::format(
+        "Raw zbar: %s %s",
         debug_raw_symbol_type_.c_str(),
         fit_status_text(debug_raw_symbol_).c_str());
     cv::putText(
@@ -1756,9 +2010,17 @@ void QrVisionNode::displayDebugFrame(
         1);
   }
 
-  drawBpuDetections(display);
-  drawOcrRegions(display);
-  drawQrPreprocessPreview(display);
+#if DRONE_PERCEPTION_HAS_RKNN
+  if (enable_rknn_) {
+    drawRknnDetections(display);
+  }
+#endif
+#if DRONE_PERCEPTION_HAS_BPU
+  if (!enable_rknn_) {
+    drawBpuDetections(display);
+    drawOcrRegions(display);
+    drawQrPreprocessPreview(display);
+  }
 
   if (enable_bpu_ocr_ && !last_ocr_regions_.empty()) {
     int ocr_text_y = visual_code_y + 48;

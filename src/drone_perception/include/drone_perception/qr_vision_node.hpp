@@ -299,9 +299,10 @@ private:
       std::vector<uint8_t> &jpeg_data);
 
   void drawOcrRegions(cv::Mat &display) const;
-
-  void drawQrPreprocessPreview(cv::Mat &display) const;
 #endif
+
+  // BPU / RKNN 共用：右下角显示当前 ZBar 预处理阶段预览
+  void drawQrPreprocessPreview(cv::Mat &display) const;
 
 #if DRONE_PERCEPTION_HAS_RKNN
   // 对齐 package_qr_shelf_rknn_probe：3 worker × 3 NPU + 队列丢旧 + stale 丢弃

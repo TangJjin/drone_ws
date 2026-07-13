@@ -62,9 +62,7 @@ static constexpr float kVisualCodeRoiPaddingYRatio = 0.15F;
 // ZBar 三阶段预处理（BPU / RKNN 共用）
 static constexpr int kQrAdaptiveThresholdBlockSizePx = 31;
 static constexpr double kQrAdaptiveThresholdOffset = 5.0;
-#if DRONE_PERCEPTION_HAS_BPU
 static constexpr int kQrPreprocessPreviewMaxSizePx = 180;
-#endif
 static constexpr std::size_t kBpuInputYSize =
     static_cast<std::size_t>(kBpuInputWidthPx) *
     static_cast<std::size_t>(kBpuInputHeightPx);
@@ -1797,6 +1795,12 @@ void QrVisionNode::drawRknnProbeHud(
       rknn_internal_mib_,
       rknn_dma_mib_));
 
+  // 当前生效的 ZBar 预处理阶段：raw_gray / clahe_gray / adaptive_binary
+  put_line(cv::format(
+      "QR preprocess: %s%s",
+      debug_qr_preprocess_mode_.empty() ? "none" : debug_qr_preprocess_mode_.c_str(),
+      qr_preprocess_enabled_ ? "" : " (disabled)"));
+
   if (!pkg_code_state_.stable_code.empty() ||
       !sku_code_state_.stable_code.empty() ||
       !debug_raw_symbol_.empty())
@@ -2424,10 +2428,11 @@ void QrVisionNode::displayDebugFrame(
   cv::Mat display = color_image.clone();
 
 #if DRONE_PERCEPTION_HAS_RKNN
-  // RKNN 模式：完整搬迁 rknn_model_probe 风格 HUD + 检测框
+  // RKNN 模式：probe HUD + 检测框 + 右下角三阶段预处理预览
   if (enable_rknn_) {
     drawRknnDetections(display, center_depth);
     drawRknnProbeHud(display, center_depth);
+    drawQrPreprocessPreview(display);
     cv::imshow(window_name_, display);
     cv::waitKey(1);
     return;
@@ -3747,6 +3752,9 @@ void QrVisionNode::drawOcrRegions(cv::Mat &display) const
   }
 }
 
+
+#endif
+
 void QrVisionNode::drawQrPreprocessPreview(cv::Mat &display) const
 {
   if (display.empty() || debug_qr_preprocess_preview_.empty()) {
@@ -3834,4 +3842,3 @@ void QrVisionNode::drawQrPreprocessPreview(cv::Mat &display) const
       cv::Scalar(120, 220, 255),
       1);
 }
-#endif

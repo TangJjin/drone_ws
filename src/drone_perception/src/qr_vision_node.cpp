@@ -933,9 +933,19 @@ void QrVisionNode::maybeReportRknnBaseline()
     rknn_core_run_windows_[i].stats(core_med[i], core_p95[i], core_avg[i]);
   }
 
+  // 从路径取文件名，便于 FP16 / INT8 A/B 对照
+  std::string model_tag = rknn_model_path_;
+  const auto slash = model_tag.find_last_of("/\\");
+  if (slash != std::string::npos) {
+    model_tag = model_tag.substr(slash + 1);
+  }
+  if (model_tag.empty()) {
+    model_tag = "unknown.rknn";
+  }
+
   RCLCPP_INFO(
       get_logger(),
-      "RKNN_BASELINE model=package_qrcode_shelf_tag_fp16 path=9out_fp16_3w "
+      "RKNN_BASELINE model=%s path=9out_3w "
       "input_fps=%.2f process_fps=%.2f consume_fps=%.2f publish_fps=%.2f "
       "npu_capacity_fps=%.2f frame_age_ms=%.1f "
       "queue_drop_delta=%llu stale_delta=%llu "
@@ -945,6 +955,7 @@ void QrVisionNode::maybeReportRknnBaseline()
       "core_avg_ms=[%.2f,%.2f,%.2f] "
       "pre=%.2f in=%.2f run=%.2f out=%.2f post=%.2f total=%.2f "
       "det=%zu depth=%s debug_view=%d qr_preprocess=%d",
+      model_tag.c_str(),
       input_fps,
       process_fps,
       consume_fps,

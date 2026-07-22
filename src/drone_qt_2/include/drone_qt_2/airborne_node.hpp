@@ -108,6 +108,14 @@ private:
     float battery_voltage{0.0};//电压数值
     float battery_percent{0.0};//电量百分比数值
 
+    const double position_x{0};//无人机位置x坐标
+    const double position_y{0};//无人机位置y坐标
+    const double position_z{0};//无人机位置z坐标
+    const double position_qx{0};//无人机姿态四元数qx
+    const double position_qy{0};//无人机姿态四元数qy
+    const double position_qz{0};//无人机姿态四元数qz
+    const double position_qw{0};//无人机姿态四元数qw
+
     bool offboard_started_{false};//防止任务重复启动
     bool task_started_{false};
     bool task_stoped_{false};

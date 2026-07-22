@@ -193,6 +193,7 @@ void AirborneLinkBridge::publishDroneStatus(const drone_msgs::msg::DroneStatus::
     const QByteArray state = QByteArray::fromStdString(msg->state);
     stream << static_cast<quint16>(state.size());
     payload.append(state);
+    stream.writeRawData(state.constData(), state.size());
 
     /**********************************************************/
 
@@ -209,6 +210,7 @@ void AirborneLinkBridge::publishTaskStatus(const drone_msgs::msg::TaskStatus::Sh
     QByteArray payload;
     QDataStream stream(&payload, QIODevice::WriteOnly);
     stream.setByteOrder(QDataStream::LittleEndian);
+    stream.setFloatingPointPrecision(QDataStream::SinglePrecision);
 
     /*************************消息打包**************************/
 
@@ -216,7 +218,7 @@ void AirborneLinkBridge::publishTaskStatus(const drone_msgs::msg::TaskStatus::Sh
 
     const QByteArray action_name = QByteArray::fromStdString(msg->action_name);
     stream << static_cast<quint16>(action_name.size());
-    payload.append(action_name);
+    stream.writeRawData(action_name.constData(), action_name.size());
 
     stream << static_cast<qint32>(msg->action_step);
     stream << static_cast<quint8>(msg->action_num);
@@ -283,10 +285,10 @@ void AirborneLinkBridge::publishVisionBarcode(const drone_msgs::msg::BarcodeCapt
 
     const QByteArray barcode = QByteArray::fromStdString(msg->barcode);
     stream << static_cast<quint16>(barcode.size());
-    payload.append(barcode);
+    stream.writeRawData(barcode.constData(), barcode.size());
     const QByteArray image_format = QByteArray::fromStdString(msg->image_format);
     stream << static_cast<quint16>(image_format.size());
-    payload.append(image_format);
+    stream.writeRawData(image_format.constData(), image_format.size());
 
     /**********************************************************/
 

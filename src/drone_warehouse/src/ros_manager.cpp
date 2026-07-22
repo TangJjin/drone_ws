@@ -28,7 +28,7 @@ void RosManager::setupRosInterfaces()
     auto status_qos = rclcpp::QoS(rclcpp::KeepLast(10)).best_effort();
     //创建一个订阅者，订阅无人机状态话题，消息类型为自定义消息
     status_sub_ = node_->create_subscription<drone_msgs::msg::DroneStatus>(
-        "/drone/status", 
+        "/serial/drone/status", 
         status_qos, 
         [this](const drone_msgs::msg::DroneStatus::SharedPtr msg)//回调
         {
@@ -55,7 +55,7 @@ void RosManager::setupRosInterfaces()
     auto control_status_qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
     //创建一个订阅者，订阅控制程序状态话题，消息类型为自定义消息
     task_status_sub_ = node_->create_subscription<drone_msgs::msg::TaskStatus>(
-        "/drone/task/status", 
+        "/serial/drone/task/status", 
         control_status_qos, 
         [this](const drone_msgs::msg::TaskStatus::SharedPtr msg)//回调
         {
@@ -81,7 +81,7 @@ void RosManager::setupRosInterfaces()
         rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
     //创建一个订阅者，订阅控制程序的确认消息，消息类型为自定义消息
     ready_status_sub_ = node_->create_subscription<drone_msgs::msg::ReadyStatus>(
-        "/drone/control/path_ready", 
+        "/serial/drone/control/path_ready", 
         control_path_ready_qos, 
         [this](const drone_msgs::msg::ReadyStatus::SharedPtr msg)//回调
         {
@@ -99,7 +99,7 @@ void RosManager::setupRosInterfaces()
         rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
     //创建一个订阅者，订阅控制程序的路线消息，消息类型为自定义消息
     return_world_group_sub_ = node_->create_subscription<drone_msgs::msg::WorldGroup>(
-        "/drone/return/world_group", 
+        "/serial/drone/return/world_group", 
         return_world_group_qos, 
         [this](const drone_msgs::msg::WorldGroup::SharedPtr msg)//回调
         {
@@ -153,7 +153,7 @@ void RosManager::setupRosInterfaces()
     auto barcode_sub_qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
     //创建一个订阅者，订阅条形码捕获话题，消息类型为自定义消息
     vision_barcode_sub_ = node_->create_subscription<drone_msgs::msg::BarcodeCapture>(
-        "/drone/vision/barcode",
+        "/serial/drone/vision/barcode",
         barcode_sub_qos,
         [this](const drone_msgs::msg::BarcodeCapture::SharedPtr msg)
         {
@@ -177,7 +177,7 @@ void RosManager::setupRosInterfaces()
     auto local_position_qos = rclcpp::QoS(rclcpp::KeepLast(10)).best_effort();
     //创建一个订阅者，订阅无人机本地位置话题，消息类型为geometry_msgs::msg::PoseStamped
     local_position_sub_ = node_->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/drone/local_position",
+        "/serial/drone/local_position",
         local_position_qos,
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg)
         {
@@ -201,7 +201,7 @@ void RosManager::setupRosInterfaces()
 
 auto delta_qos = rclcpp::QoS(rclcpp::KeepLast(10)).best_effort();
     delta_sub_ = node_->create_subscription<geometry_msgs::msg::Vector3>(
-        "/drone/pose_yaw_compare/delta",
+        "/serial/drone/pose_yaw_compare/delta",
         delta_qos,
         [this](const geometry_msgs::msg::Vector3::SharedPtr msg)
         {
@@ -215,19 +215,19 @@ auto delta_qos = rclcpp::QoS(rclcpp::KeepLast(10)).best_effort();
 
     //创建一个服务客户端，用于调用任务启动服务
     start_task_client_ = node_->create_client<drone_msgs::srv::StartTask>(
-        "/drone/start_task");
+        "/serial/drone/start_task");
 
     //创建一个服务客户端，用于调用路线重传服务
     stop_push_client_ = node_->create_client<drone_msgs::srv::StartTask>(
-        "/drone/stop_push");
+        "/serial/drone/stop_push");
 
     //创建一个服务客户端，用于调用offboard启动服务
     start_offboard_client_ = node_->create_client<drone_msgs::srv::StartOffboard>(
-        "/drone/start_offboard");
+        "/serial/drone/start_offboard");
 
     //创建一个服务客户端，用于调用任务路线与参数上传服务
     upload_mission_summary_client_ = node_->create_client<drone_msgs::srv::UploadMissionSummary>(
-        "/drone/upload_mission_summary");
+        "/serial/drone/upload_mission_summary");
 
     using namespace std::chrono_literals;
     timer_ = node_->create_wall_timer(

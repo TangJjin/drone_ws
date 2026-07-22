@@ -119,7 +119,14 @@ void AirborneNode::setupInterfaces()
     local_position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/mavros/local_position/pose", position_qos,
         [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
-            local_position_pub_->publish(*msg);
+            position_x = msg->pose.position.x;
+            position_y = msg->pose.position.y;
+            position_z = msg->pose.position.z;
+
+            position_qx = msg->pose.orientation.x;
+            position_qy = msg->pose.orientation.y;
+            position_qz = msg->pose.orientation.z;
+            position_qw = msg->pose.orientation.w;
         });
 
     auto control_status_qos =
@@ -228,6 +235,16 @@ void AirborneNode::publishStatus()
     status_msg.battery_voltage = battery_voltage;
     status_msg.battery_percent = battery_percent;
     status_pub_->publish(status_msg);
+
+    geometry_msgs::msg::PoseStamped position_msg;
+    position_msg.pose.position.x = position_x;
+    position_msg.pose.position.y = position_y;
+    position_msg.pose.position.z = position_z;
+    position_msg.pose.orientation.x = position_qx;
+    position_msg.pose.orientation.y = position_qy;
+    position_msg.pose.orientation.z = position_qz;
+    position_msg.pose.orientation.w = position_qw;
+    local_position_pub_->publish(position_msg);
 
     if (armed == true) {
         if (unlock_flag_ == false) {

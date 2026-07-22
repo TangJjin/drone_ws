@@ -56,6 +56,7 @@ target_link_libraries(ground_station
 )
 
 target_link_libraries(ground_link_bridge
+  Qt5::Core
   Qt5::SerialPort
 )
 

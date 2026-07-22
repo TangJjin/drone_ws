@@ -22,7 +22,7 @@
 #include "drone_msgs/srv/start_offboard.hpp"
 #include "drone_msgs/srv/start_task.hpp"
 
-#include "drone_qt/link_protocol.hpp"
+#include "drone_warehouse/link_protocol.hpp"
 
 class GroundLinkBridge : public QObject, public rclcpp::Node
 {

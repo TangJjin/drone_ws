@@ -45,16 +45,32 @@ add_executable(warehouse_gcs
   include/drone_warehouse/shelf_panel_storage.hpp
 )
 
+add_executable(ground_link_bridge
+  src/ground_link_bridge_main.cpp  
+  src/ground_link_bridge.cpp
+  include/drone_warehouse/ground_link_bridge.hpp
+)
+
 target_include_directories(warehouse_gcs PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${GPIOD_INCLUDE_DIRS}
 )
 
+target_include_directories(ground_link_bridge PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
 target_link_libraries(warehouse_gcs
   Qt5::Widgets
   Qt5::SerialPort
   ${GPIOD_LIBRARIES}
+)
+
+target_link_libraries(ground_link_bridge
+  Qt5::Core
+  Qt5::SerialPort
 )
 
 ament_target_dependencies(warehouse_gcs
@@ -66,8 +82,17 @@ ament_target_dependencies(warehouse_gcs
   geometry_msgs
 )
 
+ament_target_dependencies(ground_link_bridge
+  rclcpp
+  std_msgs
+  std_srvs
+  drone_msgs
+  geometry_msgs
+)
+
 install(TARGETS
   warehouse_gcs
+  ground_link_bridge
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -1,5 +1,6 @@
 #include "drone_warehouse/top_status_bar.hpp"
 #include "drone_warehouse/color_palette.hpp"
+#include "drone_warehouse/ros_manager.hpp"
 
 #include <QHBoxLayout>
 #include <QLabel>
@@ -21,6 +22,32 @@ TopStatusBar::TopStatusBar(QWidget *parent)
     connection_button_ = new QPushButton("未连接", this);
     shelf_button_ = new QPushButton("货架信息", this);
     task_button_ = new QPushButton("任务待命", this);
+
+    dx_indicator_label_ = new QLabel(this);
+    dy_indicator_label_ = new QLabel(this);
+    dyaw_indicator_label_ = new QLabel(this);
+    dx_value_label_ = new QLabel("dx:", this);
+    dy_value_label_ = new QLabel("dy:", this);
+    dyaw_value_label_ = new QLabel("dyaw:", this);
+    dx_indicator_label_->setFixedSize(16, 16);
+    dx_indicator_label_->setStyleSheet(
+        "background-color: #9e9e9e;"
+        "border-radius: 6px;"
+        "border: 1px solid #666;"
+    );
+    dy_indicator_label_->setFixedSize(16, 16);
+    dy_indicator_label_->setStyleSheet(
+        "background-color: #9e9e9e;"
+        "border-radius: 6px;"
+        "border: 1px solid #666;"
+    );
+    dyaw_indicator_label_->setFixedSize(16, 16);
+    dyaw_indicator_label_->setStyleSheet(
+        "background-color: #9e9e9e;"
+        "border-radius: 6px;"
+        "border: 1px solid #666;"
+    );
+
     analysis_button_ = new QPushButton("分析", this);
     execute_button_ = new QPushButton("执行", this);
     waypoint_button_ = new QPushButton("航点飞行", this);
@@ -35,6 +62,15 @@ TopStatusBar::TopStatusBar(QWidget *parent)
     layout->addWidget(shelf_button_);
     
     layout->addWidget(task_button_);
+    layout->addStretch();
+
+    layout->addWidget(dx_value_label_);
+    layout->addWidget(dx_indicator_label_);
+    layout->addWidget(dy_value_label_);
+    layout->addWidget(dy_indicator_label_);
+    layout->addWidget(dyaw_value_label_);
+    layout->addWidget(dyaw_indicator_label_);
+
     layout->addStretch();
     layout->addWidget(analysis_button_);
     layout->addWidget(execute_button_);
@@ -59,7 +95,10 @@ TopStatusBar::TopStatusBar(QWidget *parent)
     connect(execute_button_, &QPushButton::clicked, this, &TopStatusBar::executeButtonClicked);
     connect(waypoint_button_, &QPushButton::clicked, this, &TopStatusBar::waypointButtonClicked);
     connect(shelf_button_, &QPushButton::clicked, this, &TopStatusBar::shelfButtonClicked);
-    connect(scheduled_check_button_, &QPushButton::clicked, this, &TopStatusBar::scheduledcheckbuttonnClicked);
+    connect(scheduled_check_button_, &QPushButton::clicked, this, [this]() {
+        const QString mission_trigger_time_text_ = QDateTime::currentDateTime().toString("HH:mm:ss");
+        emit scheduledcheckbuttonnClicked(mission_trigger_time_text_);
+    });
 
     connect(clock_timer_, &QTimer::timeout, this, [this]() {//每秒触发刷新一次时间文本
         const QString current_time_text = QDateTime::currentDateTime().toString("HH:mm:ss");
@@ -145,6 +184,14 @@ void TopStatusBar::setConnected(bool connected)
     title_button_->setVisible(connected);
     //shelf_button_->setVisible(connected);
     task_button_->setVisible(connected);
+
+    dx_value_label_->setVisible(connected);
+    dx_indicator_label_->setVisible(connected);
+    dy_value_label_->setVisible(connected);
+    dy_indicator_label_->setVisible(connected);
+    dyaw_value_label_->setVisible(connected);
+    dyaw_indicator_label_->setVisible(connected);
+
     analysis_button_->setVisible(connected);
     execute_button_->setVisible(connected);
     waypoint_button_->setVisible(connected);
@@ -176,7 +223,7 @@ void TopStatusBar::setTimeText(const QString &text)
 void TopStatusBar::setTriggerTime(const QString &text)
 {
     trigger_time_text_ = text;
-    last_triggered_time_text_.clear();
+    last_triggered_time_text_ = text;
 }
 
 void TopStatusBar::setTimeTriggerEnabled(bool enabled)
@@ -192,5 +239,45 @@ void TopStatusBar::setTimeTriggerEnabled(bool enabled)
 QPoint TopStatusBar::shelfButtonBottomLeftGlobal() const
 {
     return shelf_button_->mapToGlobal(QPoint(0, shelf_button_->height()));
+}
+
+void TopStatusBar::updateDelta(double dx, double dy, double dyaw, bool valid)
+{
+    const double abs_dx = std::abs(dx);
+    const double abs_dy = std::abs(dy);
+    const double abs_dyaw = std::abs(dyaw);
+
+    auto setIndicatorColor = [](QLabel *label, const QString &color) {
+        if (!label) {
+            return;
+        }
+
+        label->setStyleSheet(QString(
+            "background-color: %1;"
+            "border-radius: 6px;"
+            "border: 1px solid #666;"
+        ).arg(color));
+    };
+
+    if (!valid) {
+        setIndicatorColor(dx_indicator_label_, "#9e9e9e");
+        setIndicatorColor(dy_indicator_label_, "#9e9e9e");
+        setIndicatorColor(dyaw_indicator_label_, "#9e9e9e");
+        return;
+    }
+
+    auto updateIndicator = [&](QLabel *label, double value, double green_limit, double yellow_limit) {
+        if (value <= green_limit) {
+            setIndicatorColor(label, "#00c853");
+        } else if (value <= yellow_limit) {
+            setIndicatorColor(label, "#ffd600");
+        } else {
+            setIndicatorColor(label, "#d50000");
+        }
+    };
+
+    updateIndicator(dx_indicator_label_, abs_dx, 0.3, 1.0);
+    updateIndicator(dy_indicator_label_, abs_dy, 0.3, 1.0);
+    updateIndicator(dyaw_indicator_label_, abs_dyaw, 15.0, 30.0);
 }
 

@@ -6,7 +6,7 @@ HOST=${HOST:-192.168.50.2}
 PORT=${PORT:-5004}
 WIDTH=${WIDTH:-640}
 HEIGHT=${HEIGHT:-360}
-FPS=${FPS:-30}
+FPS=${FPS:-15}
 MTU=${MTU:-1200}
 
 while (($#)); do

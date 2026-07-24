@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-DEVICE=${DEVICE:-/dev/video1}
-# DroneVideo hotspot: send to the RDK wlan0 address by default.
-HOST=${HOST:-192.168.50.2}
+# RealSense D435i color node exposed by the librealsense V4L2 backend.
+DEVICE=${DEVICE:-/dev/video5}
+HOST=${HOST:-192.168.46.114}
 PORT=${PORT:-5004}
 WIDTH=${WIDTH:-640}
-HEIGHT=${HEIGHT:-360}
+HEIGHT=${HEIGHT:-480}
 FPS=${FPS:-30}
-BITRATE=${BITRATE:-1000000}
-GOP=${GOP:-1}
+BITRATE=${BITRATE:-1200000}
+GOP=${GOP:-10}
 
 while (($#)); do
   case "$1" in
@@ -29,11 +29,13 @@ while (($#)); do
   esac
 done
 
+[[ -e "$DEVICE" ]] || { echo "RealSense V4L2 device not found: $DEVICE" >&2; exit 1; }
+
 exec gst-launch-1.0 -v \
   v4l2src device="$DEVICE" io-mode=2 do-timestamp=true ! \
-  image/jpeg,width="$WIDTH",height="$HEIGHT",framerate="$FPS"/1 ! \
-  jpegparse ! \
-  mppjpegdec format=NV12 dma-feature=true ! \
+  video/x-raw,format=YUY2,width="$WIDTH",height="$HEIGHT",framerate="$FPS"/1 ! \
+  videoconvert ! video/x-raw,format=NV12 ! \
+  queue max-size-buffers=1 leaky=downstream ! \
   mpph264enc \
     rc-mode=cbr \
     bps="$BITRATE" \

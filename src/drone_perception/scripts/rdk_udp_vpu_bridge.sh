@@ -87,7 +87,7 @@ ffmpeg_args=(
   -y -hide_banner -loglevel warning
   -fflags nobuffer -flags low_delay
   -probesize 32768 -analyzeduration 100000
-  -i "udp://0.0.0.0:${PORT}?fifo_size=512&buffer_size=262144&overrun_nonfatal=1"
+  -i "udp://0.0.0.0:${PORT}?fifo_size=1000000&buffer_size=1048576&overrun_nonfatal=1"
   -map 0:v:0 -c copy -f mpegts "$FIFO"
 )
 

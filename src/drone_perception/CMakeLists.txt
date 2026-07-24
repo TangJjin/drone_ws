@@ -143,6 +143,7 @@ install(PROGRAMS
   scripts/rdk_realsense_vpu_display.sh
   scripts/orangepi_mjpeg_h264_sender.sh
   scripts/orangepi_mjpeg_rtp_sender.sh
+  scripts/orangepi_realsense_h264_sender.sh
   scripts/rdk_mjpeg_rtp_display.sh
   DESTINATION lib/${PROJECT_NAME}
 )

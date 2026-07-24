@@ -76,8 +76,8 @@ public:
     validateParameters();
     configureProcessAffinity();
     configureCameraControls();
-    initializeDetectors();
     startPipeline();
+    initializeDetectors();
 
     for (std::size_t index = 0; index < kWorkerCount; ++index) {
       workers_[index] = std::thread(&IndustrialAnimalVisionNode::workerLoop, this, index);

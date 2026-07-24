@@ -335,8 +335,7 @@ private:
              << ",height=" << camera_height_
              << ",framerate=" << camera_fps_ << "/1 ! "
              << "queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! "
-             << "jpegparse ! mppjpegdec format=RGB width=" << decode_width_
-             << " height=" << decode_height_ << " dma-feature=false ! "
+             << "jpegparse ! mppjpegdec name=jpeg_decoder format=RGB dma-feature=false ! "
              << "queue max-size-buffers=1 max-size-bytes=0 max-size-time=0 leaky=downstream ! "
              << "appsink name=camera_sink emit-signals=false sync=false max-buffers=1 drop=true";
     return pipeline.str();
@@ -360,6 +359,31 @@ private:
       }
       throw std::runtime_error("GStreamer pipeline parse failed: " + message);
     }
+
+    GstElement *jpeg_decoder = gst_bin_get_by_name(GST_BIN(pipeline_), "jpeg_decoder");
+    if (jpeg_decoder == nullptr) {
+      throw std::runtime_error("GStreamer MPP decoder jpeg_decoder not found");
+    }
+    GObjectClass *decoder_class = G_OBJECT_GET_CLASS(jpeg_decoder);
+    const bool supports_resize =
+      g_object_class_find_property(decoder_class, "width") != nullptr &&
+      g_object_class_find_property(decoder_class, "height") != nullptr;
+    if (supports_resize) {
+      g_object_set(
+        G_OBJECT(jpeg_decoder),
+        "width", static_cast<guint>(decode_width_),
+        "height", static_cast<guint>(decode_height_),
+        nullptr);
+      RCLCPP_INFO(
+        get_logger(), "MPP decoder resize configured through GObject: %dx%d",
+        decode_width_, decode_height_);
+    } else {
+      RCLCPP_WARN(
+        get_logger(),
+        "MPP decoder has no width/height properties; using original decoded size");
+    }
+    gst_object_unref(jpeg_decoder);
+
     app_sink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "camera_sink");
     if (app_sink_ == nullptr || !GST_IS_APP_SINK(app_sink_)) {
       throw std::runtime_error("GStreamer appsink camera_sink not found");

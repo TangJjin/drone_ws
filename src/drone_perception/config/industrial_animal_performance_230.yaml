@@ -1,0 +1,68 @@
+# 工业相机高帧率配置：优先保证 1280x720 MJPEG 约 230 FPS 采集。
+# 启动命令中的参数会覆盖这里的值，例如 gain:=170 会覆盖 gain: 190。
+industrial_animal_vision:
+  ros__parameters:
+    # 配置名称，仅用于日志和显示界面标识。
+    camera_profile: performance_230
+
+    # 相机设备和相机输出格式。该节点固定请求 MJPEG。
+    camera_device: /dev/video1
+    camera_width: 1280
+    camera_height: 720
+    camera_fps: 230
+
+    # MPP 解码器输出给 RKNN 前处理的 RGB 尺寸。
+    # 模型输入仍是 640x640，检测器会在内部做 letterbox 补边。
+    decode_width: 640
+    decode_height: 360
+
+    # 曝光模式：1=手动曝光；3=相机自动曝光（部分驱动显示为光圈优先）。
+    exposure_auto: 1
+    # 手动曝光值，仅在 exposure_auto=1 时写入相机。
+    # 数值越大画面越亮，但曝光太长可能无法维持 230 FPS，并增加运动拖影。
+    exposure_absolute: 40
+    # 自动曝光是否允许通过降低帧率增加亮度：0=不允许，1=允许。
+    exposure_auto_priority: 0
+    # 图像增益：越大越亮，同时噪点也越明显。
+    gain: 190
+
+    # 基础图像调节。brightness 是亮度，contrast 是明暗反差。
+    brightness: 128
+    contrast: 65
+    # 色彩饱和度：越高颜色越鲜艳。
+    saturation: 90
+    # Gamma：调节中间亮度，不等同于曝光。
+    gamma: 130
+    # 锐度：越高边缘越明显，过高可能放大噪声。
+    sharpness: 128
+    # 逆光补偿：用于主体背后有强光的场景。
+    backlight_compensation: 16
+
+    # 自动白平衡：1=自动，0=手动。
+    white_balance_auto: 1
+    # 手动色温，只有 white_balance_auto=0 时才会写入相机。
+    white_balance_temperature: 4650
+    # 电源频率防闪烁：0=关闭，1=50Hz，2=60Hz，3=自动（取决于驱动支持）。
+    power_line_frequency: 1
+
+    # 自动对焦：1=自动，0=手动。
+    focus_auto: 1
+    # 手动焦点位置，只有 focus_auto=0 时才会写入相机。
+    focus_absolute: 0
+    # 变焦值；是光学还是数字变焦由相机硬件和驱动决定。
+    zoom_absolute: 120
+
+    # 是否在香橙派桌面显示检测窗口。
+    display_enabled: true
+    # 最多刷新多少次显示窗口；不会限制相机采集和 NPU 推理速度。
+    display_fps_limit: 60.0
+
+    # 置信度阈值：越高误检越少，但可能漏检。
+    confidence_threshold: 0.5
+    # NMS 重叠框抑制阈值。
+    nms_threshold: 0.45
+
+    # 使用 RKNN 原生输入内存，FP16 模型建议保持 true。
+    enable_zero_copy: true
+    # 将进程限制到 CPU4-7，并将三个推理线程分别绑定到 CPU5-7。
+    cpu_affinity_enabled: true

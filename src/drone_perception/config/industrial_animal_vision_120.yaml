@@ -1,0 +1,59 @@
+# 工业相机自动曝光配置：采集请求为 1280x720 MJPEG 120 FPS。
+# 自动曝光可能为了亮度延长曝光，因此真实帧率可能低于请求的 120 FPS。
+# 启动命令中的参数会覆盖这里的值。
+industrial_animal_vision:
+  ros__parameters:
+    # 配置名称，仅用于日志和显示界面标识。
+    camera_profile: vision_120
+
+    # 相机设备和相机输出格式。该节点固定请求 MJPEG。
+    camera_device: /dev/video1
+    camera_width: 1280
+    camera_height: 720
+    camera_fps: 120
+
+    # MPP 解码后送入检测器的 RGB 尺寸；模型内部再补边到 640x640。
+    decode_width: 640
+    decode_height: 360
+
+    # 曝光模式：1=手动；3=自动（部分驱动显示为光圈优先）。
+    exposure_auto: 3
+    # 自动模式下节点不会写入该值，切换 exposure_auto=1 后才生效。
+    exposure_absolute: 40
+    # 0=自动曝光不允许降低帧率；1=允许降低帧率换取更亮画面。
+    exposure_auto_priority: 0
+    # 初始增益。自动曝光时相机驱动可能接管，最终增益不一定固定为该值。
+    gain: 190
+
+    # 基础图像调节：亮度、对比度、饱和度、Gamma、锐度和逆光补偿。
+    brightness: 128
+    contrast: 65
+    saturation: 90
+    gamma: 130
+    sharpness: 128
+    backlight_compensation: 16
+
+    # 自动白平衡：1=自动，0=手动。
+    white_balance_auto: 1
+    # 只有 white_balance_auto=0 时才会写入该手动色温。
+    white_balance_temperature: 4650
+    # 防闪烁频率：0=关闭，1=50Hz，2=60Hz，3=自动（取决于驱动支持）。
+    power_line_frequency: 1
+
+    # 对焦：focus_auto=1 自动；设为 0 后 focus_absolute 才生效。
+    focus_auto: 1
+    focus_absolute: 0
+    # 变焦值；具体对应光学还是数字变焦取决于相机。
+    zoom_absolute: 120
+
+    # 桌面显示开关和最大显示刷新率；不限制相机采集或 NPU 推理速度。
+    display_enabled: true
+    display_fps_limit: 60.0
+
+    # 检测置信度阈值和重叠框 NMS 阈值。
+    confidence_threshold: 0.5
+    nms_threshold: 0.45
+
+    # RKNN FP16 原生输入内存加速，以及 CPU4-7 亲和性优化。
+    enable_zero_copy: true
+    cpu_affinity_enabled: true

@@ -2,29 +2,25 @@
 <package format="3">
   <name>drone_perception</name>
   <version>0.0.2</version>
-  <description>Drone perception: TCP bridge for K230 camera, YOLO detection with D435i depth.</description>
+  <description>Drone perception bridges and industrial-camera RKNN animal detection.</description>
   <maintainer email="gjl@example.com">gjl</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
-  <depend>ament_index_cpp</depend>
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>drone_msgs</depend>
-  <depend>cv_bridge</depend>
-  <depend>image_transport</depend>
-  <depend>compressed_image_transport</depend>
-  <depend>image_geometry</depend>
-  <depend>message_filters</depend>
-  <depend>rcl_interfaces</depend>
-  <depend>realsense2_camera_msgs</depend>
-  <depend>realsense2</depend>
-  <depend>sensor_msgs</depend>
-  <depend>zbar</depend>
+  <depend>libopencv-dev</depend>
+  <build_depend>libgstreamer1.0-dev</build_depend>
+  <build_depend>libgstreamer-plugins-base1.0-dev</build_depend>
+  <build_depend>pkg-config</build_depend>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
 

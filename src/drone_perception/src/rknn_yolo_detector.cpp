@@ -61,8 +61,26 @@ struct RknnOutputGuard
 RknnYoloDetector::RknnYoloDetector(
   const std::string &model_path,
   rknn_core_mask core_mask,
-  bool enable_zero_copy)
+  bool enable_zero_copy,
+  std::vector<std::string> class_names,
+  float confidence_threshold,
+  float nms_threshold,
+  int letterbox_value)
+: class_names_(std::move(class_names)),
+  confidence_threshold_(confidence_threshold),
+  nms_threshold_(nms_threshold),
+  letterbox_value_(letterbox_value)
 {
+  if (class_names_.empty()) {
+    throw std::invalid_argument("RKNN detector class_names must not be empty");
+  }
+  if (confidence_threshold_ <= 0.0F || confidence_threshold_ > 1.0F) {
+    throw std::invalid_argument("RKNN detector confidence threshold must be in (0, 1]");
+  }
+  if (nms_threshold_ <= 0.0F || nms_threshold_ > 1.0F) {
+    throw std::invalid_argument("RKNN detector NMS threshold must be in (0, 1]");
+  }
+  letterbox_value_ = std::clamp(letterbox_value_, 0, 255);
   loadModel(model_path, core_mask, enable_zero_copy);
 }
 
@@ -147,6 +165,55 @@ const char *RknnYoloDetector::zeroCopyModeName() const
 rknn_tensor_type RknnYoloDetector::nativeInputType() const
 {
   return native_input_type_;
+}
+
+const std::string &RknnYoloDetector::classLabel(int class_id) const
+{
+  static const std::string unknown{"unknown"};
+  if (class_id < 0 || static_cast<std::size_t>(class_id) >= class_names_.size()) {
+    return unknown;
+  }
+  return class_names_[static_cast<std::size_t>(class_id)];
+}
+
+std::size_t RknnYoloDetector::classCount() const
+{
+  return class_names_.size();
+}
+
+float RknnYoloDetector::confidenceThreshold() const
+{
+  return confidence_threshold_;
+}
+
+float RknnYoloDetector::nmsThreshold() const
+{
+  return nms_threshold_;
+}
+
+int RknnYoloDetector::inputWidth() const
+{
+  return input_width_;
+}
+
+int RknnYoloDetector::inputHeight() const
+{
+  return input_height_;
+}
+
+uint32_t RknnYoloDetector::outputCount() const
+{
+  return output_count_;
+}
+
+const std::string &RknnYoloDetector::apiVersion() const
+{
+  return api_version_;
+}
+
+const std::string &RknnYoloDetector::driverVersion() const
+{
+  return driver_version_;
 }
 
 std::vector<unsigned char> RknnYoloDetector::readFile(const std::string &path)
@@ -293,7 +360,7 @@ std::vector<Detection> RknnYoloDetector::parseBranches(
   for (const ScaleBranch &branch : branches) {
     if (branch.box.data == nullptr || branch.cls.data == nullptr ||
       branch.box.channels != kBoxChannels ||
-      branch.cls.channels != kClassCount ||
+      branch.cls.channels != static_cast<int>(class_names_.size()) ||
       branch.box.height <= 0 || branch.box.width <= 0 ||
       branch.cls.height != branch.box.height ||
       branch.cls.width != branch.box.width)
@@ -308,14 +375,14 @@ std::vector<Detection> RknnYoloDetector::parseBranches(
       for (int x = 0; x < branch.box.width; ++x) {
         int best_class = -1;
         float best_score = 0.0F;
-        for (int class_id = 0; class_id < kClassCount; ++class_id) {
+        for (int class_id = 0; class_id < static_cast<int>(class_names_.size()); ++class_id) {
           const float score = readValue(branch.cls, class_id, y, x);
           if (score > best_score) {
             best_score = score;
             best_class = class_id;
           }
         }
-        if (best_class < 0 || best_score < kConfThresh) {
+        if (best_class < 0 || best_score < confidence_threshold_) {
           continue;
         }
         float xyxy[4] = {};
@@ -366,7 +433,8 @@ std::vector<Detection> RknnYoloDetector::parseBranches(
       local_indices.push_back(static_cast<int>(i));
     }
     std::vector<int> keep;
-    cv::dnn::NMSBoxes(class_boxes, class_scores, kConfThresh, kNmsThresh, keep);
+    cv::dnn::NMSBoxes(
+      class_boxes, class_scores, confidence_threshold_, nms_threshold_, keep);
     for (int keep_index : keep) {
       const int source = local_indices[static_cast<std::size_t>(keep_index)];
       Detection detection;
@@ -398,7 +466,8 @@ RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
   const int pad_x = (input_width_ - resized_width) / 2;
   const int pad_y = (input_height_ - resized_height) / 2;
   letterbox_buffer_.create(input_height_, input_width_, rgb_image.type());
-  letterbox_buffer_.setTo(cv::Scalar(0, 0, 0));
+  letterbox_buffer_.setTo(
+    cv::Scalar(letterbox_value_, letterbox_value_, letterbox_value_));
   cv::Mat destination = letterbox_buffer_(
     cv::Rect(pad_x, pad_y, resized_width, resized_height));
   if (resized_width == rgb_image.cols && resized_height == rgb_image.rows) {
@@ -600,6 +669,15 @@ void RknnYoloDetector::loadModel(
   std::cout << "[RKNN-PATHB] NPU core mask: " << static_cast<int>(core_mask)
             << ", init_flag=PRIOR_HIGH" << std::endl;
 
+  rknn_sdk_version sdk_version;
+  std::memset(&sdk_version, 0, sizeof(sdk_version));
+  const int version_ret = rknn_query(
+    context_, RKNN_QUERY_SDK_VERSION, &sdk_version, sizeof(sdk_version));
+  if (version_ret == RKNN_SUCC) {
+    api_version_ = sdk_version.api_version;
+    driver_version_ = sdk_version.drv_version;
+  }
+
   rknn_input_output_num io_num;
   std::memset(&io_num, 0, sizeof(io_num));
   int query_ret = rknn_query(context_, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
@@ -656,7 +734,7 @@ void RknnYoloDetector::loadModel(
     }
     if (slot.channels == 64) {
       ++box_count;
-    } else if (slot.channels == kClassCount) {
+    } else if (slot.channels == static_cast<int>(class_names_.size())) {
       ++cls_count;
     } else if (slot.channels == 1) {
       ++sum_count;
@@ -677,9 +755,14 @@ void RknnYoloDetector::loadModel(
 
   configureZeroCopyInput(enable_zero_copy);
 
+  std::ostringstream class_list;
+  for (std::size_t i = 0; i < class_names_.size(); ++i) {
+    class_list << (i == 0 ? "" : "/") << class_names_[i];
+  }
   std::cout << "[RKNN-PATHB] model ready: " << input_width_ << "x" << input_height_
-            << ", classes=3 (qrcode/package/shelf_tag), conf=" << kConfThresh
-            << " nms=" << kNmsThresh
+            << ", classes=" << class_names_.size() << " (" << class_list.str() << ")"
+            << ", conf=" << confidence_threshold_
+            << " nms=" << nms_threshold_
             << ", zero_copy=" << zeroCopyModeName() << std::endl;
 }
 
@@ -697,7 +780,7 @@ void RknnYoloDetector::bindScaleBranches(
     ScaleGroup &group = groups[slot.height * 10000 + slot.width];
     if (slot.channels == 64) {
       group.box = &slot;
-    } else if (slot.channels == kClassCount) {
+    } else if (slot.channels == static_cast<int>(class_names_.size())) {
       group.cls = &slot;
     }
   }

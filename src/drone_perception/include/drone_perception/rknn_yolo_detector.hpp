@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -40,7 +42,11 @@ public:
   explicit RknnYoloDetector(
     const std::string &model_path,
     rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2,
-    bool enable_zero_copy = true);
+    bool enable_zero_copy = true,
+    std::vector<std::string> class_names = {"qrcode", "package", "shelf_tag"},
+    float confidence_threshold = kConfThresh,
+    float nms_threshold = kNmsThresh,
+    int letterbox_value = 0);
   ~RknnYoloDetector();
 
   RknnYoloDetector(const RknnYoloDetector &) = delete;
@@ -54,6 +60,15 @@ public:
   ZeroCopyMode zeroCopyMode() const;
   const char *zeroCopyModeName() const;
   rknn_tensor_type nativeInputType() const;
+  const std::string &classLabel(int class_id) const;
+  std::size_t classCount() const;
+  float confidenceThreshold() const;
+  float nmsThreshold() const;
+  int inputWidth() const;
+  int inputHeight() const;
+  uint32_t outputCount() const;
+  const std::string &apiVersion() const;
+  const std::string &driverVersion() const;
 
   static const char *className(int class_id);
   static const char *zeroCopyModeToString(ZeroCopyMode mode);
@@ -137,6 +152,12 @@ private:
   int input_height_ = 640;
   uint32_t output_count_ = 0;
   std::vector<OutputSlot> output_slots_;
+  std::vector<std::string> class_names_;
+  float confidence_threshold_ = kConfThresh;
+  float nms_threshold_ = kNmsThresh;
+  int letterbox_value_ = 0;
+  std::string api_version_;
+  std::string driver_version_;
 
   rknn_context context_ = 0;
   rknn_tensor_mem *input_mem_ = nullptr;

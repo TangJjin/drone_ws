@@ -10,6 +10,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(image_transport REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(drone_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
@@ -72,12 +73,77 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+add_executable(rdk_nv12_display_cpp
+  scripts/rdk_nv12_display.cpp
+)
+
+target_compile_features(rdk_nv12_display_cpp PUBLIC cxx_std_17)
+
+target_include_directories(rdk_nv12_display_cpp
+  PRIVATE
+  ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(rdk_nv12_display_cpp
+  ${OpenCV_LIBS}
+  Threads::Threads
+)
+
+install(TARGETS
+  rdk_nv12_display_cpp
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+add_executable(realsense_color_transport_publisher
+  src/realsense_color_transport_publisher.cpp
+)
+
+target_compile_features(realsense_color_transport_publisher PUBLIC cxx_std_17)
+
+ament_target_dependencies(realsense_color_transport_publisher
+  cv_bridge
+  image_transport
+  rclcpp
+  sensor_msgs
+)
+
+target_link_libraries(realsense_color_transport_publisher
+  realsense2::realsense2
+)
+
+add_executable(realsense_compressed_receiver
+  src/realsense_compressed_receiver.cpp
+)
+
+target_compile_features(realsense_compressed_receiver PUBLIC cxx_std_17)
+
+ament_target_dependencies(realsense_compressed_receiver
+  cv_bridge
+  image_transport
+  rclcpp
+  sensor_msgs
+)
+
+target_link_libraries(realsense_compressed_receiver
+  ${OpenCV_LIBS}
+)
+
+install(TARGETS
+  realsense_color_transport_publisher
+  realsense_compressed_receiver
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(PROGRAMS
   scripts/k230_animals_image_saver.sh
   scripts/k230_snapshot_decode.sh
   scripts/rdk_udp_vpu_bridge.sh
   scripts/rdk_nv12_display.py
   scripts/rdk_udp_vpu_display.sh
+  scripts/rdk_realsense_vpu_display.sh
+  scripts/orangepi_mjpeg_h264_sender.sh
+  scripts/orangepi_mjpeg_rtp_sender.sh
+  scripts/rdk_mjpeg_rtp_display.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 

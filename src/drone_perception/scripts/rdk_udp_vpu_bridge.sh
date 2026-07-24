@@ -8,8 +8,8 @@ PORT=5004
 SAMPLE=/app/multimedia_samples/sample_codec/sample_codec
 BASE_CONFIG=/app/multimedia_samples/sample_codec/codec_config.ini
 OUTPUT=/dev/null
-WIDTH=1280
-HEIGHT=720
+WIDTH=640
+HEIGHT=360
 DURATION=0
 LOG_LEVEL=warn
 
@@ -21,8 +21,8 @@ Usage: rdk_udp_vpu_bridge.sh [options]
   --sample PATH     RDK sample_codec executable
   --config PATH     Base sample_codec codec_config.ini
   --output PATH     NV12 output file, or /dev/null (default: /dev/null)
-  --width N         H.264 width (default: 1280)
-  --height N        H.264 height (default: 720)
+  --width N         H.264 width (default: 640)
+  --height N        H.264 height (default: 360)
   --duration SEC    Stop after SEC seconds; 0 means run until Ctrl-C
   --verbose         Keep sample_codec verbose logging
 EOF
@@ -86,7 +86,8 @@ CODEC_PID=$!
 ffmpeg_args=(
   -y -hide_banner -loglevel warning
   -fflags nobuffer -flags low_delay
-  -i "udp://0.0.0.0:${PORT}?fifo_size=1000000&overrun_nonfatal=1"
+  -probesize 32768 -analyzeduration 100000
+  -i "udp://0.0.0.0:${PORT}?fifo_size=512&buffer_size=262144&overrun_nonfatal=1"
   -map 0:v:0 -c copy -f mpegts "$FIFO"
 )
 

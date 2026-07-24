@@ -12,7 +12,7 @@ BACKEND=${BACKEND:-python}
 PORT=${PORT:-5004}
 WIDTH=${WIDTH:-640}
 HEIGHT=${HEIGHT:-360}
-FRAME_HEIGHT=${FRAME_HEIGHT:-$(( (HEIGHT + 15) / 16 * 16 ))}
+FRAME_HEIGHT=${FRAME_HEIGHT:-}
 DURATION=${DURATION:-0}
 TOPIC=${TOPIC:-/rdk_video/image}
 
@@ -32,6 +32,10 @@ while (($#)); do
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2;;
   esac
 done
+
+if [[ -z "$FRAME_HEIGHT" ]]; then
+  FRAME_HEIGHT=$(( (HEIGHT + 15) / 16 * 16 ))
+fi
 
 [[ -x "$BRIDGE" ]] || { echo "bridge not executable: $BRIDGE" >&2; exit 1; }
 case "$BACKEND" in

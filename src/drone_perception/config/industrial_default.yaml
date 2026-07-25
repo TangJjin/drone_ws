@@ -12,7 +12,7 @@ industrial_animal_vision:
     # 向相机请求的图像高度，单位为像素。
     camera_height: 720
     # 向相机请求的采集帧率；相机驱动不支持时会协商为实际可用档位。
-    camera_fps: 90
+    camera_fps: 120
 
     # MPP 解码后交给检测器的 RGB 图像宽度，单位为像素。
     decode_width: 1280

@@ -145,7 +145,7 @@ private:
     declare_parameter<std::string>("model_path", "");
     declare_parameter<int>("camera_width", 1280);
     declare_parameter<int>("camera_height", 720);
-    declare_parameter<int>("camera_fps", 90);
+    declare_parameter<int>("camera_fps", 120);
     declare_parameter<int>("decode_width", 1280);
     declare_parameter<int>("decode_height", 720);
     declare_parameter<int>("exposure_auto", 1);
@@ -841,7 +841,7 @@ private:
   std::string preprocess_mode_;
   int camera_width_ = 1280;
   int camera_height_ = 720;
-  int camera_fps_ = 90;
+  int camera_fps_ = 120;
   int decode_width_ = 640;
   int decode_height_ = 360;
   int exposure_auto_ = 1;

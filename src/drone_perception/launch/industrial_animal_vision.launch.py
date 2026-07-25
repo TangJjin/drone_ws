@@ -28,7 +28,7 @@ def _launch_node(context):
     package_share = get_package_share_directory("drone_perception")
     profile_path = os.path.join(package_share, "config", "industrial_default.yaml")
     default_model = os.path.join(
-        package_share, "models", "animal_clean200_yolo11n_fp16.rknn"
+        package_share, "models", "animal_clean200_yolo11n_int8.rknn"
     )
     overrides = {"camera_profile": "default"}
 

@@ -139,12 +139,16 @@ endif()
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
-set(ANIMAL_MODEL
-  "${CMAKE_CURRENT_SOURCE_DIR}/models/animal_clean200_yolo11n_fp16.rknn")
-if(EXISTS "${ANIMAL_MODEL}")
-  install(FILES "${ANIMAL_MODEL}" DESTINATION share/${PROJECT_NAME}/models)
-else()
-  message(WARNING "Animal RKNN model is missing: ${ANIMAL_MODEL}")
-endif()
+set(ANIMAL_MODELS
+  "${CMAKE_CURRENT_SOURCE_DIR}/models/animal_clean200_yolo11n_fp16.rknn"
+  "${CMAKE_CURRENT_SOURCE_DIR}/models/animal_clean200_yolo11n_int8.rknn"
+)
+foreach(ANIMAL_MODEL IN LISTS ANIMAL_MODELS)
+  if(EXISTS "${ANIMAL_MODEL}")
+    install(FILES "${ANIMAL_MODEL}" DESTINATION share/${PROJECT_NAME}/models)
+  else()
+    message(WARNING "Animal RKNN model is missing: ${ANIMAL_MODEL}")
+  endif()
+endforeach()
 
 ament_package()

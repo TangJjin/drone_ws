@@ -8,9 +8,12 @@
 #include <cstring>
 #include <deque>
 #include <fcntl.h>
+#include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -31,6 +34,8 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include "drone_msgs/msg/animal_detection.hpp"
+#include "drone_msgs/msg/animal_detections.hpp"
 #include "drone_perception/industrial_animal_vision_node.hpp"
 #include "drone_perception/rknn_yolo_detector.hpp"
 
@@ -70,7 +75,10 @@ public:
     configureCameraControls();
     startPipeline();
     initializeDetectors();
+    detections_pub_ = create_publisher<drone_msgs::msg::AnimalDetections>(
+      detections_topic_, rclcpp::QoS(10).reliable());
 
+    detection_publish_thread_ = std::thread(&IndustrialAnimalVisionNode::detectionPublishLoop, this);
     for (std::size_t index = 0; index < kWorkerCount; ++index) {
       workers_[index] = std::thread(&IndustrialAnimalVisionNode::workerLoop, this, index);
     }
@@ -82,10 +90,10 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Industrial animal vision ready: profile=%s model=%s camera=%s "
-      "request=MJPEG %dx%d@%d display=%s preprocess=%s",
+      "request=MJPEG %dx%d@%d display=%s preprocess=%s detections_topic=%s",
       camera_profile_.c_str(), model_path_.c_str(), camera_device_.c_str(),
       camera_width_, camera_height_, camera_fps_, display_enabled_ ? "on" : "off",
-      preprocess_mode_.c_str());
+      preprocess_mode_.c_str(), detections_topic_.c_str());
   }
 
   ~IndustrialAnimalVisionNode() override
@@ -93,6 +101,7 @@ public:
     running_.store(false);
     task_ready_.notify_all();
     result_ready_.notify_all();
+    detection_result_ready_.notify_all();
 
     if (pipeline_ != nullptr) {
       gst_element_send_event(pipeline_, gst_event_new_eos());
@@ -104,6 +113,9 @@ public:
       if (worker.joinable()) {
         worker.join();
       }
+    }
+    if (detection_publish_thread_.joinable()) {
+      detection_publish_thread_.join();
     }
     if (ui_thread_.joinable()) {
       ui_thread_.join();
@@ -136,6 +148,30 @@ private:
     std::vector<Detection> detections;
     RknnYoloDetector::InferenceTimingStats timing;
     double api_run_ms = 0.0;
+  };
+
+  struct DetectionFrame
+  {
+    std::uint64_t frame_id = 0;
+    int image_width = 0;
+    int image_height = 0;
+    std::vector<Detection> detections;
+    std::vector<std::string> labels;
+  };
+
+  struct TrackedDetection
+  {
+    std::uint64_t track_id = 0;
+    int class_id = -1;
+    cv::Rect box;
+    std::uint64_t last_seen_frame_id = 0;
+  };
+
+  struct TrackMatch
+  {
+    std::size_t detection_index = 0;
+    std::size_t track_index = 0;
+    float iou = 0.0F;
   };
 
   void declareParameters()
@@ -171,6 +207,9 @@ private:
     declare_parameter<bool>("enable_zero_copy", true);
     declare_parameter<bool>("enable_rga_preprocess", true);
     declare_parameter<bool>("cpu_affinity_enabled", true);
+    declare_parameter<std::string>("detections_topic", "/animal_vision/detections");
+    declare_parameter<double>("track_iou_threshold", 0.3);
+    declare_parameter<int>("track_max_missed_frames", 15);
   }
 
   void readParameters()
@@ -207,6 +246,10 @@ private:
     enable_zero_copy_ = get_parameter("enable_zero_copy").as_bool();
     enable_rga_preprocess_ = get_parameter("enable_rga_preprocess").as_bool();
     cpu_affinity_enabled_ = get_parameter("cpu_affinity_enabled").as_bool();
+    detections_topic_ = get_parameter("detections_topic").as_string();
+    track_iou_threshold_ = static_cast<float>(get_parameter("track_iou_threshold").as_double());
+    track_max_missed_frames_ = static_cast<int>(
+      get_parameter("track_max_missed_frames").as_int());
   }
 
   void validateParameters() const
@@ -224,6 +267,15 @@ private:
     }
     if (display_fps_limit_ < 0.0) {
       throw std::invalid_argument("display_fps_limit must be >= 0");
+    }
+    if (detections_topic_.empty()) {
+      throw std::invalid_argument("detections_topic must not be empty");
+    }
+    if (track_iou_threshold_ < 0.0F || track_iou_threshold_ > 1.0F) {
+      throw std::invalid_argument("track_iou_threshold must be in [0, 1]");
+    }
+    if (track_max_missed_frames_ < 0) {
+      throw std::invalid_argument("track_max_missed_frames must be >= 0");
     }
   }
 
@@ -323,6 +375,179 @@ private:
     model_input_width_ = detectors_[0]->inputWidth();
     model_input_height_ = detectors_[0]->inputHeight();
     model_output_count_ = detectors_[0]->outputCount();
+  }
+
+  static float intersectionOverUnion(const cv::Rect &first, const cv::Rect &second)
+  {
+    const cv::Rect overlap = first & second;
+    if (overlap.empty()) {
+      return 0.0F;
+    }
+    const float intersection = static_cast<float>(overlap.area());
+    const float union_area = static_cast<float>(first.area() + second.area() - overlap.area());
+    return union_area > 0.0F ? intersection / union_area : 0.0F;
+  }
+
+  void enqueueDetectionFrame(
+    std::uint64_t frame_id,
+    int image_width,
+    int image_height,
+    const std::vector<Detection> &detections,
+    const RknnYoloDetector &detector)
+  {
+    DetectionFrame frame;
+    frame.frame_id = frame_id;
+    frame.image_width = image_width;
+    frame.image_height = image_height;
+    frame.detections = detections;
+    frame.labels.reserve(detections.size());
+    for (const Detection &detection : detections) {
+      frame.labels.push_back(detector.classLabel(detection.class_id));
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(detection_result_mutex_);
+      pending_detection_frames_.emplace(frame_id, std::move(frame));
+    }
+    detection_result_ready_.notify_one();
+  }
+
+  void markDetectionFrameSkipped(std::uint64_t frame_id)
+  {
+    {
+      std::lock_guard<std::mutex> lock(detection_result_mutex_);
+      skipped_detection_frames_.insert(frame_id);
+    }
+    detection_result_ready_.notify_one();
+  }
+
+  void detectionPublishLoop()
+  {
+    while (running_.load() && rclcpp::ok()) {
+      std::optional<DetectionFrame> frame;
+      {
+        std::unique_lock<std::mutex> lock(detection_result_mutex_);
+        detection_result_ready_.wait(lock, [this] {
+          return pending_detection_frames_.count(next_detection_frame_id_) > 0U ||
+                 skipped_detection_frames_.count(next_detection_frame_id_) > 0U ||
+                 !running_.load() || !rclcpp::ok();
+        });
+
+        while (skipped_detection_frames_.erase(next_detection_frame_id_) > 0U) {
+          ++next_detection_frame_id_;
+        }
+        const auto pending = pending_detection_frames_.find(next_detection_frame_id_);
+        if (pending == pending_detection_frames_.end()) {
+          continue;
+        }
+        frame = std::move(pending->second);
+        pending_detection_frames_.erase(pending);
+        ++next_detection_frame_id_;
+      }
+
+      try {
+        publishDetectionFrame(*frame);
+      } catch (const std::exception &error) {
+        RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "Animal vision detection publication failed: %s", error.what());
+      }
+    }
+  }
+
+  void publishDetectionFrame(const DetectionFrame &frame)
+  {
+    std::vector<TrackMatch> candidates;
+    candidates.reserve(frame.detections.size() * tracked_detections_.size());
+    for (std::size_t detection_index = 0; detection_index < frame.detections.size(); ++detection_index) {
+      for (std::size_t track_index = 0; track_index < tracked_detections_.size(); ++track_index) {
+        const TrackedDetection &track = tracked_detections_[track_index];
+        if (track.class_id != frame.detections[detection_index].class_id) {
+          continue;
+        }
+        const float iou = intersectionOverUnion(frame.detections[detection_index].box, track.box);
+        if (iou >= track_iou_threshold_) {
+          candidates.push_back(TrackMatch{detection_index, track_index, iou});
+        }
+      }
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const TrackMatch &first, const TrackMatch &second) {
+      return first.iou > second.iou;
+    });
+
+    std::vector<std::uint64_t> track_ids(frame.detections.size(), 0);
+    std::vector<bool> detection_matched(frame.detections.size(), false);
+    std::vector<bool> track_matched(tracked_detections_.size(), false);
+    for (const TrackMatch &candidate : candidates) {
+      if (detection_matched[candidate.detection_index] || track_matched[candidate.track_index]) {
+        continue;
+      }
+      TrackedDetection &track = tracked_detections_[candidate.track_index];
+      track.box = frame.detections[candidate.detection_index].box;
+      track.last_seen_frame_id = frame.frame_id;
+      track_ids[candidate.detection_index] = track.track_id;
+      detection_matched[candidate.detection_index] = true;
+      track_matched[candidate.track_index] = true;
+    }
+
+    for (std::size_t detection_index = 0; detection_index < frame.detections.size(); ++detection_index) {
+      if (detection_matched[detection_index]) {
+        continue;
+      }
+      if (next_track_id_ == std::numeric_limits<std::uint64_t>::max()) {
+        throw std::runtime_error("animal vision track_id space exhausted");
+      }
+      const std::uint64_t track_id = next_track_id_++;
+      tracked_detections_.push_back(TrackedDetection{
+        track_id,
+        frame.detections[detection_index].class_id,
+        frame.detections[detection_index].box,
+        frame.frame_id});
+      track_ids[detection_index] = track_id;
+    }
+
+    tracked_detections_.erase(
+      std::remove_if(
+        tracked_detections_.begin(), tracked_detections_.end(),
+        [this, &frame](const TrackedDetection &track) {
+          return frame.frame_id - track.last_seen_frame_id >
+                 static_cast<std::uint64_t>(track_max_missed_frames_);
+        }),
+      tracked_detections_.end());
+
+    drone_msgs::msg::AnimalDetections message;
+    message.stamp = now();
+    message.frame_seq = frame.frame_id;
+    message.image_width = static_cast<std::uint32_t>(frame.image_width);
+    message.image_height = static_cast<std::uint32_t>(frame.image_height);
+    message.targets.reserve(frame.detections.size());
+    const int image_center_x = frame.image_width / 2;
+    const int image_center_y = frame.image_height / 2;
+    const double half_width = static_cast<double>(frame.image_width) / 2.0;
+    const double half_height = static_cast<double>(frame.image_height) / 2.0;
+    for (std::size_t index = 0; index < frame.detections.size(); ++index) {
+      const Detection &detection = frame.detections[index];
+      drone_msgs::msg::AnimalDetection target;
+      target.label = frame.labels[index];
+      target.track_id = track_ids[index];
+      target.score = detection.score;
+      target.cx = detection.center.x;
+      target.cy = detection.center.y;
+      target.err_x = detection.center.x - image_center_x;
+      target.err_y = detection.center.y - image_center_y;
+      target.norm_x = half_width > 0.0 ? static_cast<double>(target.err_x) / half_width : 0.0;
+      target.norm_y = half_height > 0.0 ? static_cast<double>(target.err_y) / half_height : 0.0;
+      target.x1 = detection.box.x;
+      target.y1 = detection.box.y;
+      target.x2 = detection.box.x + detection.box.width;
+      target.y2 = detection.box.y + detection.box.height;
+      target.bbox_w = detection.box.width;
+      target.bbox_h = detection.box.height;
+      target.bbox_area = detection.box.area();
+      message.targets.push_back(std::move(target));
+    }
+    message.target_count = static_cast<std::uint32_t>(message.targets.size());
+    detections_pub_->publish(message);
   }
 
   std::string buildPipelineDescription() const
@@ -473,6 +698,7 @@ private:
       {
         std::lock_guard<std::mutex> lock(task_mutex_);
         if (task_queue_.size() >= kTaskQueueCapacity) {
+          markDetectionFrameSkipped(task_queue_.front().frame_id);
           task_queue_.pop_front();
           dropped_count_.fetch_add(1);
         }
@@ -563,9 +789,11 @@ private:
 
   void processTask(FrameTask task, std::size_t worker_index)
   {
+    bool detection_frame_enqueued = false;
     try {
       GstVideoInfo info;
       if (!sampleVideoInfo(task.sample.get(), info)) {
+        markDetectionFrameSkipped(task.frame_id);
         return;
       }
       GstVideoFrame frame;
@@ -599,6 +827,9 @@ private:
       result.api_run_ms = detector.lastRknnRunMs();
       core_run_ms_[worker_index].store(result.api_run_ms);
       processed_count_.fetch_add(1);
+      enqueueDetectionFrame(
+        result.frame_id, rgb.cols, rgb.rows, result.detections, detector);
+      detection_frame_enqueued = true;
 
       if (display_enabled_) {
         std::lock_guard<std::mutex> lock(result_mutex_);
@@ -617,6 +848,9 @@ private:
         reportBaseline(result);
       }
     } catch (const std::exception &error) {
+      if (!detection_frame_enqueued) {
+        markDetectionFrameSkipped(task.frame_id);
+      }
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 2000,
         "Industrial camera RKNN inference failed: %s", error.what());
     }
@@ -799,6 +1033,7 @@ private:
   std::array<std::thread, kWorkerCount> workers_;
   std::thread capture_thread_;
   std::thread ui_thread_;
+  std::thread detection_publish_thread_;
   GstElement *pipeline_ = nullptr;
   GstElement *app_sink_ = nullptr;
   std::mutex task_mutex_;
@@ -808,6 +1043,12 @@ private:
   std::condition_variable result_ready_;
   std::optional<InferenceResult> latest_result_;
   std::mutex report_mutex_;
+  std::mutex detection_result_mutex_;
+  std::condition_variable detection_result_ready_;
+  std::map<std::uint64_t, DetectionFrame> pending_detection_frames_;
+  std::set<std::uint64_t> skipped_detection_frames_;
+  std::vector<TrackedDetection> tracked_detections_;
+  rclcpp::Publisher<drone_msgs::msg::AnimalDetections>::SharedPtr detections_pub_;
   std::atomic<bool> running_{true};
   std::atomic<std::uint64_t> next_frame_id_{1};
   std::atomic<std::uint64_t> received_count_{0};
@@ -819,6 +1060,8 @@ private:
   std::atomic<double> process_fps_{0.0};
   std::atomic<int> actual_width_{0};
   std::atomic<int> actual_height_{0};
+  std::uint64_t next_detection_frame_id_ = 1;
+  std::uint64_t next_track_id_ = 1;
   Clock::time_point started_at_;
   Clock::time_point last_capture_at_{};
   Clock::time_point last_report_at_;
@@ -839,6 +1082,7 @@ private:
   std::string driver_version_;
   std::string zero_copy_mode_;
   std::string preprocess_mode_;
+  std::string detections_topic_ = "/animal_vision/detections";
   int camera_width_ = 1280;
   int camera_height_ = 720;
   int camera_fps_ = 120;
@@ -870,6 +1114,8 @@ private:
   double display_fps_limit_ = 60.0;
   float confidence_threshold_ = 0.5F;
   float nms_threshold_ = 0.45F;
+  float track_iou_threshold_ = 0.3F;
+  int track_max_missed_frames_ = 15;
   const std::string window_name_ = "Industrial Camera Animal RKNN";
 };
 }  // namespace

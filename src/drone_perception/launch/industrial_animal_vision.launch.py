@@ -9,15 +9,18 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-STRING_ARGUMENTS = ("camera_device", "model_path")
+STRING_ARGUMENTS = ("camera_device", "model_path", "detections_topic")
 INTEGER_ARGUMENTS = (
     "camera_width", "camera_height", "camera_fps", "decode_width", "decode_height",
     "exposure_auto", "exposure_absolute", "exposure_auto_priority", "gain",
     "brightness", "contrast", "saturation", "gamma", "sharpness",
     "backlight_compensation", "white_balance_auto", "white_balance_temperature",
     "power_line_frequency", "focus_auto", "focus_absolute", "zoom_absolute",
+    "track_max_missed_frames",
 )
-FLOAT_ARGUMENTS = ("display_fps_limit", "confidence_threshold", "nms_threshold")
+FLOAT_ARGUMENTS = (
+    "display_fps_limit", "confidence_threshold", "nms_threshold", "track_iou_threshold",
+)
 BOOLEAN_ARGUMENTS = (
     "display_enabled", "enable_zero_copy", "enable_rga_preprocess",
     "cpu_affinity_enabled",

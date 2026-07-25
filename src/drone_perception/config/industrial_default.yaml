@@ -66,6 +66,13 @@ industrial_animal_vision:
     # NMS 重叠框抑制阈值；越低越容易合并重叠检测框。
     nms_threshold: 0.45
 
+    # 发布工业相机多目标检测结果的话题。
+    detections_topic: /animal_vision/detections
+    # 同一类别目标跨帧关联所需的最小检测框 IoU。
+    track_iou_threshold: 0.3
+    # 目标允许连续未检测到的最大采集帧数；窗口内重现会保持原 track_id。
+    track_max_missed_frames: 15
+
     # 使用 RKNN 原生输入内存，FP16 模型建议保持 true。
     enable_zero_copy: true
     # 使用 RGA 硬件完成 1280x720 到模型 letterbox 有效区域的缩放。

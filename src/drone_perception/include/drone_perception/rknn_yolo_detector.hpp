@@ -46,7 +46,8 @@ public:
     std::vector<std::string> class_names = {"qrcode", "package", "shelf_tag"},
     float confidence_threshold = kConfThresh,
     float nms_threshold = kNmsThresh,
-    int letterbox_value = 0);
+    int letterbox_value = 0,
+    bool enable_rga_preprocess = true);
   ~RknnYoloDetector();
 
   RknnYoloDetector(const RknnYoloDetector &) = delete;
@@ -59,6 +60,7 @@ public:
   double lastRknnRunMs() const;
   ZeroCopyMode zeroCopyMode() const;
   const char *zeroCopyModeName() const;
+  const char *preprocessModeName() const;
   rknn_tensor_type nativeInputType() const;
   const std::string &classLabel(int class_id) const;
   std::size_t classCount() const;
@@ -156,6 +158,8 @@ private:
   float confidence_threshold_ = kConfThresh;
   float nms_threshold_ = kNmsThresh;
   int letterbox_value_ = 0;
+  bool enable_rga_preprocess_ = false;
+  bool rga_fallback_reported_ = false;
   std::string api_version_;
   std::string driver_version_;
 

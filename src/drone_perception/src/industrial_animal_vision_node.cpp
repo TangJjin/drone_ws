@@ -7,10 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
-#include <cstdlib>
-#include <filesystem>
 #include <fcntl.h>
-#include <fstream>
 #include <functional>
 #include <limits>
 #include <map>
@@ -18,14 +15,12 @@
 #include <mutex>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
-#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
@@ -35,17 +30,13 @@
 #include <opencv2/imgproc.hpp>
 #include <pthread.h>
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp/parameter_map.hpp>
 #include <sched.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 
 #include "drone_msgs/msg/animal_detection.hpp"
 #include "drone_msgs/msg/animal_detections.hpp"
-#include "drone_msgs/msg/industrial_camera_control_capabilities.hpp"
-#include "drone_msgs/msg/industrial_camera_control_command.hpp"
-#include "drone_msgs/msg/industrial_camera_control_descriptor.hpp"
-#include "drone_msgs/msg/industrial_camera_control_state.hpp"
+#include "drone_msgs/msg/industrial_camera_params.hpp"
 #include "drone_perception/industrial_animal_vision_node.hpp"
 #include "drone_perception/rknn_yolo_detector.hpp"
 
@@ -80,13 +71,6 @@ public:
   {
     declareParameters();
     readParameters();
-    project_default_settings_ = camera_settings_;
-    loadProjectDefaultSettings(project_default_settings_);
-    CameraSettings saved_settings = camera_settings_;
-    if (loadSavedCameraSettings(saved_settings)) {
-      camera_settings_ = saved_settings;
-      loaded_saved_settings_ = true;
-    }
     validateParameters();
     configureProcessAffinity();
     configureCameraControls();
@@ -94,18 +78,11 @@ public:
     initializeDetectors();
     detections_pub_ = create_publisher<drone_msgs::msg::AnimalDetections>(
       detections_topic_, rclcpp::QoS(10).reliable());
-    const auto control_qos = rclcpp::QoS(1).reliable().transient_local();
-    camera_capabilities_pub_ = create_publisher<drone_msgs::msg::IndustrialCameraControlCapabilities>(
-      "/industrial_camera/control/capabilities", control_qos);
-    camera_state_pub_ = create_publisher<drone_msgs::msg::IndustrialCameraControlState>(
-      "/industrial_camera/control/state", control_qos);
-    camera_command_sub_ = create_subscription<drone_msgs::msg::IndustrialCameraControlCommand>(
-      "/industrial_camera/control/command", rclcpp::QoS(10).reliable(),
-      [this](const drone_msgs::msg::IndustrialCameraControlCommand::SharedPtr message) {
-        handleCameraControlCommand(message);
+    camera_params_sub_ = create_subscription<drone_msgs::msg::IndustrialCameraParams>(
+      "/industrial_camera/params", rclcpp::QoS(1).reliable().transient_local(),
+      [this](const drone_msgs::msg::IndustrialCameraParams::SharedPtr message) {
+        handleCameraParams(message);
       });
-    publishCameraCapabilities();
-    publishCameraState(0U, true, 0U, 0U, "camera controls ready");
 
     detection_publish_thread_ = std::thread(&IndustrialAnimalVisionNode::detectionPublishLoop, this);
     for (std::size_t index = 0; index < kWorkerCount; ++index) {
@@ -445,18 +422,6 @@ private:
     return nullptr;
   }
 
-  static std::string joinReasons(const std::vector<std::string> &reasons)
-  {
-    std::ostringstream stream;
-    for (std::size_t index = 0; index < reasons.size(); ++index) {
-      if (index > 0U) {
-        stream << "; ";
-      }
-      stream << reasons[index];
-    }
-    return stream.str();
-  }
-
   bool queryCameraControl(int fd, const CameraControlDefinition &definition, v4l2_queryctrl &query) const
   {
     std::memset(&query, 0, sizeof(query));
@@ -560,16 +525,8 @@ private:
       throw std::runtime_error("failed to open camera controls on " + camera_device_ +
         ": " + strerror(errno));
     }
-    std::uint64_t rejected_mask = 0U;
     applyCameraSettings(
-      fd, camera_settings_, kAllCameraControls, camera_settings_, nullptr, &rejected_mask, nullptr, false);
-    if (loaded_saved_settings_ && rejected_mask != 0U) {
-      RCLCPP_WARN(
-        get_logger(), "Saved camera settings are incompatible with the active camera; using project defaults");
-      camera_settings_ = project_default_settings_;
-      applyCameraSettings(
-        fd, camera_settings_, kAllCameraControls, camera_settings_, nullptr, nullptr, nullptr, false);
-    }
+      fd, camera_settings_, kAllCameraControls, camera_settings_, nullptr, nullptr, nullptr, false);
     close(fd);
   }
 
@@ -641,324 +598,52 @@ private:
     if (reasons_result != nullptr) { *reasons_result = std::move(reasons); }
   }
 
-  std::string savedCameraSettingsPath() const
+  static CameraSettings settingsFromParams(
+    const drone_msgs::msg::IndustrialCameraParams &params)
   {
-    const char *home = std::getenv("HOME");
-    const std::filesystem::path root = home == nullptr || *home == '\0' ? "." : home;
-    return (root / ".ros" / "drone_perception" / "industrial_camera_saved.yaml").string();
-  }
-
-  bool loadCameraSettingsFile(const std::string &path, CameraSettings &settings, std::string &error) const
-  {
-    try {
-      const rclcpp::ParameterMap parameters = rclcpp::parameter_map_from_yaml_file(path);
-      std::uint64_t found_mask = 0U;
-      for (const auto &node_parameters : parameters) {
-        for (const rclcpp::Parameter &parameter : node_parameters.second) {
-          for (const auto &definition : kCameraControlDefinitions) {
-            if (parameter.get_name() == definition.name) {
-              if (parameter.get_type() != rclcpp::ParameterType::PARAMETER_INTEGER) {
-                error = parameter.get_name() + " must be an integer";
-                return false;
-              }
-              setCameraSetting(
-                settings, definition.mask, static_cast<int>(parameter.as_int()));
-              found_mask |= definition.mask;
-            }
-          }
-        }
-      }
-      if (found_mask != kAllCameraControls) {
-        error = "missing one or more camera control fields";
-        return false;
-      }
-      return true;
-    } catch (const std::exception &exception) {
-      error = exception.what();
-      return false;
-    }
-  }
-
-  bool loadProjectDefaultSettings(CameraSettings &settings)
-  {
-    try {
-      const std::string path = (std::filesystem::path(
-        ament_index_cpp::get_package_share_directory("drone_perception")) /
-        "config" / "industrial_default.yaml").string();
-      std::string error;
-      if (loadCameraSettingsFile(path, settings, error)) {
-        return true;
-      }
-      RCLCPP_WARN(get_logger(), "Unable to read project camera defaults from %s: %s",
-        path.c_str(), error.c_str());
-    } catch (const std::exception &exception) {
-      RCLCPP_WARN(get_logger(), "Unable to locate project camera defaults: %s", exception.what());
-    }
-    return false;
-  }
-
-  bool loadSavedCameraSettings(CameraSettings &settings)
-  {
-    const std::string path = savedCameraSettingsPath();
-    if (!std::filesystem::exists(path)) {
-      return false;
-    }
-    std::string error;
-    if (loadCameraSettingsFile(path, settings, error)) {
-      RCLCPP_INFO(get_logger(), "Loaded saved industrial camera settings from %s", path.c_str());
-      return true;
-    }
-    RCLCPP_WARN(get_logger(), "Ignoring saved industrial camera settings %s: %s",
-      path.c_str(), error.c_str());
-    return false;
-  }
-
-  bool saveCameraSettingsFile(const CameraSettings &settings, std::string &error) const
-  {
-    const std::filesystem::path path(savedCameraSettingsPath());
-    std::error_code filesystem_error;
-    std::filesystem::create_directories(path.parent_path(), filesystem_error);
-    if (filesystem_error) {
-      error = "failed to create settings directory: " + filesystem_error.message();
-      return false;
-    }
-    const std::filesystem::path temporary_path = path.string() + ".tmp";
-    std::ofstream stream(temporary_path, std::ios::out | std::ios::trunc);
-    if (!stream.is_open()) {
-      error = "failed to open settings file for writing";
-      return false;
-    }
-    stream << "industrial_animal_vision:\n  ros__parameters:\n";
-    for (const auto &definition : kCameraControlDefinitions) {
-      stream << "    " << definition.name << ": " <<
-        getCameraSetting(settings, definition.mask) << "\n";
-    }
-    stream.close();
-    if (!stream) {
-      error = "failed while writing settings file";
-      return false;
-    }
-    std::filesystem::rename(temporary_path, path, filesystem_error);
-    if (filesystem_error) {
-      std::error_code temporary_remove_error;
-      std::filesystem::remove(temporary_path, temporary_remove_error);
-      error = "failed to replace settings file: " + filesystem_error.message();
-      return false;
-    }
-    return true;
-  }
-
-  static void setStateValues(
-    drone_msgs::msg::IndustrialCameraControlState &message, const CameraSettings &settings)
-  {
-    message.exposure_auto = settings.exposure_auto;
-    message.exposure_absolute = settings.exposure_absolute;
-    message.exposure_auto_priority = settings.exposure_auto_priority;
-    message.gain = settings.gain;
-    message.brightness = settings.brightness;
-    message.contrast = settings.contrast;
-    message.saturation = settings.saturation;
-    message.gamma = settings.gamma;
-    message.sharpness = settings.sharpness;
-    message.backlight_compensation = settings.backlight_compensation;
-    message.white_balance_auto = settings.white_balance_auto;
-    message.white_balance_temperature = settings.white_balance_temperature;
-    message.power_line_frequency = settings.power_line_frequency;
-    message.focus_auto = settings.focus_auto;
-    message.focus_absolute = settings.focus_absolute;
-    message.zoom_absolute = settings.zoom_absolute;
-  }
-
-  static CameraSettings settingsFromCommand(
-    const drone_msgs::msg::IndustrialCameraControlCommand &command, const CameraSettings &base)
-  {
-    CameraSettings settings = base;
-    settings.exposure_auto = command.exposure_auto;
-    settings.exposure_absolute = command.exposure_absolute;
-    settings.exposure_auto_priority = command.exposure_auto_priority;
-    settings.gain = command.gain;
-    settings.brightness = command.brightness;
-    settings.contrast = command.contrast;
-    settings.saturation = command.saturation;
-    settings.gamma = command.gamma;
-    settings.sharpness = command.sharpness;
-    settings.backlight_compensation = command.backlight_compensation;
-    settings.white_balance_auto = command.white_balance_auto;
-    settings.white_balance_temperature = command.white_balance_temperature;
-    settings.power_line_frequency = command.power_line_frequency;
-    settings.focus_auto = command.focus_auto;
-    settings.focus_absolute = command.focus_absolute;
-    settings.zoom_absolute = command.zoom_absolute;
+    CameraSettings settings;
+    settings.exposure_auto = params.auto_exposure ? V4L2_EXPOSURE_APERTURE_PRIORITY :
+      V4L2_EXPOSURE_MANUAL;
+    settings.exposure_absolute = params.exposure_absolute;
+    settings.exposure_auto_priority = params.auto_exposure_priority ? 1 : 0;
+    settings.gain = params.gain;
+    settings.brightness = params.brightness;
+    settings.contrast = params.contrast;
+    settings.saturation = params.saturation;
+    settings.gamma = params.gamma;
+    settings.sharpness = params.sharpness;
+    settings.backlight_compensation = params.backlight_compensation;
+    settings.white_balance_auto = params.auto_white_balance ? 1 : 0;
+    settings.white_balance_temperature = params.white_balance_temperature;
+    settings.power_line_frequency = static_cast<int>(params.power_line_frequency);
+    settings.focus_auto = params.auto_focus ? 1 : 0;
+    settings.focus_absolute = params.focus_absolute;
+    settings.zoom_absolute = params.zoom_absolute;
     return settings;
   }
 
-  void publishCameraState(
-    std::uint64_t request_id, bool success, std::uint64_t applied_mask,
-    std::uint64_t rejected_mask, const std::string &message)
+  void handleCameraParams(const drone_msgs::msg::IndustrialCameraParams::SharedPtr params)
   {
-    if (!camera_state_pub_) {
-      return;
-    }
     std::lock_guard<std::mutex> lock(camera_control_mutex_);
-    CameraSettings settings = camera_settings_;
-    std::uint64_t available_mask = 0U;
-    std::uint64_t writable_mask = 0U;
-    std::uint64_t active_mask = 0U;
-    const int fd = open(camera_device_.c_str(), O_RDWR | O_NONBLOCK);
-    if (fd >= 0) {
-      readAllCameraControls(fd, settings, &available_mask, &writable_mask, &active_mask);
-      close(fd);
-      camera_settings_ = settings;
-    }
-    drone_msgs::msg::IndustrialCameraControlState state;
-    state.stamp = now();
-    state.request_id = request_id;
-    state.success = success;
-    state.applied_mask = applied_mask;
-    state.rejected_mask = rejected_mask;
-    state.available_mask = available_mask;
-    state.writable_mask = writable_mask;
-    state.active_mask = active_mask;
-    state.message = message;
-    setStateValues(state, camera_settings_);
-    camera_state_pub_->publish(state);
-  }
-
-  static std::string menuLabel(const v4l2_querymenu &menu, __u32 type)
-  {
-    if (type == V4L2_CTRL_TYPE_INTEGER_MENU) {
-      return std::to_string(menu.value);
-    }
-    return reinterpret_cast<const char *>(menu.name);
-  }
-
-  void publishCameraCapabilities()
-  {
-    if (!camera_capabilities_pub_) {
-      return;
-    }
-    std::lock_guard<std::mutex> lock(camera_control_mutex_);
-    drone_msgs::msg::IndustrialCameraControlCapabilities capabilities;
-    capabilities.stamp = now();
-    capabilities.camera_device = camera_device_;
     const int fd = open(camera_device_.c_str(), O_RDWR | O_NONBLOCK);
     if (fd < 0) {
-      RCLCPP_WARN(get_logger(), "Unable to publish camera capabilities: %s", strerror(errno));
-      camera_capabilities_pub_->publish(capabilities);
+      RCLCPP_ERROR(get_logger(), "Unable to open industrial camera controls: %s", strerror(errno));
       return;
     }
-    for (const auto &definition : kCameraControlDefinitions) {
-      drone_msgs::msg::IndustrialCameraControlDescriptor descriptor;
-      descriptor.name = definition.name;
-      descriptor.update_mask = definition.mask;
-      v4l2_queryctrl query{};
-      if (!queryCameraControl(fd, definition, query)) {
-        capabilities.controls.push_back(descriptor);
-        continue;
-      }
-      descriptor.available = true;
-      descriptor.writable = (query.flags & V4L2_CTRL_FLAG_READ_ONLY) == 0;
-      descriptor.active = (query.flags & V4L2_CTRL_FLAG_INACTIVE) == 0;
-      descriptor.minimum = query.minimum;
-      descriptor.maximum = query.maximum;
-      descriptor.step = std::max(1, query.step);
-      descriptor.default_value = query.default_value;
-      v4l2_control current{};
-      current.id = definition.id;
-      if (ioctl(fd, VIDIOC_G_CTRL, &current) == 0) {
-        descriptor.current_value = current.value;
-      }
-      if (query.type == V4L2_CTRL_TYPE_BOOLEAN) {
-        descriptor.control_type = drone_msgs::msg::IndustrialCameraControlDescriptor::CONTROL_TYPE_BOOLEAN;
-      } else if (query.type == V4L2_CTRL_TYPE_MENU || query.type == V4L2_CTRL_TYPE_INTEGER_MENU) {
-        descriptor.control_type = drone_msgs::msg::IndustrialCameraControlDescriptor::CONTROL_TYPE_MENU;
-        for (int value = query.minimum; value <= query.maximum; ++value) {
-          v4l2_querymenu menu{};
-          menu.id = definition.id;
-          menu.index = static_cast<std::uint32_t>(value);
-          if (ioctl(fd, VIDIOC_QUERYMENU, &menu) == 0) {
-            descriptor.menu_values.push_back(value);
-            descriptor.menu_labels.push_back(menuLabel(menu, query.type));
-          }
-        }
-      } else {
-        descriptor.control_type = drone_msgs::msg::IndustrialCameraControlDescriptor::CONTROL_TYPE_INTEGER;
-      }
-      capabilities.controls.push_back(std::move(descriptor));
-    }
-    close(fd);
-    camera_capabilities_pub_->publish(capabilities);
-  }
 
-  void handleCameraControlCommand(
-    const drone_msgs::msg::IndustrialCameraControlCommand::SharedPtr command)
-  {
-    std::uint64_t applied_mask = 0U;
     std::uint64_t rejected_mask = 0U;
-    bool success = false;
-    std::string message;
-    {
-      std::lock_guard<std::mutex> lock(camera_control_mutex_);
-      if (command->command == drone_msgs::msg::IndustrialCameraControlCommand::COMMAND_SAVE_CURRENT) {
-        const int fd = open(camera_device_.c_str(), O_RDWR | O_NONBLOCK);
-        if (fd >= 0) {
-          readAllCameraControls(fd, camera_settings_);
-          close(fd);
-          success = saveCameraSettingsFile(camera_settings_, message);
-          if (success) {
-            message = "current camera settings saved";
-          }
-        } else {
-          message = std::string("failed to open camera controls: ") + strerror(errno);
-        }
-      } else if (command->command ==
-        drone_msgs::msg::IndustrialCameraControlCommand::COMMAND_RESTORE_PROJECT_DEFAULTS)
-      {
-        const int fd = open(camera_device_.c_str(), O_RDWR | O_NONBLOCK);
-        if (fd < 0) {
-          message = std::string("failed to open camera controls: ") + strerror(errno);
-        } else {
-          std::vector<std::string> reasons;
-          applyCameraSettings(fd, project_default_settings_, kAllCameraControls, camera_settings_,
-            &applied_mask, &rejected_mask, &reasons, false);
-          close(fd);
-          if (rejected_mask == 0U) {
-            success = saveCameraSettingsFile(project_default_settings_, message);
-            if (success) {
-              message = "project defaults restored and saved";
-            }
-          } else {
-            message = joinReasons(reasons);
-          }
-        }
-      } else if (command->command == drone_msgs::msg::IndustrialCameraControlCommand::COMMAND_APPLY) {
-        const std::uint64_t update_mask = command->update_mask & kAllCameraControls;
-        rejected_mask = command->update_mask & ~kAllCameraControls;
-        if (update_mask == 0U) {
-          success = rejected_mask == 0U;
-          message = success ? "no camera controls requested" : "command contains unsupported mask bits";
-        } else {
-          const int fd = open(camera_device_.c_str(), O_RDWR | O_NONBLOCK);
-          if (fd < 0) {
-            rejected_mask |= update_mask;
-            message = std::string("failed to open camera controls: ") + strerror(errno);
-          } else {
-            std::vector<std::string> reasons;
-            const CameraSettings requested = settingsFromCommand(*command, camera_settings_);
-            applyCameraSettings(fd, requested, update_mask, camera_settings_,
-              &applied_mask, &rejected_mask, &reasons);
-            close(fd);
-            message = reasons.empty() ? "camera controls applied" : joinReasons(reasons);
-          }
-          success = rejected_mask == 0U;
-        }
-      } else {
-        rejected_mask = command->update_mask;
-        message = "unknown camera command";
-      }
+    std::vector<std::string> reasons;
+    applyCameraSettings(
+      fd, settingsFromParams(*params), kAllCameraControls, camera_settings_, nullptr,
+      &rejected_mask, &reasons, false);
+    close(fd);
+
+    for (const std::string &reason : reasons) {
+      RCLCPP_WARN(get_logger(), "Industrial camera control result: %s", reason.c_str());
     }
-    publishCameraCapabilities();
-    publishCameraState(command->request_id, success, applied_mask, rejected_mask, message);
+    if (rejected_mask != 0U) {
+      RCLCPP_WARN(get_logger(), "Some industrial camera parameters were not applied");
+    }
   }
 
   void initializeDetectors()
@@ -1663,11 +1348,7 @@ private:
   std::set<std::uint64_t> skipped_detection_frames_;
   std::vector<TrackedDetection> tracked_detections_;
   rclcpp::Publisher<drone_msgs::msg::AnimalDetections>::SharedPtr detections_pub_;
-  rclcpp::Publisher<drone_msgs::msg::IndustrialCameraControlCapabilities>::SharedPtr
-    camera_capabilities_pub_;
-  rclcpp::Publisher<drone_msgs::msg::IndustrialCameraControlState>::SharedPtr camera_state_pub_;
-  rclcpp::Subscription<drone_msgs::msg::IndustrialCameraControlCommand>::SharedPtr
-    camera_command_sub_;
+  rclcpp::Subscription<drone_msgs::msg::IndustrialCameraParams>::SharedPtr camera_params_sub_;
   std::atomic<bool> running_{true};
   std::atomic<std::uint64_t> next_frame_id_{1};
   std::atomic<std::uint64_t> received_count_{0};
@@ -1708,8 +1389,6 @@ private:
   int decode_width_ = 640;
   int decode_height_ = 360;
   CameraSettings camera_settings_;
-  CameraSettings project_default_settings_;
-  bool loaded_saved_settings_ = false;
   int model_input_width_ = 0;
   int model_input_height_ = 0;
   std::uint32_t model_output_count_ = 0;

@@ -5,8 +5,9 @@ industrial_animal_vision:
     # 仅用于日志和显示界面标识。
     camera_profile: default
 
-    # 相机 V4L2 设备路径。
-    camera_device: /dev/video1
+    # 相机 V4L2 稳定设备路径：12MP U3 Camera，USB 序列号 2601230002。
+    # video-index0 是视频采集/MJPEG 接口；按设备序列号绑定，换 USB 口后仍可识别。
+    camera_device: /dev/v4l/by-id/usb-12MP_U3_Camera_12MP_U3_Camera_2601230002-video-index0
     # 向相机请求的图像宽度，单位为像素。
     camera_width: 1280
     # 向相机请求的图像高度，单位为像素。

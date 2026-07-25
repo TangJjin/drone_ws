@@ -393,7 +393,7 @@ bool AirborneNode::saveMissionYamlToFile(
     std::string &error_message)
 {
     //将接收到的yaml字符串保存到文件中，并返回保存路径和错误信息
-    const std::string dir_path = "/home/sunrise/drone_ws/src/drone_mission/config";
+    const std::string dir_path = "/home/orangepi/drone_ws/src/drone_mission/config";
     const std::string file_path = dir_path + "/ground_mission.yaml";
 
     //使用std::filesystem创建目录，如果目录不存在的话

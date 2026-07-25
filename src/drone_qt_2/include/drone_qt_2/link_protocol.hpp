@@ -6,7 +6,7 @@ namespace drone_msgs::link_protocol
 {
     constexpr uint8_t kSof1 = 0xAA;//帧头1，固定值0xAA，表示一帧数据的开始
     constexpr uint8_t kSof2 = 0x55;//帧头2，固定值0x55，与kSof1一起用于帧同步，确保接收端能够正确识别帧的起始位置
-    constexpr uint8_t kVersion = 0x01;//协议版本号，当前版本为0x01，接收端可以根据这个版本号来解析不同格式的帧数据
+    constexpr uint8_t kVersion = 0x02;//V2显式规定float32/float64精度及长度前缀字符串
     constexpr uint8_t kFlagNeedAck = 0x01;//标志位，表示发送的请求需要对方回复确认帧
     constexpr uint8_t kFlagAck = 0x02;//标志位，表示为一个确认帧
 
@@ -27,6 +27,6 @@ namespace drone_msgs::link_protocol
     constexpr uint8_t kTypeReturnWorldGroup = 0x93;//消息类型：返回世界坐标系下的无人机位姿和状态信息
     constexpr uint8_t kTypeVisionBarcode = 0x94;//消息类型：视觉二维码信息
     constexpr uint8_t kTypeDelta = 0x95;//消息类型：delta信息
+    constexpr uint8_t kTypeLocalPosition = 0x96;//消息类型：本地位置信息
 }
-
 

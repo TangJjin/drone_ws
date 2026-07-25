@@ -52,14 +52,6 @@ struct GstSampleDeleter
 
 using SamplePtr = std::shared_ptr<GstSample>;
 
-std::string shellQuote(const std::string &value)
-{
-  gchar *quoted = g_shell_quote(value.c_str());
-  const std::string result = quoted == nullptr ? value : quoted;
-  g_free(quoted);
-  return result;
-}
-
 double elapsedSeconds(const Clock::time_point &start, const Clock::time_point &end)
 {
   return std::chrono::duration<double>(end - start).count();
@@ -90,9 +82,10 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Industrial animal vision ready: profile=%s model=%s camera=%s "
-      "request=MJPEG %dx%d@%d display=%s",
+      "request=MJPEG %dx%d@%d display=%s preprocess=%s",
       camera_profile_.c_str(), model_path_.c_str(), camera_device_.c_str(),
-      camera_width_, camera_height_, camera_fps_, display_enabled_ ? "on" : "off");
+      camera_width_, camera_height_, camera_fps_, display_enabled_ ? "on" : "off",
+      preprocess_mode_.c_str());
   }
 
   ~IndustrialAnimalVisionNode() override
@@ -147,14 +140,14 @@ private:
 
   void declareParameters()
   {
-    declare_parameter<std::string>("camera_profile", "performance_230");
+    declare_parameter<std::string>("camera_profile", "default");
     declare_parameter<std::string>("camera_device", "/dev/video1");
     declare_parameter<std::string>("model_path", "");
     declare_parameter<int>("camera_width", 1280);
     declare_parameter<int>("camera_height", 720);
-    declare_parameter<int>("camera_fps", 230);
-    declare_parameter<int>("decode_width", 640);
-    declare_parameter<int>("decode_height", 360);
+    declare_parameter<int>("camera_fps", 90);
+    declare_parameter<int>("decode_width", 1280);
+    declare_parameter<int>("decode_height", 720);
     declare_parameter<int>("exposure_auto", 1);
     declare_parameter<int>("exposure_absolute", 40);
     declare_parameter<int>("exposure_auto_priority", 0);
@@ -176,6 +169,7 @@ private:
     declare_parameter<double>("confidence_threshold", 0.5);
     declare_parameter<double>("nms_threshold", 0.45);
     declare_parameter<bool>("enable_zero_copy", true);
+    declare_parameter<bool>("enable_rga_preprocess", true);
     declare_parameter<bool>("cpu_affinity_enabled", true);
   }
 
@@ -211,6 +205,7 @@ private:
     confidence_threshold_ = static_cast<float>(get_parameter("confidence_threshold").as_double());
     nms_threshold_ = static_cast<float>(get_parameter("nms_threshold").as_double());
     enable_zero_copy_ = get_parameter("enable_zero_copy").as_bool();
+    enable_rga_preprocess_ = get_parameter("enable_rga_preprocess").as_bool();
     cpu_affinity_enabled_ = get_parameter("cpu_affinity_enabled").as_bool();
   }
 
@@ -218,6 +213,9 @@ private:
   {
     if (camera_device_.empty() || model_path_.empty()) {
       throw std::invalid_argument("camera_device and model_path must not be empty");
+    }
+    if (camera_device_.find_first_of(" \t\r\n!\"'") != std::string::npos) {
+      throw std::invalid_argument("camera_device contains unsupported characters");
     }
     if (camera_width_ <= 0 || camera_height_ <= 0 || camera_fps_ <= 0 ||
       decode_width_ <= 0 || decode_height_ <= 0)
@@ -312,7 +310,7 @@ private:
     for (std::size_t index = 0; index < kWorkerCount; ++index) {
       detectors_[index] = std::make_unique<RknnYoloDetector>(
         model_path_, masks[index], enable_zero_copy_, class_names,
-        confidence_threshold_, nms_threshold_, 114);
+        confidence_threshold_, nms_threshold_, 114, enable_rga_preprocess_);
       const rknn_mem_size memory = detectors_[index]->memorySize();
       weight_mib_ += static_cast<double>(memory.total_weight_size) / (1024.0 * 1024.0);
       internal_mib_ += static_cast<double>(memory.total_internal_size) / (1024.0 * 1024.0);
@@ -321,6 +319,7 @@ private:
     api_version_ = detectors_[0]->apiVersion();
     driver_version_ = detectors_[0]->driverVersion();
     zero_copy_mode_ = detectors_[0]->zeroCopyModeName();
+    preprocess_mode_ = detectors_[0]->preprocessModeName();
     model_input_width_ = detectors_[0]->inputWidth();
     model_input_height_ = detectors_[0]->inputHeight();
     model_output_count_ = detectors_[0]->outputCount();
@@ -329,7 +328,7 @@ private:
   std::string buildPipelineDescription() const
   {
     std::ostringstream pipeline;
-    pipeline << "v4l2src device=" << shellQuote(camera_device_)
+    pipeline << "v4l2src device=" << camera_device_
              << " io-mode=2 do-timestamp=true ! "
              << "image/jpeg,width=" << camera_width_
              << ",height=" << camera_height_
@@ -343,6 +342,12 @@ private:
 
   void startPipeline()
   {
+    if (g_getenv("GST_MPP_NO_RGA") != nullptr) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Ignoring inherited GST_MPP_NO_RGA because MPP resize requires RGA");
+      g_unsetenv("GST_MPP_NO_RGA");
+    }
     int argc = 0;
     char **argv = nullptr;
     gst_init(&argc, &argv);
@@ -365,23 +370,34 @@ private:
       throw std::runtime_error("GStreamer MPP decoder jpeg_decoder not found");
     }
     GObjectClass *decoder_class = G_OBJECT_GET_CLASS(jpeg_decoder);
+    guint property_count = 0;
+    GParamSpec **properties = g_object_class_list_properties(
+      decoder_class, &property_count);
+    std::ostringstream property_names;
+    for (guint index = 0; index < property_count; ++index) {
+      property_names << (index == 0 ? "" : ",") << properties[index]->name;
+    }
+    g_free(properties);
+    RCLCPP_INFO(
+      get_logger(), "MPP decoder type=%s properties=[%s]",
+      G_OBJECT_TYPE_NAME(jpeg_decoder), property_names.str().c_str());
     const bool supports_resize =
       g_object_class_find_property(decoder_class, "width") != nullptr &&
       g_object_class_find_property(decoder_class, "height") != nullptr;
-    if (supports_resize) {
-      g_object_set(
-        G_OBJECT(jpeg_decoder),
-        "width", static_cast<guint>(decode_width_),
-        "height", static_cast<guint>(decode_height_),
-        nullptr);
-      RCLCPP_INFO(
-        get_logger(), "MPP decoder resize configured through GObject: %dx%d",
-        decode_width_, decode_height_);
-    } else {
-      RCLCPP_WARN(
-        get_logger(),
-        "MPP decoder has no width/height properties; using original decoded size");
+    if (!supports_resize) {
+      gst_object_unref(jpeg_decoder);
+      throw std::runtime_error(
+              "MPP decoder started without width/height properties; "
+              "refusing the known-bad 1280x720 fallback");
     }
+    g_object_set(
+      G_OBJECT(jpeg_decoder),
+      "width", static_cast<guint>(decode_width_),
+      "height", static_cast<guint>(decode_height_),
+      nullptr);
+    RCLCPP_INFO(
+      get_logger(), "MPP decoder resize configured through GObject: %dx%d",
+      decode_width_, decode_height_);
     gst_object_unref(jpeg_decoder);
 
     app_sink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "camera_sink");
@@ -392,6 +408,30 @@ private:
     if (state == GST_STATE_CHANGE_FAILURE) {
       throw std::runtime_error("GStreamer pipeline failed to enter PLAYING state");
     }
+
+    GstSample *first_sample = gst_app_sink_try_pull_sample(
+      GST_APP_SINK(app_sink_), 2 * GST_SECOND);
+    if (first_sample == nullptr) {
+      throw std::runtime_error(
+              "GStreamer pipeline produced no camera frame within 2 seconds");
+    }
+    SamplePtr sample(first_sample, GstSampleDeleter{});
+    GstVideoInfo info;
+    if (!sampleVideoInfo(sample.get(), info)) {
+      throw std::runtime_error("GStreamer first camera frame has invalid caps");
+    }
+    const int width = static_cast<int>(GST_VIDEO_INFO_WIDTH(&info));
+    const int height = static_cast<int>(GST_VIDEO_INFO_HEIGHT(&info));
+    if (width != decode_width_ || height != decode_height_) {
+      throw std::runtime_error(
+              "GStreamer first camera frame has unexpected size " +
+              std::to_string(width) + "x" + std::to_string(height) +
+              ", expected " + std::to_string(decode_width_) + "x" +
+              std::to_string(decode_height_));
+    }
+    actual_width_.store(width);
+    actual_height_.store(height);
+    RCLCPP_INFO(get_logger(), "GStreamer first camera frame ready: RGB %dx%d", width, height);
   }
 
   void captureLoop()
@@ -696,9 +736,9 @@ private:
       cv::format("Actual RGB %dx%d %.1f FPS  exposure %d/%d  gain %d",
         actual_width_.load(), actual_height_.load(), capture_fps_.load(),
         exposure_auto_, exposure_absolute_, gain_),
-      cv::format("RKNN %dx%d in / %u out  zc=%s  detections %zu",
+      cv::format("RKNN %dx%d in / %u out  zc=%s  pre=%s  detections %zu",
         model_input_width_, model_input_height_, model_output_count_, zero_copy_mode_.c_str(),
-        result.detections.size()),
+        detectors_[result.worker_index]->preprocessModeName(), result.detections.size()),
       cv::format("API %s  driver %s", api_version_.c_str(), driver_version_.c_str()),
       cv::format("3-context memory: weight %.1f MiB  internal %.1f MiB  DMA %.1f MiB",
         weight_mib_, internal_mib_, dma_mib_),
@@ -798,9 +838,10 @@ private:
   std::string api_version_;
   std::string driver_version_;
   std::string zero_copy_mode_;
+  std::string preprocess_mode_;
   int camera_width_ = 1280;
   int camera_height_ = 720;
-  int camera_fps_ = 230;
+  int camera_fps_ = 90;
   int decode_width_ = 640;
   int decode_height_ = 360;
   int exposure_auto_ = 1;
@@ -824,6 +865,7 @@ private:
   std::uint32_t model_output_count_ = 0;
   bool display_enabled_ = true;
   bool enable_zero_copy_ = true;
+  bool enable_rga_preprocess_ = true;
   bool cpu_affinity_enabled_ = true;
   double display_fps_limit_ = 60.0;
   float confidence_threshold_ = 0.5F;

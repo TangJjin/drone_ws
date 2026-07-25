@@ -18,6 +18,10 @@
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 
+#ifdef DRONE_PERCEPTION_HAS_RGA
+#include <rga/im2d.h>
+#endif
+
 namespace
 {
 using SteadyClock = std::chrono::steady_clock;
@@ -65,11 +69,13 @@ RknnYoloDetector::RknnYoloDetector(
   std::vector<std::string> class_names,
   float confidence_threshold,
   float nms_threshold,
-  int letterbox_value)
+  int letterbox_value,
+  bool enable_rga_preprocess)
 : class_names_(std::move(class_names)),
   confidence_threshold_(confidence_threshold),
   nms_threshold_(nms_threshold),
-  letterbox_value_(letterbox_value)
+  letterbox_value_(letterbox_value),
+  enable_rga_preprocess_(enable_rga_preprocess)
 {
   if (class_names_.empty()) {
     throw std::invalid_argument("RKNN detector class_names must not be empty");
@@ -81,6 +87,13 @@ RknnYoloDetector::RknnYoloDetector(
     throw std::invalid_argument("RKNN detector NMS threshold must be in (0, 1]");
   }
   letterbox_value_ = std::clamp(letterbox_value_, 0, 255);
+#ifndef DRONE_PERCEPTION_HAS_RGA
+  if (enable_rga_preprocess_) {
+    std::cout << "[RKNN-PATHB] RGA preprocessing requested but librga was not "
+              << "available at build time; using OpenCV resize" << std::endl;
+    enable_rga_preprocess_ = false;
+  }
+#endif
   loadModel(model_path, core_mask, enable_zero_copy);
 }
 
@@ -160,6 +173,11 @@ RknnYoloDetector::ZeroCopyMode RknnYoloDetector::zeroCopyMode() const
 const char *RknnYoloDetector::zeroCopyModeName() const
 {
   return zeroCopyModeToString(zero_copy_mode_);
+}
+
+const char *RknnYoloDetector::preprocessModeName() const
+{
+  return enable_rga_preprocess_ ? "rga" : "opencv";
 }
 
 rknn_tensor_type RknnYoloDetector::nativeInputType() const
@@ -474,7 +492,42 @@ RknnYoloDetector::LetterboxResult RknnYoloDetector::makeLetterbox(
     rgb_image.copyTo(destination);
   } else {
     resized_buffer_.create(resized_height, resized_width, rgb_image.type());
-    cv::resize(rgb_image, resized_buffer_, cv::Size(resized_width, resized_height));
+    bool resized_with_rga = false;
+#ifdef DRONE_PERCEPTION_HAS_RGA
+    if (enable_rga_preprocess_ && rgb_image.type() == CV_8UC3 &&
+      rgb_image.step % 3U == 0U && resized_buffer_.step % 3U == 0U)
+    {
+      const rga_buffer_t source = wrapbuffer_virtualaddr_t(
+        rgb_image.data, rgb_image.cols, rgb_image.rows,
+        static_cast<int>(rgb_image.step / 3U), rgb_image.rows,
+        RK_FORMAT_RGB_888);
+      const rga_buffer_t target = wrapbuffer_virtualaddr_t(
+        resized_buffer_.data, resized_width, resized_height,
+        static_cast<int>(resized_buffer_.step / 3U), resized_height,
+        RK_FORMAT_RGB_888);
+      const IM_STATUS status = imresize_t(
+        source, target, 0.0, 0.0, INTER_LINEAR, 1);
+      resized_with_rga = status == IM_STATUS_SUCCESS;
+      if (!resized_with_rga) {
+        enable_rga_preprocess_ = false;
+        if (!rga_fallback_reported_) {
+          std::cerr << "[RKNN-PATHB] RGA resize failed: " << imStrError_t(status)
+                    << "; falling back to OpenCV resize" << std::endl;
+          rga_fallback_reported_ = true;
+        }
+      }
+    } else if (enable_rga_preprocess_) {
+      enable_rga_preprocess_ = false;
+      if (!rga_fallback_reported_) {
+        std::cerr << "[RKNN-PATHB] RGA resize requires CV_8UC3 with pixel-aligned "
+                  << "row stride; falling back to OpenCV resize" << std::endl;
+        rga_fallback_reported_ = true;
+      }
+    }
+#endif
+    if (!resized_with_rga) {
+      cv::resize(rgb_image, resized_buffer_, cv::Size(resized_width, resized_height));
+    }
     resized_buffer_.copyTo(destination);
   }
   return LetterboxResult{letterbox_buffer_, scale, pad_x, pad_y};
@@ -763,7 +816,8 @@ void RknnYoloDetector::loadModel(
             << ", classes=" << class_names_.size() << " (" << class_list.str() << ")"
             << ", conf=" << confidence_threshold_
             << " nms=" << nms_threshold_
-            << ", zero_copy=" << zeroCopyModeName() << std::endl;
+            << ", zero_copy=" << zeroCopyModeName()
+            << ", preprocess=" << preprocessModeName() << std::endl;
 }
 
 void RknnYoloDetector::bindScaleBranches(

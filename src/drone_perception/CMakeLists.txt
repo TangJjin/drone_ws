@@ -63,6 +63,7 @@ pkg_check_modules(GSTREAMER QUIET
   gstreamer-app-1.0
   gstreamer-video-1.0
 )
+pkg_check_modules(RGA QUIET IMPORTED_TARGET librga)
 
 if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}" AND GSTREAMER_FOUND)
   add_library(rknn_yolo_detector STATIC src/rknn_yolo_detector.cpp)
@@ -72,6 +73,13 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}" AND GSTREAMER_FOUND
     PRIVATE ${OpenCV_INCLUDE_DIRS}
   )
   target_link_libraries(rknn_yolo_detector PUBLIC ${OpenCV_LIBS} ${RKNN_RUNTIME_SO})
+  if(RGA_FOUND)
+    target_compile_definitions(rknn_yolo_detector PRIVATE DRONE_PERCEPTION_HAS_RGA=1)
+    target_link_libraries(rknn_yolo_detector PRIVATE PkgConfig::RGA)
+    message(STATUS "Industrial detector RGA preprocessing enabled")
+  else()
+    message(STATUS "librga not found; industrial detector will use OpenCV preprocessing")
+  endif()
 
   add_executable(industrial_animal_vision_node
     src/main.cpp

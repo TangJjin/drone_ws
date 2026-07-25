@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QByteArray>
 #include <QSerialPort>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include "drone_msgs/msg/drone_status.hpp"
@@ -73,6 +74,7 @@ private:
     void publishReturnWorldGroup(const drone_msgs::msg::WorldGroup::SharedPtr msg);
     void publishVisionBarcode(const drone_msgs::msg::BarcodeCapture::SharedPtr msg);
     void publishDelta(const geometry_msgs::msg::Vector3::SharedPtr msg);
+    void publishLocalPosition(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
 
     //发送ACK帧，包含被确认的序列号
     void sendAck(uint16_t seq);
@@ -92,6 +94,7 @@ private:
     rclcpp::Subscription<drone_msgs::msg::WorldGroup>::SharedPtr return_world_group_sub_;
     rclcpp::Subscription<drone_msgs::msg::BarcodeCapture>::SharedPtr vision_barcode_sub_;
     rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr delta_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr local_position_sub_;
 
     QSerialPort serial_;
     QByteArray rx_buffer_;

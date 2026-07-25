@@ -17,6 +17,10 @@ class StartupStep:
     ready_type: str
     timeout_sec: int
     ready_qos_reliability: str = 'reliable'
+    ready_stable_sec=2.0      # 话题至少连续稳定 2 秒
+    ready_min_messages=5      # 至少收到 5 条消息
+    ready_max_gap_sec=2     # 两条消息之间超过 2 秒就认为不稳定，重新计数
+    post_ready_delay_sec=1.0  # ready 成功后再等 1 秒，再启动下一步
 
 
 class StartupSupervisor:
@@ -36,7 +40,7 @@ class StartupSupervisor:
                 command=['ros2', 'launch', 'mavros', 'px4.launch'],
                 ready_topic='/mavros/state',
                 ready_type='mavros_msgs/msg/State',
-                timeout_sec=15,
+                timeout_sec=60,
                 ready_qos_reliability='best_effort',
             ),
             StartupStep(
@@ -57,28 +61,28 @@ class StartupSupervisor:
             ),
             StartupStep(
                 name='fastlio_to_mavros',
-                command=['ros2', 'run', 'drone_localization', 'fastlio_to_mavros_node'],
-                ready_topic='/mavros/vision_pose/pose',
-                ready_type='geometry_msgs/msg/PoseStamped',
+                command=['ros2', 'run', 'drone_localization', 'fastlio_to_mavros_odom_out_node'],
+                ready_topic='/mavros/odometry/out',
+                ready_type='nav_msgs/msg/Odometry',
                 timeout_sec=15,
                 ready_qos_reliability='best_effort',
             ),
             StartupStep(
                 name='qr_vision_node',
-                command=['ros2', 'run', 'drone_perception', 'qr_vision_node'],
+                command=['ros2', 'launch', 'drone_perception', 'industrial_animal_vision.launch.py'],
                 ready_topic='/mavros/local_position/pose',
                 ready_type='geometry_msgs/msg/PoseStamped',
                 timeout_sec=15,
                 ready_qos_reliability='best_effort',
             ),
-#            StartupStep(
-#                name='airborne_link_bridge',
-#                command=['ros2', 'run', 'drone_qt_2', 'airborne_link_bridge'],
-#                ready_topic='/mavros/state',
-#                ready_type='mavros_msgs/msg/State',
-#                timeout_sec=15,
-#                ready_qos_reliability='best_effort',
-#            ),
+            StartupStep(
+                name='airborne_link_bridge',
+                command=['ros2', 'run', 'drone_qt_2', 'airborne_link_bridge'],
+                ready_topic='/mavros/state',
+                ready_type='mavros_msgs/msg/State',
+                timeout_sec=15,
+                ready_qos_reliability='best_effort',
+            ),
             StartupStep(
                 name='compare_yaw',
                 command=['ros2', 'run', 'drone_localization', 'compare_yaw_node'],
@@ -87,14 +91,14 @@ class StartupSupervisor:
                 timeout_sec=15,
                 ready_qos_reliability='reliable',
             ),
-             StartupStep(
-                 name='airborne_node',
-                 command=['ros2', 'run', 'drone_qt_2', 'airborne_node'],
-                 ready_topic='/drone/status',
-                 ready_type='drone_msgs/msg/DroneStatus',
-                 timeout_sec=15,
-                 ready_qos_reliability='best_effort',
-             ),
+            StartupStep(
+                name='airborne_node',
+                command=['ros2', 'run', 'drone_qt_2', 'airborne_node'],
+                ready_topic='/drone/status',
+                ready_type='drone_msgs/msg/DroneStatus',
+                timeout_sec=15,
+                ready_qos_reliability='best_effort',
+            ),
         ]
 
     def log(self, message: str):
@@ -123,6 +127,9 @@ class StartupSupervisor:
             '--type', step.ready_type,
             '--timeout', str(step.timeout_sec),
             '--qos-reliability', step.ready_qos_reliability,
+            '--stable-sec', str(step.ready_stable_sec),
+            '--min-messages', str(step.ready_min_messages),
+            '--max-gap-sec', str(step.ready_max_gap_sec),
         ])
 
         return result.returncode == 0
@@ -172,6 +179,10 @@ class StartupSupervisor:
                     sys.exit(1)
 
                 self.log(f'Step ready: {step.name}')
+
+                if step.post_ready_delay_sec > 0.0:
+                    self.log(f'Settling after {step.name}: {step.post_ready_delay_sec}s')
+                    time.sleep(step.post_ready_delay_sec)
 
             self.monitor_processes_forever()
         except Exception as exc:

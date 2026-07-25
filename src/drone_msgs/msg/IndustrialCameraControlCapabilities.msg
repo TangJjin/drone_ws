@@ -1,3 +1,0 @@
-builtin_interfaces/Time stamp
-string camera_device
-IndustrialCameraControlDescriptor[] controls

@@ -29,5 +29,6 @@ namespace drone_msgs::link_protocol
     constexpr uint8_t kTypeVisionBarcode = 0x94;//消息类型：视觉二维码信息
     constexpr uint8_t kTypeDelta = 0x95;//消息类型：delta信息
     constexpr uint8_t kTypeLocalPosition = 0x96;//消息类型：本地位置信息
+    constexpr uint8_t kTypeVisionServoStatus = 0x97; // Visual-servo execution status.
 }
 

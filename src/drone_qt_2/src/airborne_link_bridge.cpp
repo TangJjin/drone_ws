@@ -185,6 +185,13 @@ void AirborneLinkBridge::setupRosInterfaces()
             publishLocalPosition(msg);
         });
 
+    vision_servo_status_sub_ = this->create_subscription<drone_msgs::msg::VisionServoStatus>(
+        "/control/vision_servo/status",
+        rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local(),
+        [this](const drone_msgs::msg::VisionServoStatus::SharedPtr msg) {
+            publishVisionServoStatus(msg);
+        });
+
     upload_mission_summary_client_ = this->create_client<drone_msgs::srv::UploadMissionSummary>(
         "/drone/upload_mission_summary");
 
@@ -428,6 +435,49 @@ void AirborneLinkBridge::publishVisionBarcode(const drone_msgs::msg::BarcodeCapt
     /**********************************************************/
 
     const QByteArray frame = encodeFrame(lp::kTypeVisionBarcode, 0, 0, payload);
+    serial_.write(frame);
+}
+
+// Forward the complete visual-servo state without carrying camera image bytes.
+void AirborneLinkBridge::publishVisionServoStatus(
+    const drone_msgs::msg::VisionServoStatus::SharedPtr msg)
+{
+    if (!msg) {
+        return;
+    }
+
+    QByteArray payload;
+    QDataStream stream(&payload, QIODevice::WriteOnly);
+    configureStream(stream);
+    useDoublePrecision(stream);
+
+    stream << static_cast<qint32>(msg->stamp.sec);
+    stream << static_cast<quint32>(msg->stamp.nanosec);
+    stream << static_cast<quint8>(msg->active ? 1 : 0);
+
+    const QByteArray state = QByteArray::fromStdString(msg->state);
+    const QByteArray requested_target_id =
+        QByteArray::fromStdString(msg->requested_target_id);
+    const QByteArray tracked_target_id =
+        QByteArray::fromStdString(msg->tracked_target_id);
+    const QByteArray detail = QByteArray::fromStdString(msg->detail);
+    if (!writeSizedBytes(stream, state) ||
+        !writeSizedBytes(stream, requested_target_id) ||
+        !writeSizedBytes(stream, tracked_target_id)) {
+        return;
+    }
+
+    stream << static_cast<quint32>(msg->target_sequence);
+    stream << static_cast<quint8>(msg->target_visible ? 1 : 0);
+    stream << static_cast<quint8>(msg->aligned ? 1 : 0);
+    stream << static_cast<double>(msg->filtered_error_x);
+    stream << static_cast<double>(msg->filtered_error_y);
+    if (!writeSizedBytes(stream, detail)) {
+        return;
+    }
+
+    const QByteArray frame = encodeFrame(
+        lp::kTypeVisionServoStatus, 0, 0, payload);
     serial_.write(frame);
 }
 

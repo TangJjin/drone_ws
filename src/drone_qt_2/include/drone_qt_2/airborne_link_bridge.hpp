@@ -17,6 +17,7 @@
 #include "drone_msgs/msg/world_group.hpp"
 #include "drone_msgs/msg/barcode_capture.hpp"
 #include "drone_msgs/msg/industrial_camera_params.hpp"
+#include "drone_msgs/msg/vision_servo_status.hpp"
 #include <geometry_msgs/msg/vector3.hpp>
 #include "drone_msgs/srv/upload_mission_summary.hpp"
 #include "drone_msgs/srv/start_offboard.hpp"
@@ -77,6 +78,7 @@ private:
     void publishVisionBarcode(const drone_msgs::msg::BarcodeCapture::SharedPtr msg);
     void publishDelta(const geometry_msgs::msg::Vector3::SharedPtr msg);
     void publishLocalPosition(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    void publishVisionServoStatus(const drone_msgs::msg::VisionServoStatus::SharedPtr msg);
 
     //发送ACK帧，包含被确认的序列号
     void sendAck(uint16_t seq);
@@ -96,6 +98,7 @@ private:
     rclcpp::Subscription<drone_msgs::msg::ReadyStatus>::SharedPtr path_ready_sub_;
     rclcpp::Subscription<drone_msgs::msg::WorldGroup>::SharedPtr return_world_group_sub_;
     rclcpp::Subscription<drone_msgs::msg::BarcodeCapture>::SharedPtr vision_barcode_sub_;
+    rclcpp::Subscription<drone_msgs::msg::VisionServoStatus>::SharedPtr vision_servo_status_sub_;
     rclcpp::Subscription<geometry_msgs::msg::Vector3>::SharedPtr delta_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr local_position_sub_;
 

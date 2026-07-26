@@ -217,10 +217,17 @@ int32 zoom_absolute
 完整填写。
 
 ```bash
-ros2 topic pub --once /industrial_camera/params \
+# ⚠ 必须带 QoS 参数：订阅端是 reliable + transient_local，ros2 topic pub 默认
+# durability=volatile 与之不兼容，消息会静默不投递（没有任何报错）。
+ros2 topic pub --once --qos-reliability reliable --qos-durability transient_local \
+  /industrial_camera/params \
   drone_msgs/msg/IndustrialCameraParams \
   "{auto_exposure: false, exposure_absolute: 500, auto_exposure_priority: false, gain: 80, brightness: 128, contrast: 65, saturation: 90, gamma: 130, sharpness: 128, backlight_compensation: 16, auto_white_balance: true, white_balance_temperature: 4650, power_line_frequency: 1, auto_focus: true, focus_absolute: 0, zoom_absolute: 120}"
 ```
+
+2026-07-27 板端实测记录（节点运行中，消息经上述命令注入）：`brightness 128→99→128`
+往返正常；`backlight_compensation` 发 0 被按驱动下限钳成 16；`auto_exposure: true`
+正确翻译为菜单值 3。接收解析链路验证通过。
 
 验证话题及 QoS：
 

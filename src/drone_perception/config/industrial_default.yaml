@@ -24,9 +24,12 @@ industrial_animal_vision:
     decode_height: 720
 
     # 曝光模式：1=手动；3=自动（部分驱动显示为光圈优先）。
+    # 板端实测（2026-07-27）：自动模式亮度靠 AE 的 ISP 内部数字增益，手动模式拿不到；
+    # 手动曝光的有效上限 = 帧预算（60fps 下约 167，单位 0.1ms），超出部分被传感器时序丢弃。
     exposure_auto: 3
-    # 手动曝光值，仅在 exposure_auto=1 时写入相机。
-    exposure_absolute: 40
+    # 手动曝光值，仅在 exposure_auto=1 时写入相机。167 = 60fps 下的最亮档；
+    # 若拖影影响检测再往下调（旧值 40 = 4ms 防拖影档）。
+    exposure_absolute: 167
     # 0=自动曝光不允许降低帧率；1=允许降低帧率换取更亮画面。
     exposure_auto_priority: 0
     # 图像增益：越大越亮，同时噪点也越明显。

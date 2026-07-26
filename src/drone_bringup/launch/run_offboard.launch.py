@@ -10,7 +10,6 @@ def generate_launch_description():
     mission_config = LaunchConfiguration("mission_config_path")
     pub_world_pose = LaunchConfiguration("pub_world_pose")
     enable_offboard_control = LaunchConfiguration("enable_offboard_control")
-    use_camera_aim = LaunchConfiguration("use_camera_aim")
     auto_start_mission = LaunchConfiguration("auto_start_mission")
     takeoff_altitude = LaunchConfiguration("takeoff_altitude")
 
@@ -34,11 +33,6 @@ def generate_launch_description():
                 "enable_offboard_control",
                 default_value="false",
                 description="是否启动会切 OFFBOARD 并解锁的任务控制节点。",
-            ),
-            DeclareLaunchArgument(
-                "use_camera_aim",
-                default_value="true",
-                description="是否加载 camera_aim 动作。",
             ),
             DeclareLaunchArgument(
                 "auto_start_mission",
@@ -65,7 +59,6 @@ def generate_launch_description():
                 condition=IfCondition(enable_offboard_control),
                 parameters=[{
                     "mission_config_path": mission_config,
-                    "use_camera_aim": use_camera_aim,
                     "auto_start_mission": auto_start_mission,
                     "takeoff_altitude": takeoff_altitude,
                 }],
@@ -78,7 +71,6 @@ def generate_launch_description():
                 parameters=[{
                     "mission_config_path": mission_config,
                     "enable_offboard_control": enable_offboard_control,
-                    "use_camera_aim": use_camera_aim,
                 }],
             ),
         ]

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <geometry_msgs/msg/point.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <mavros_msgs/msg/state.hpp>
 #include <mavros_msgs/srv/command_bool.hpp>
@@ -12,11 +11,8 @@
 #include <tf2/LinearMath/Matrix3x3.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/buffer.hpp>
-#include "drone_msgs/msg/k230_animal_targets.hpp"
-#include "drone_msgs/msg/k230_animal_target.hpp"
-#include "drone_msgs/msg/k230_capture_ready.hpp"
-#include "drone_msgs/msg/k230_record_result.hpp"
-#include "drone_msgs/msg/k230_scan_point_done.hpp"
+#include "drone_msgs/msg/vision_servo_status.hpp"
+#include "drone_msgs/msg/vision_servo_target.hpp"
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -28,138 +24,23 @@
 #include <queue>
 #include <sstream>
 #include <string>
-#include <unordered_map> // std::unordered_map
-#include <deque>         // std::deque
-#include <vector>
 
 #include "drone_action.hpp"
 
 using offboard_run::ActionStatus;
 using offboard_run::ActionType;
 using offboard_run::DroneAction;
-using offboard_run::HoldAxis;
 using offboard_run::SpatialPoint;
-
-class Vec3dPID
-{
-public:
-    Vec3dPID(double p, double i, double d)
-        : p_gain_(p),
-          i_gain_(i),
-          d_gain_(d),
-          integral_(0.0, 0.0, 0.0),
-          last_error_(0.0, 0.0, 0.0) {}
-
-    Eigen::Vector3d update(const Eigen::Vector3d &error, double dt)
-    {
-        integral_ += error * dt;
-        const Eigen::Vector3d derivative = (error - last_error_) / dt;
-        last_error_ = error;
-        return p_gain_ * error + i_gain_ * integral_ + d_gain_ * derivative;
-    }
-
-    Eigen::Vector3d update(const Eigen::Vector3d &error,
-                           const rclcpp::Time &time_stamp)
-    {
-        if (last_time_.nanoseconds() == 0)
-        {
-            last_time_ = time_stamp;
-            return Eigen::Vector3d::Zero();
-        }
-
-        const double dt = (time_stamp - last_time_).seconds();
-        last_time_ = time_stamp;
-        if (dt <= 0.0)
-        {
-            return Eigen::Vector3d::Zero();
-        }
-        return update(error, dt);
-    }
-
-    void reset()
-    {
-        last_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
-        integral_.setZero();
-        last_error_.setZero();
-    }
-
-private:
-    double p_gain_;
-    double i_gain_;
-    double d_gain_;
-
-    rclcpp::Time last_time_;
-    Eigen::Vector3d integral_;
-    Eigen::Vector3d last_error_;
-};
+using offboard_run::VisualServoController;
+using offboard_run::VisualServoObservation;
+using offboard_run::VisualServoOutput;
+using offboard_run::VisualServoState;
 
 struct TaskRuntimeStatus
 {
     bool task_running;
     std::string action_name;
     int32_t action_step;
-};
-
-enum class VisionTargetState
-{
-    PENDING = 0,
-    TRACKING,
-    CAPTURE_REQUESTED,
-    CAPTURED,
-    FAILED,
-    SKIPPED,
-};
-
-inline std::string makeVisionTargetKey(
-    int32_t scan_point_index,
-    const std::string &label,
-    uint32_t label_instance_id)
-{
-    std::ostringstream oss;
-    oss << scan_point_index << "|"
-        << label << "|"
-        << label_instance_id;
-    return oss.str();
-}
-
-struct VisionTargetEntry
-{
-    std::string key;
-    int32_t scan_point_index = -1;
-    uint32_t frame_seq = 0;
-    std::string label;
-    uint32_t label_instance_id = 0;
-
-    drone_msgs::msg::K230AnimalTarget target_msg;
-    VisionTargetState state = VisionTargetState::PENDING;
-
-    bool capture_ready_sent = false;
-    rclcpp::Time first_seen_time;
-    rclcpp::Time last_seen_time;
-
-    uint32_t latest_frame_seq = 0; // 记录这个目标最近一次出现在哪一帧
-    std::string image_name;        // 保存视觉端回传结果
-
-    rclcpp::Time capture_requested_time;
-};
-
-struct ActiveScanPointContext
-{
-    int32_t scan_point_index = -1;
-    uint32_t latest_frame_seq = 0;
-    double scan_point_x = 0.0;
-    double scan_point_y = 0.0;
-
-    std::unordered_map<std::string, VisionTargetEntry> targets_by_key;
-    std::deque<std::string> target_order;
-
-    std::string current_target_key;
-    rclcpp::Time last_targets_msg_time;
-    bool has_active_context = false;
-    bool scan_point_done_sent = false;       // 防止重复发布
-    rclcpp::Time scan_point_start_time;      // 单网格总超时 30s
-    rclcpp::Time empty_targets_since;        // 连续空目标确认窗口
-    bool has_received_targets_frame = false; // 区分“空网格”与“根本没收到数据”
 };
 
 struct MoveRuntimeState
@@ -189,37 +70,13 @@ public:
     ActionExecutor(const rclcpp::Node::SharedPtr &node,
                    tf2_ros::Buffer &tf_buffer)
         : node_(node),
-          tf_buffer_(tf_buffer),
-          camera_aim_pid_p_(node_->declare_parameter<double>("camera_aim_pid_p", 0.001)),
-          camera_aim_pid_i_(node_->declare_parameter<double>("camera_aim_pid_i", 0.0)),
-          camera_aim_pid_d_(node_->declare_parameter<double>("camera_aim_pid_d", 0.001)),
-          pid_cam_aim_(camera_aim_pid_p_, camera_aim_pid_i_, camera_aim_pid_d_)
+          tf_buffer_(tf_buffer)
     {
-        camera_aim_target_timeout_s_ =
-            node_->declare_parameter<double>("camera_aim_target_timeout_s", 0.5);
-        camera_aim_stable_cycles_ =
-            node_->declare_parameter<int>("camera_aim_stable_cycles", 20);
-        camera_aim_max_step_ =
-            node_->declare_parameter<double>("camera_aim_max_step", 0.05);
-
-        camera_aim_wait_first_targets_timeout_s_ =
-            node_->declare_parameter<double>("camera_aim_wait_first_targets_timeout_s", 2.0);
-
-        camera_aim_no_target_confirm_s_ =
-            node_->declare_parameter<double>("camera_aim_no_target_confirm_s", 2.0);
-
-        camera_aim_record_result_timeout_s_ =
-            node_->declare_parameter<double>("camera_aim_record_result_timeout_s", 5.0);
-
-        camera_aim_scan_point_timeout_s_ =
-            node_->declare_parameter<double>("camera_aim_scan_point_timeout_s", 30.0);
         land_setpoint_quiet_time_s_ =
             node_->declare_parameter<double>("land_setpoint_quiet_time_s", 0.2);
 
         setpoint_pub_ = node_->create_publisher<geometry_msgs::msg::PoseStamped>(
             "/mavros/setpoint_position/local", rclcpp::QoS(10).reliable());
-        capture_ready_pub_ = node_->create_publisher<drone_msgs::msg::K230CaptureReady>(
-            "/k230/animals/capture_ready", rclcpp::QoS(10).reliable());
 
         step_pub_ = node_->create_publisher<std_msgs::msg::String>("/step", 10);
         mission_status_pub_ =
@@ -227,9 +84,11 @@ public:
 
         hover_active_pub_ = node_->create_publisher<std_msgs::msg::Bool>(
             "/mission/hover_active", rclcpp::QoS(10).reliable().transient_local());
-
-        scan_point_done_pub_ = node_->create_publisher<drone_msgs::msg::K230ScanPointDone>(
-            "/k230/animals/scan_point_done", rclcpp::QoS(10).reliable());
+ 
+        visual_servo_status_pub_ =
+            node_->create_publisher<drone_msgs::msg::VisionServoStatus>(
+                "/control/vision_servo/status",
+                rclcpp::QoS(10).reliable().transient_local());
         
         state_sub_ = node_->create_subscription<mavros_msgs::msg::State>(
             "/mavros/state", 10,
@@ -239,19 +98,12 @@ public:
             "/mavros/local_position/pose", rclcpp::SensorDataQoS(),
             std::bind(&ActionExecutor::pose_callback, this, std::placeholders::_1));
 
-        camera_aim_sub_ = node_->create_subscription<geometry_msgs::msg::Point>(
-            "/camera_aiming_center", rclcpp::SensorDataQoS(),
-            std::bind(&ActionExecutor::cameraAim_callback, this, std::placeholders::_1));
-
-        k230_targets_sub_ = node_->create_subscription<drone_msgs::msg::K230AnimalTargets>(
-            "/k230/animals/targets",
-            rclcpp::SensorDataQoS(),
-            std::bind(&ActionExecutor::k230TargetsCallback, this, std::placeholders::_1));
-
-        record_result_sub_ = node_->create_subscription<drone_msgs::msg::K230RecordResult>(
-            "/k230/animals/record_result",
-            rclcpp::QoS(10).reliable(),
-            std::bind(&ActionExecutor::recordResultCallback, this, std::placeholders::_1));
+        visual_servo_target_sub_ =
+            node_->create_subscription<drone_msgs::msg::VisionServoTarget>(
+                "/vision/servo/target", rclcpp::SensorDataQoS(),
+                std::bind(
+                    &ActionExecutor::visualServoTargetCallback,
+                    this, std::placeholders::_1));
 
         arming_client_ = node_->create_client<mavros_msgs::srv::CommandBool>("/mavros/cmd/arming");
         set_mode_client_ = node->create_client<mavros_msgs::srv::SetMode>("/mavros/set_mode");
@@ -260,16 +112,7 @@ public:
         last_finish_pose_.header.frame_id = "world_enu";
         last_finish_pose_.pose.orientation.w = 1.0;
 
-        last_camera_aim_time_ = node_->now();
-
-        RCLCPP_INFO(node_->get_logger(),
-                    "动作执行器初始化完成，已准备执行任务。camera_aim_timeout=%.2f s, stable_cycles=%d, max_step=%.3f m, pid=(%.6f, %.6f, %.6f)",
-                    camera_aim_target_timeout_s_,
-                    camera_aim_stable_cycles_,
-                    camera_aim_max_step_,
-                    camera_aim_pid_p_,
-                    camera_aim_pid_i_,
-                    camera_aim_pid_d_);
+        RCLCPP_INFO(node_->get_logger(), "动作执行器初始化完成，已准备执行任务。");
     }
 
     void addAction(const std::shared_ptr<DroneAction> &action)
@@ -385,46 +228,6 @@ public:
     }
 
 private:
-    void publishCaptureReady(const VisionTargetEntry &target)
-    {
-        drone_msgs::msg::K230CaptureReady msg;
-        msg.frame_seq = target.latest_frame_seq;
-        msg.scan_point_index = target.scan_point_index;
-        msg.label = target.label;
-        msg.label_instance_id = target.label_instance_id;
-        msg.capture_ready = true;
-        capture_ready_pub_->publish(msg);
-
-        RCLCPP_INFO(
-            node_->get_logger(),
-            "已发布 capture_ready：scan_point=%d, frame_seq=%u, label=%s, instance_id=%u。",
-            target.scan_point_index,
-            target.latest_frame_seq,
-            target.label.c_str(),
-            target.label_instance_id);
-    }
-
-    void skipCurrentTargetAndFinishAction(const std::string &reason)
-    {
-        VisionTargetEntry *current = getCurrentTarget();
-        if (current != nullptr)
-        {
-            current->state = VisionTargetState::SKIPPED;
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "当前目标已跳过：key=%s, label=%s, instance_id=%u，原因：%s",
-                current->key.c_str(),
-                current->label.c_str(),
-                current->label_instance_id,
-                reason.c_str());
-        }
-
-        active_scan_point_.current_target_key.clear();
-        resetCameraAimTrackingState();
-        completeCurrentAction(reason);
-        tryFinishActiveScanPoint();
-    }
-
     Eigen::Vector3d bodyVectorToEnu(const Eigen::Vector3d &body_vec) const
     {
         Eigen::Quaterniond q_current(
@@ -437,7 +240,8 @@ private:
 
     void resetActionRuntimeState()
     {
-        resetCameraAimTrackingState();
+        visual_servo_controller_.reset();
+        visual_servo_action_initialized_ = false;
         resetMoveRuntimeState();
         land_mode_request_sent_ = false;
         land_setpoint_quiet_started_ = false;
@@ -446,11 +250,6 @@ private:
             rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
     }
 
-    void resetCameraAimTrackingState()
-    {
-        aim_close_count_ = 0;
-        pid_cam_aim_.reset();
-    }
 
     void completeCurrentAction(const std::string &message)
     {
@@ -464,7 +263,6 @@ private:
         }
         last_finish_pose_ = current_pose_;
         current_action_.reset();
-        active_scan_point_.current_target_key.clear();
         resetActionRuntimeState();
         broadcastStatus(message);
     }
@@ -808,8 +606,8 @@ private:
         case ActionType::HOVER:
             executeHover(action);
             break;
-        case ActionType::CAMERA_AIM:
-            executeCameraAim(action);
+        case ActionType::VISUAL_SERVO:
+            executeVisualServo(action);
             break;
         case ActionType::LAND:
             executeLand(action);
@@ -927,220 +725,112 @@ private:
         vision_hover_active_published_ = true;
     }
 
-    void executeCameraAim(const std::shared_ptr<DroneAction> &action)
+    void executeVisualServo(const std::shared_ptr<DroneAction> &action)
     {
         const rclcpp::Time now = node_->now();
-
-        if (!active_scan_point_.has_received_targets_frame)
+        if (!visual_servo_action_initialized_)
         {
-            sendPositionSetpoint(current_pose_);
+            visual_servo_controller_.start(action->getVisualServoConfig(), now);
+            visual_servo_action_initialized_ = true;
+            visual_servo_hold_pose_ = current_pose_;
+            last_visual_servo_state_ = VisualServoState::IDLE;
+            force_visual_servo_status_publish_ = true;
+        }
 
-            const double wait_first_targets = 
-                (now - action->getStartTime()).seconds();
+        const VisualServoObservation *observation =
+            visual_servo_target_received_ ? &latest_visual_servo_target_ : nullptr;
+        const VisualServoOutput output =
+            visual_servo_controller_.update(observation, now);
 
-            broadcastStatusThrottled(
-                "camera_aim 等待 /k230/animals/targets 首帧：已等待=" +
-                formatSeconds(wait_first_targets) + " s。");
+        if (output.state == VisualServoState::SUCCEEDED)
+        {
+            publishVisualServoStatus(output, false, true);
+            completeCurrentAction("视觉伺服已稳定对准目标。");
+            return;
+        }
 
-            if (wait_first_targets > camera_aim_wait_first_targets_timeout_s_)
+        if (output.state == VisualServoState::TIMED_OUT)
+        {
+            publishVisualServoStatus(output, false, true);
+            const std::string message = "视觉伺服超时：" + output.detail;
+            if (action->shouldContinueOnVisualServoTimeout())
             {
-                completeCurrentAction("等待 /k230/animals/targets 首帧超时，结束当前 camera_aim。");
+                completeCurrentAction(message + "，按配置继续后续任务。");
+            }
+            else
+            {
+                failCurrentAction(message);
             }
             return;
         }
 
-        if (active_scan_point_.targets_by_key.empty() &&
-            active_scan_point_.empty_targets_since.nanoseconds() != 0)
+        if (output.state == VisualServoState::TRACKING)
         {
-            sendPositionSetpoint(current_pose_);
-            const double empty_duration =
-                (now - active_scan_point_.empty_targets_since).seconds();
-
-            broadcastStatusThrottled(
-                "camera_aim 空网格确认中：scan_point=" +
-                std::to_string(active_scan_point_.scan_point_index) +
-                "，连续空帧时长=" + formatSeconds(empty_duration) + " s。");
-
-            if ((now - active_scan_point_.empty_targets_since).seconds() > camera_aim_no_target_confirm_s_)
-            {
-                publishScanPointDone();
-                resetActiveScanPoint();
-                completeCurrentAction("当前 scan point 连续空目标，已判定为空网格。");
-            }
-            return;
-        }
-
-        if (active_scan_point_.scan_point_start_time.nanoseconds() != 0 &&
-            (now - active_scan_point_.scan_point_start_time).seconds() > camera_aim_scan_point_timeout_s_)
-        {
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "当前 scan point=%d 处理总时长已超过 %.1f s，强制结束剩余目标。",
-                active_scan_point_.scan_point_index,
-                camera_aim_scan_point_timeout_s_);
-
-            for (auto &[key, target] : active_scan_point_.targets_by_key)
-            {
-                if (!isTerminalState(target.state))
-                {
-                    target.state = VisionTargetState::SKIPPED;
-                }
-            }
-
-            publishScanPointDone();
-            resetActiveScanPoint();
-            completeCurrentAction("当前 scan point 处理超时，已强制结束。");
-            return;
-        }
-
-        VisionTargetEntry *current_target = getCurrentTarget();
-        if (current_target != nullptr && current_target->state == VisionTargetState::CAPTURE_REQUESTED)
-        {
-            sendPositionSetpoint(current_pose_);
-            const double wait_result =
-                (now - current_target->capture_requested_time).seconds();
-
-            broadcastStatusThrottled(
-                "camera_aim 等待 record_result：scan_point=" +
-                std::to_string(current_target->scan_point_index) +
-                "，label=" + current_target->label +
-                "，instance_id=" + std::to_string(current_target->label_instance_id) +
-                "，已等待=" + formatSeconds(wait_result) + " s。");
-
-            if ((now - current_target->capture_requested_time).seconds() >
-                camera_aim_record_result_timeout_s_)
-            {
-                RCLCPP_WARN(
-                    node_->get_logger(),
-                    "目标等待 record_result 超时：key=%s, scan_point=%d, label=%s, instance_id=%u, timeout=%.1f s。已跳过当前目标。",
-                    current_target->key.c_str(),
-                    current_target->scan_point_index,
-                    current_target->label.c_str(),
-                current_target->label_instance_id,
-                camera_aim_record_result_timeout_s_);
-
-                current_target->state = VisionTargetState::SKIPPED;
-                active_scan_point_.current_target_key.clear();
-                resetCameraAimTrackingState();
-                tryFinishActiveScanPoint();
-            }
-            return;
-        }
-
-        if (current_target == nullptr)
-        {
-            VisionTargetEntry *next = pickNextPendingTarget();
-            if (next == nullptr)
-            {
-                tryFinishActiveScanPoint();
-
-                if (!active_scan_point_.has_active_context)
-                {
-                    completeCurrentAction("当前 scan point 全部目标处理完成。");
-                }
-                else
-                {
-                    sendPositionSetpoint(current_pose_);
-                }
-                return;
-            }
-            active_scan_point_.current_target_key = next->key;
-            next->state = VisionTargetState::TRACKING;
-            resetCameraAimTrackingState();
-            current_target = next;
-
-            RCLCPP_INFO(
-                node_->get_logger(),
-                "camera_aim 选择新目标进入 TRACKING：scan_point=%d, key=%s, label=%s, instance_id=%u。已重置稳定计数和 PID 状态。",
-                current_target->scan_point_index,
-                current_target->key.c_str(),
-                current_target->label.c_str(),
-                current_target->label_instance_id);
-        }
-
-        // 当前目标太久没在新帧里出现，视为目标丢失。
-        if ((now - current_target->last_seen_time).seconds() > camera_aim_target_timeout_s_)
-        {
-            current_target->state = VisionTargetState::SKIPPED;
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "当前视觉目标超时丢失：key=%s, scan_point=%d, label=%s, instance_id=%u。已跳过当前目标。",
-                current_target->key.c_str(),
-                current_target->scan_point_index,
-                current_target->label.c_str(),
-                current_target->label_instance_id);
-            active_scan_point_.current_target_key.clear();
-            resetCameraAimTrackingState();
-            tryFinishActiveScanPoint();
-            return;
-        }
-
-        const double err_x = static_cast<double>(current_target->target_msg.err_x);
-        const double err_y = static_cast<double>(current_target->target_msg.err_y);
-
-        if (std::abs(err_x) < action->getCameraAimTolerance() &&
-            std::abs(err_y) < action->getCameraAimTolerance())
-        {
-            aim_close_count_++;
-            if (aim_close_count_ > camera_aim_stable_cycles_)
-            {
-                if (!current_target->capture_ready_sent)
-                {
-                    publishCaptureReady(*current_target);
-                    current_target->capture_ready_sent = true;
-                }
-                current_target->state = VisionTargetState::CAPTURE_REQUESTED;
-                current_target->capture_requested_time = now;
-                broadcastStatus("当前目标已满足拍照条件，等待视觉端 record_result。");
-                return;
-            }
+            const Eigen::Vector3d enu_delta = bodyVectorToEnu(output.body_delta);
+            geometry_msgs::msg::PoseStamped target_pose = current_pose_;
+            target_pose.pose.position.x += enu_delta.x();
+            target_pose.pose.position.y += enu_delta.y();
+            target_pose.pose.position.z += enu_delta.z();
+            visual_servo_hold_pose_ = target_pose;
+            sendPositionSetpoint(target_pose);
         }
         else
         {
-            aim_close_count_ = 0;
+            if (output.state == VisualServoState::ALIGNED &&
+                last_visual_servo_state_ != VisualServoState::ALIGNED)
+            {
+                visual_servo_hold_pose_ = current_pose_;
+            }
+            sendPositionSetpoint(visual_servo_hold_pose_);
         }
 
-        const Eigen::Vector3d camera_aim_vector{err_x, err_y, 0.0};
-
-        Eigen::Vector3d body_delta = pid_cam_aim_.update(camera_aim_vector, now);
-
-        for (int i = 0; i < 3; ++i)
-        {
-            body_delta[i] = std::clamp(body_delta[i], -camera_aim_max_step_, camera_aim_max_step_);
-        }
-
-        // MAVROS 外部控制使用 ENU，这里仍然保持“机体系增量 -> ENU 增量”的原有逻辑。
-        const Eigen::Vector3d enu_delta = bodyVectorToEnu(body_delta);
-
-        geometry_msgs::msg::PoseStamped target_pose = current_pose_;
-        target_pose.pose.position.x += enu_delta.x();
-        target_pose.pose.position.y += enu_delta.y();
-        target_pose.pose.position.z += enu_delta.z();
-
-        switch (action->getHoldAxis())
-        {
-        case HoldAxis::X:
-            target_pose.pose.position.x = action->getTargetPose().pose.position.x;
-            break;
-
-        case HoldAxis::Y:
-            target_pose.pose.position.y = action->getTargetPose().pose.position.y;
-            break;
-
-        case HoldAxis::Z:
-            target_pose.pose.position.z = action->getTargetPose().pose.position.z;
-            break;
-        }
-
+        publishVisualServoStatus(output, true, false);
+        last_visual_servo_state_ = output.state;
         broadcastStatusThrottled(
-            "camera_aim 对准中：scan_point=" +
-            std::to_string(current_target->scan_point_index) +
-            "，label=" + current_target->label +
-            "，instance_id=" + std::to_string(current_target->label_instance_id) +
-            "，err_x=" + std::to_string(current_target->target_msg.err_x) +
-            "，err_y=" + std::to_string(current_target->target_msg.err_y) + "。");
+            "视觉伺服：state=" +
+            std::string(VisualServoController::stateName(output.state)) +
+            "，error=(" + formatSeconds(output.filtered_error_x) + ", " +
+            formatSeconds(output.filtered_error_y) + ")，" + output.detail + "。");
+    }
 
-        sendPositionSetpoint(target_pose);
+    void publishVisualServoStatus(
+        const VisualServoOutput &output, bool active, bool force)
+    {
+        const rclcpp::Time now = node_->now();
+        const std::string state_name =
+            VisualServoController::stateName(output.state);
+        const bool state_changed = state_name != last_visual_servo_status_name_;
+        const bool period_elapsed =
+            last_visual_servo_status_time_.nanoseconds() == 0 ||
+            (now - last_visual_servo_status_time_).seconds() >= 0.1;
+        if (!force && !force_visual_servo_status_publish_ &&
+            !state_changed && !period_elapsed)
+        {
+            return;
+        }
+
+        drone_msgs::msg::VisionServoStatus msg;
+        msg.stamp = now;
+        msg.active = active;
+        msg.state = state_name;
+        if (current_action_ &&
+            current_action_->getType() == ActionType::VISUAL_SERVO)
+        {
+            msg.requested_target_id =
+                current_action_->getVisualServoConfig().target_id;
+        }
+        msg.tracked_target_id = visual_servo_controller_.lockedTargetId();
+        msg.target_sequence = latest_visual_servo_target_.sequence;
+        msg.target_visible = output.target_visible;
+        msg.aligned = output.aligned || output.state == VisualServoState::SUCCEEDED;
+        msg.filtered_error_x = output.filtered_error_x;
+        msg.filtered_error_y = output.filtered_error_y;
+        msg.detail = output.detail;
+        visual_servo_status_pub_->publish(msg);
+
+        last_visual_servo_status_name_ = state_name;
+        last_visual_servo_status_time_ = now;
+        force_visual_servo_status_publish_ = false;
     }
 
     void executeLand(const std::shared_ptr<DroneAction> &action)
@@ -1293,364 +983,30 @@ private:
         }
     }
 
-    void cameraAim_callback(geometry_msgs::msg::Point::SharedPtr msg)
+    void visualServoTargetCallback(
+        const drone_msgs::msg::VisionServoTarget::SharedPtr msg)
     {
-        camera_aim_diff_ = *msg;
-        last_camera_aim_time_ = node_->now();
+        if (!msg || !std::isfinite(msg->error_x) || !std::isfinite(msg->error_y))
+        {
+            RCLCPP_WARN_THROTTLE(
+                node_->get_logger(), *node_->get_clock(), 1000,
+                "已忽略包含非法误差值的视觉伺服目标消息。");
+            return;
+        }
+
+        latest_visual_servo_target_.sequence = msg->sequence;
+        latest_visual_servo_target_.target_id = msg->target_id;
+        latest_visual_servo_target_.valid = msg->valid;
+        latest_visual_servo_target_.confirmed = msg->confirmed;
+        latest_visual_servo_target_.error_x =
+            std::clamp(msg->error_x, -1.0, 1.0);
+        latest_visual_servo_target_.error_y =
+            std::clamp(msg->error_y, -1.0, 1.0);
+        latest_visual_servo_target_.received_time = node_->now();
+        visual_servo_target_received_ = true;
     }
 
-    bool hasContinuousInstanceIds(
-        const drone_msgs::msg::K230AnimalTargets &msg) const
-    {
-        std::unordered_map<std::string, std::vector<uint32_t>> ids_by_label;
-
-        for (const auto &target : msg.targets)
-        {
-            ids_by_label[target.label].push_back(target.label_instance_id);
-        }
-
-        for (auto &[label, ids] : ids_by_label)
-        {
-            std::sort(ids.begin(), ids.end());
-
-            for (std::size_t i = 0; i < ids.size(); ++i)
-            {
-                const uint32_t expected = static_cast<uint32_t>(i + 1);
-
-                if (ids[i] != expected)
-                {
-                    RCLCPP_WARN(
-                        node_->get_logger(),
-                        "目标帧校验失败：label=%s 的 label_instance_id 不连续，期望=%u，实际=%u。",
-                        label.c_str(), expected, ids[i]);
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    bool isValidTargetsMessage(
-        const drone_msgs::msg::K230AnimalTargets &msg) const
-    {
-        if (msg.scan_point_index < 0)
-        {
-            RCLCPP_WARN(node_->get_logger(),
-                        "目标帧校验失败：scan_point_index=%d 无效。",
-                        msg.scan_point_index);
-            return false; // 索引无效，校验失败
-        }
-
-        if (msg.target_count != msg.targets.size())
-        {
-            RCLCPP_WARN(node_->get_logger(),
-                        "目标帧校验失败：target_count=%u 与 targets.size()=%zu 不一致。",
-                        msg.target_count, msg.targets.size());
-            return false; // 计数不一致，校验失败
-        }
-
-        if (!hasContinuousInstanceIds(msg))
-        {
-            return false; // ID不连续，校验失败（具体警告在函数内部已输出）
-        }
-
-        // 所有校验都通过，消息有效
-        return true;
-    }
-
-    void k230TargetsCallback(const drone_msgs::msg::K230AnimalTargets::SharedPtr msg)
-    {
-        // ========== 第一步：消息有效性校验 ==========
-        // 校验扫描点索引、目标计数、实例ID连续性等
-        // 如果无效，直接丢弃该消息，不进行任何处理
-        if (!isValidTargetsMessage(*msg))
-        {
-            return;
-        }
-
-        const rclcpp::Time now = node_->now();
-        active_scan_point_.has_received_targets_frame = true;
-        active_scan_point_.last_targets_msg_time = now;
-
-        // ========== 第二步：扫描点（Scan Point）激活逻辑 ==========
-        // 扫描点代表无人机的一个悬停扫描位置，每个扫描点会收到多帧目标数据
-        // 需要区分首次激活和后续数据更新
-        if (!active_scan_point_.has_active_context)
-        {
-            // 情况1：还没有激活任何扫描点
-            // 激活当前消息对应的扫描点，记录其基本信息
-            active_scan_point_.latest_frame_seq = msg->frame_seq;
-            active_scan_point_.has_active_context = true;
-            active_scan_point_.scan_point_index = msg->scan_point_index; // 扫描点索引
-            active_scan_point_.scan_point_x = msg->scan_point_x;         // 扫描点X坐标
-            active_scan_point_.scan_point_y = msg->scan_point_y;         // 扫描点Y坐标
-            active_scan_point_.scan_point_start_time = now;
-            active_scan_point_.empty_targets_since =
-                rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
-        }
-        else if (!isSameScanPoint(msg->scan_point_index))
-        {
-            // 情况2：已有激活的扫描点，但新消息来自不同的扫描点
-            // 当前扫描点尚未完成处理，暂时不接受新扫描点的数据
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "当前 scan point=%d 尚未完成，暂不切换到新的 scan point=%d。",
-                active_scan_point_.scan_point_index,
-                msg->scan_point_index);
-            return; // 丢弃新扫描点的数据
-        }
-
-        if (msg->target_count == 0)
-        {
-            active_scan_point_.latest_frame_seq = msg->frame_seq;
-            if (active_scan_point_.empty_targets_since.nanoseconds() == 0)
-            {
-                active_scan_point_.empty_targets_since = now;
-            }
-            return;
-        }
-
-        active_scan_point_.empty_targets_since =
-            rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
-
-        // 情况3：消息来自当前激活的扫描点，正常处理（继续执行）
-        // ========== 第三步：更新扫描点的元数据 ==========
-        // 记录最新收到的帧序号和时间戳，用于超时判断和状态管理
-        active_scan_point_.latest_frame_seq = msg->frame_seq;    // 最新帧序号
-        active_scan_point_.last_targets_msg_time = node_->now(); // 最后收到消息的时间
-
-        // ========== 第四步：处理每个目标（增、改） ==========
-        // 遍历消息中的所有目标，更新本地缓存的目标数据库
-        for (const auto &target : msg->targets)
-        {
-            // 生成唯一标识当前目标的键
-           // 键的组成：scan_point_index|label|label_instance_id
-            const std::string key = makeVisionTargetKey(
-                msg->scan_point_index,
-                target.label,
-                target.label_instance_id);
-
-            // 在哈希表中查找该键是否已存在
-            auto it = active_scan_point_.targets_by_key.find(key);
-
-            if (it == active_scan_point_.targets_by_key.end())
-            {
-                // ========== 情况A：新目标（之前没见过） ==========
-                // 创建新的目标条目（VisionTargetEntry）
-                VisionTargetEntry entry;
-                entry.key = key;                                    // 唯一键
-                entry.scan_point_index = msg->scan_point_index;     // 所属扫描点
-                entry.frame_seq = msg->frame_seq;                   // 帧序号
-                entry.latest_frame_seq = msg->frame_seq;
-                entry.label = target.label;                         // 标签（person/dog/cat等）
-                entry.label_instance_id = target.label_instance_id; // 实例ID
-                entry.target_msg = target;                          // 原始消息
-                entry.state = VisionTargetState::PENDING;           // 初始状态：待处理
-                entry.first_seen_time = node_->now();               // 首次出现时间
-                entry.last_seen_time = node_->now();                // 最后出现时间
-
-                // 添加到哈希表（用于快速查找）
-                active_scan_point_.targets_by_key.emplace(key, entry);
-                // 添加到顺序列表（用于按序处理，如FIFO）
-                active_scan_point_.target_order.push_back(key);
-            }
-            else
-            {
-                // ========== 情况B：已存在的目标（之前见过） ==========
-                // 更新目标数据，刷新最后出现时间
-                it->second.frame_seq = msg->frame_seq;
-                it->second.latest_frame_seq = msg->frame_seq;
-                it->second.target_msg = target;           // 更新最新的目标消息
-                it->second.last_seen_time = node_->now(); // 更新最后出现时间
-            }
-        }
-
-        // ========== 第五步：自动选择下一个待跟踪目标 ==========
-        // 如果没有正在跟踪的目标，从待处理队列中选择一个开始跟踪
-        const bool executing_camera_aim = current_action_ && current_action_->getType() == ActionType::CAMERA_AIM;
-
-        // 只有当前 mission 正在执行 camera_aim 动作时，才允许自动选择视觉目标。
-        // 这样可以避免在 move / hover 等阶段提前把目标状态切到 TRACKING。
-        if (executing_camera_aim && !hasCurrentTarget())
-        {
-            // 当前还没有正在处理的目标时，从目标队列中挑选下一个 PENDING 目标。
-            VisionTargetEntry *next = pickNextPendingTarget();
-            if (next != nullptr)
-            {
-                // 将选中的目标登记为当前目标，并切换到 TRACKING 状态，
-                // 后续 executeCameraAim() 会基于这个目标的误差做对准控制。
-                active_scan_point_.current_target_key = next->key;
-                next->state = VisionTargetState::TRACKING;
-                resetCameraAimTrackingState();
-
-                // 输出目标切换日志，便于联调时确认 scan point 和目标选择是否正确。
-                RCLCPP_INFO(
-                    node_->get_logger(),
-                    "已选择当前目标：scan_point=%d, key=%s, label=%s, instance_id=%u。已重置稳定计数和 PID 状态。",
-                    next->scan_point_index,
-                    next->key.c_str(),
-                    next->label.c_str(),
-                    next->label_instance_id);
-            }
-        }
-    }
-
-    bool isTerminalState(VisionTargetState state) const
-    {
-        return state == VisionTargetState::CAPTURED ||
-               state == VisionTargetState::FAILED ||
-               state == VisionTargetState::SKIPPED;
-    }
-
-    VisionTargetEntry *findTargetByResult(
-        const drone_msgs::msg::K230RecordResult &msg)
-    {
-        for (auto &[key, target] : active_scan_point_.targets_by_key)
-        {
-            if (target.scan_point_index == msg.scan_point_index &&
-                target.label == msg.label &&
-                target.label_instance_id == msg.label_instance_id)
-            {
-                return &target;
-            }
-        }
-        return nullptr;
-    }
-
-    void publishScanPointDone()
-    {
-        if (!active_scan_point_.has_active_context || active_scan_point_.scan_point_done_sent)
-        {
-            return;
-        }
-
-        drone_msgs::msg::K230ScanPointDone msg;
-        msg.stamp = node_->now();
-        msg.scan_point_index = active_scan_point_.scan_point_index;
-        msg.scan_point_done = true;
-        scan_point_done_pub_->publish(msg);
-
-        active_scan_point_.scan_point_done_sent = true;
-        RCLCPP_INFO(
-            node_->get_logger(),
-            "已发布 scan_point_done：scan_point=%d。",
-            active_scan_point_.scan_point_index);
-    }
-
-    void tryFinishActiveScanPoint()
-    {
-        if (!active_scan_point_.has_active_context)
-        {
-            return;
-        }
-
-        if (active_scan_point_.targets_by_key.empty())
-        {
-            return;
-        }
-
-        for (const auto &[key, target] : active_scan_point_.targets_by_key)
-        {
-            if (!isTerminalState(target.state))
-            {
-                return;
-            }
-        }
-
-        publishScanPointDone();
-        resetActiveScanPoint();
-    }
-
-    void recordResultCallback(
-        const drone_msgs::msg::K230RecordResult::SharedPtr msg)
-    {
-        if (!active_scan_point_.has_active_context)
-        {
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "收到 record_result，但当前没有活动 scan point：scan_point=%d, label=%s, instance_id=%u。",
-                msg->scan_point_index,
-                msg->label.c_str(),
-                msg->label_instance_id);
-            return;
-        }
-
-        if (!isSameScanPoint(msg->scan_point_index))
-        {
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "收到非当前 scan point 的 record_result：current=%d, msg=%d。",
-                active_scan_point_.scan_point_index,
-                msg->scan_point_index);
-            return;
-        }
-
-        VisionTargetEntry *target = findTargetByResult(*msg);
-        if (target == nullptr)
-        {
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "record_result 未匹配到目标：scan_point=%d, label=%s, instance_id=%u。",
-                msg->scan_point_index,
-                msg->label.c_str(),
-                msg->label_instance_id);
-            return;
-        }
-
-        if (target->state != VisionTargetState::CAPTURE_REQUESTED)
-        {
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "目标当前状态不是 CAPTURE_REQUESTED，忽略本次结果：key=%s, state=%d。",
-                target->key.c_str(),
-                static_cast<int>(target->state));
-            return;
-        }
-        target->image_name = msg->image_name;
-        target->frame_seq = msg->frame_seq;
-        target->latest_frame_seq = msg->frame_seq;
-
-        if (msg->result_state == "captured")
-        {
-            target->state = VisionTargetState::CAPTURED;
-        }
-        else if (msg->result_state == "failed")
-        {
-            target->state = VisionTargetState::FAILED;
-        }
-        else if (msg->result_state == "skipped")
-        {
-            target->state = VisionTargetState::SKIPPED;
-        }
-        else
-        {
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "收到未知 result_state=%s，忽略本次 record_result。",
-                msg->result_state.c_str());
-            return;
-        }
-
-        RCLCPP_INFO(
-            node_->get_logger(),
-            "目标结果已更新：key=%s, result_state=%s, record_success=%s, image_name=%s。",
-            target->key.c_str(),
-            msg->result_state.c_str(),
-            msg->record_success ? "true" : "false",
-            msg->image_name.c_str());
-
-        if (active_scan_point_.current_target_key == target->key &&
-            isTerminalState(target->state))
-        {
-            active_scan_point_.current_target_key.clear();
-            resetCameraAimTrackingState();
-        }
-
-        tryFinishActiveScanPoint();
-    }
-
-        std::string actionTypeToString(ActionType type) const
+    std::string actionTypeToString(ActionType type) const
     {
         switch (type)
         {
@@ -1658,8 +1014,8 @@ private:
             return "move";
         case ActionType::HOVER:
             return "hover";
-        case ActionType::CAMERA_AIM:
-            return "camera_aim";
+        case ActionType::VISUAL_SERVO:
+            return "visual_servo";
         case ActionType::LAND:
             return "land";
         case ActionType::TAKEOFF:
@@ -1669,120 +1025,33 @@ private:
         }
     }
 
-    bool isSameScanPoint(int32_t scan_point_index) const
-    {
-        return active_scan_point_.has_active_context &&
-               active_scan_point_.scan_point_index == scan_point_index;
-    }
-
-    void resetActiveScanPoint()
-    {
-        active_scan_point_.scan_point_index = -1;
-        active_scan_point_.latest_frame_seq = 0;
-        active_scan_point_.scan_point_x = 0.0;
-        active_scan_point_.scan_point_y = 0.0;
-        active_scan_point_.targets_by_key.clear();
-        active_scan_point_.target_order.clear();
-        active_scan_point_.current_target_key.clear();
-        resetCameraAimTrackingState();
-        active_scan_point_.last_targets_msg_time =
-            rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
-        active_scan_point_.scan_point_start_time =
-            rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
-        active_scan_point_.empty_targets_since =
-            rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
-        active_scan_point_.has_active_context = false;
-        active_scan_point_.has_received_targets_frame = false;
-        active_scan_point_.scan_point_done_sent = false;
-    }
-
-    bool hasCurrentTarget() const
-    {
-        return !active_scan_point_.current_target_key.empty() &&
-               active_scan_point_.targets_by_key.find(active_scan_point_.current_target_key) !=
-                   active_scan_point_.targets_by_key.end();
-    }
-
-    VisionTargetEntry *getCurrentTarget()
-    {
-        if (active_scan_point_.current_target_key.empty())
-        {
-            return nullptr;
-        }
-
-        auto it = active_scan_point_.targets_by_key.find(active_scan_point_.current_target_key);
-
-        if (it == active_scan_point_.targets_by_key.end())
-        {
-            return nullptr;
-        }
-
-        return &it->second;
-    }
-
-    VisionTargetEntry *pickNextPendingTarget()
-    {
-        for (const std::string &key : active_scan_point_.target_order)
-        {
-            auto it = active_scan_point_.targets_by_key.find(key);
-            if (it == active_scan_point_.targets_by_key.end())
-            {
-                continue;
-            }
-
-            if (it->second.state == VisionTargetState::PENDING)
-            {
-                return &it->second;
-            }
-        }
-
-        return nullptr;
-    }
-
     //- 进入 `move` 第一帧时初始化
     //- 记录起点、解析终点、提取起始 yaw 和目标 yaw
     rclcpp::Node::SharedPtr node_;
     tf2_ros::Buffer &tf_buffer_;
 
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr setpoint_pub_;
-    rclcpp::Publisher<drone_msgs::msg::K230CaptureReady>::SharedPtr capture_ready_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr step_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr mission_status_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr hover_active_pub_;
-    rclcpp::Publisher<drone_msgs::msg::K230ScanPointDone>::SharedPtr scan_point_done_pub_;
+    rclcpp::Publisher<drone_msgs::msg::VisionServoStatus>::SharedPtr visual_servo_status_pub_;
     rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr camera_aim_sub_;
-    rclcpp::Subscription<drone_msgs::msg::K230AnimalTargets>::SharedPtr k230_targets_sub_;
-    rclcpp::Subscription<drone_msgs::msg::K230RecordResult>::SharedPtr record_result_sub_;
+    rclcpp::Subscription<drone_msgs::msg::VisionServoTarget>::SharedPtr visual_servo_target_sub_;
     rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
     rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
     rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr land_client_;
 
     mavros_msgs::msg::State current_state_;
     geometry_msgs::msg::PoseStamped current_pose_;
-    geometry_msgs::msg::Point camera_aim_diff_;
-    rclcpp::Time last_camera_aim_time_;
     bool current_pose_received_ = false;
     rclcpp::Time last_status_publish_time_;
     bool force_status_publish_ = true;
     double status_publish_period_s_ = 1.0;
-    double camera_aim_pid_p_ = 0.001;
-    double camera_aim_pid_i_ = 0.0;
-    double camera_aim_pid_d_ = 0.001;
-    double camera_aim_target_timeout_s_ = 0.5;
-    int camera_aim_stable_cycles_ = 20;
-    double camera_aim_max_step_ = 0.05;
-    double camera_aim_wait_first_targets_timeout_s_ = 2.0;
-    double camera_aim_no_target_confirm_s_ = 2.0;
-    double camera_aim_record_result_timeout_s_ = 5.0;
-    double camera_aim_scan_point_timeout_s_ = 30.0;
     double land_setpoint_quiet_time_s_ = 0.2;
     bool vision_hover_active_ = false;
     bool vision_hover_active_published_ = false;
-    Vec3dPID pid_cam_aim_;
 
-    int aim_close_count_ = 0;
     bool land_mode_request_sent_ = false;
     bool land_setpoint_quiet_started_ = false;
     int land_low_altitude_count_ = 0;
@@ -1795,6 +1064,14 @@ private:
     bool last_finish_pose_initialized_ = false;
 
     int action_id_ = 0;
-    ActiveScanPointContext active_scan_point_;
     MoveRuntimeState move_runtime_;
+    VisualServoController visual_servo_controller_;
+    VisualServoObservation latest_visual_servo_target_;
+    geometry_msgs::msg::PoseStamped visual_servo_hold_pose_;
+    VisualServoState last_visual_servo_state_ = VisualServoState::IDLE;
+    bool visual_servo_target_received_ = false;
+    bool visual_servo_action_initialized_ = false;
+    bool force_visual_servo_status_publish_ = true;
+    std::string last_visual_servo_status_name_;
+    rclcpp::Time last_visual_servo_status_time_;
 };

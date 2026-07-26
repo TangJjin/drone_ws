@@ -20,6 +20,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/K230CaptureReady.msg"
   "msg/K230RecordResult.msg"
   "msg/K230ScanPointDone.msg"
+  "msg/VisionServoTarget.msg"
+  "msg/VisionServoStatus.msg"
   "msg/GridPoint.msg"
   "msg/GridGroup.msg"
   "msg/WorldPoint.msg"

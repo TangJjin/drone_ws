@@ -12,21 +12,7 @@ find_package(rclcpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(drone_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
-
-# K230 bridge nodes remain independent from the Orange Pi RKNN production path.
-add_executable(k230_tcp_bridge src/k230_tcp_bridge.cpp)
-target_compile_features(k230_tcp_bridge PUBLIC cxx_std_17)
-target_include_directories(k230_tcp_bridge PRIVATE include)
-ament_target_dependencies(k230_tcp_bridge rclcpp std_msgs drone_msgs)
-target_link_libraries(k230_tcp_bridge Threads::Threads)
-
-add_executable(k230_animals_uart_ros2_node src/k230_animals_uart_ros2_node.cpp)
-target_compile_features(k230_animals_uart_ros2_node PUBLIC cxx_std_17)
-target_include_directories(k230_animals_uart_ros2_node PRIVATE include)
-ament_target_dependencies(
-  k230_animals_uart_ros2_node rclcpp std_msgs drone_msgs geometry_msgs)
 
 add_executable(rdk_nv12_display_cpp scripts/rdk_nv12_display.cpp)
 target_compile_features(rdk_nv12_display_cpp PUBLIC cxx_std_17)
@@ -34,21 +20,14 @@ target_include_directories(rdk_nv12_display_cpp PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(rdk_nv12_display_cpp ${OpenCV_LIBS} Threads::Threads)
 
 install(TARGETS
-  k230_tcp_bridge
-  k230_animals_uart_ros2_node
   rdk_nv12_display_cpp
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(PROGRAMS
-  scripts/k230_animals_image_saver.sh
-  scripts/k230_snapshot_decode.sh
   scripts/rdk_udp_vpu_bridge.sh
-  scripts/rdk_rtsp_vpu_bridge.sh
   scripts/rdk_nv12_display.py
   scripts/rdk_udp_vpu_display.sh
-  scripts/rdk_k230_link_probe.py
-  scripts/rdk_k230_video_vision.sh
   scripts/rdk_realsense_vpu_display.sh
   scripts/orangepi_mjpeg_h264_sender.sh
   scripts/orangepi_mjpeg_rtp_sender.sh

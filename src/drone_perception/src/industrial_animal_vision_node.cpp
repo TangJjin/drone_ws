@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "drone_msgs/msg/industrial_camera_params.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 #include "drone_msgs/msg/vision_servo_status.hpp"
 #include "drone_msgs/msg/vision_servo_target.hpp"
 #include "drone_perception/industrial_animal_vision_node.hpp"
@@ -96,6 +97,13 @@ public:
       [this](const drone_msgs::msg::IndustrialCameraParams::SharedPtr message) {
         handleCameraParams(message);
       });
+    if (ground_projection_enabled_) {
+      local_pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
+        local_pose_topic_, rclcpp::SensorDataQoS(),
+        [this](const geometry_msgs::msg::PoseStamped::SharedPtr message) {
+          handleLocalPose(message);
+        });
+    }
 
     detection_publish_thread_ = std::thread(&IndustrialAnimalVisionNode::detectionPublishLoop, this);
     servo_publish_thread_ = std::thread(&IndustrialAnimalVisionNode::servoPublishLoop, this);
@@ -252,6 +260,11 @@ private:
     std::uint64_t frame_id = 0;
     Clock::time_point produced_at{};      // steady clock, staleness checks only
     builtin_interfaces::msg::Time stamp;  // inference completion time, diagnostics
+    // Target position on the ground plane of the local_position frame, for the
+    // periodic log only. False whenever the pose feed is stale or absent.
+    bool ground_valid = false;
+    double ground_x = 0.0;
+    double ground_y = 0.0;
   };
 
   struct CameraSettings
@@ -318,6 +331,17 @@ private:
     declare_parameter<double>("servo_log_period_s", 1.0);
     declare_parameter<double>("track_iou_threshold", 0.3);
     declare_parameter<double>("track_max_missed_s", 1.5);
+    declare_parameter<bool>("ground_projection_enabled", true);
+    declare_parameter<std::string>("local_pose_topic", "/mavros/local_position/pose");
+    declare_parameter<double>("camera_fx", 914.0);
+    declare_parameter<double>("camera_fy", 914.0);
+    declare_parameter<double>("camera_cx", 640.0);
+    declare_parameter<double>("camera_cy", 360.0);
+    declare_parameter<int>("camera_mount_yaw_deg", 0);
+    declare_parameter<double>("camera_offset_x", 0.0);
+    declare_parameter<double>("camera_offset_y", -0.08);
+    declare_parameter<double>("camera_offset_z", 0.08);
+    declare_parameter<double>("pose_stale_s", 0.3);
   }
 
   void readParameters()
@@ -365,6 +389,20 @@ private:
     servo_log_period_s_ = get_parameter("servo_log_period_s").as_double();
     track_iou_threshold_ = static_cast<float>(get_parameter("track_iou_threshold").as_double());
     track_max_missed_s_ = get_parameter("track_max_missed_s").as_double();
+    ground_projection_enabled_ = get_parameter("ground_projection_enabled").as_bool();
+    local_pose_topic_ = get_parameter("local_pose_topic").as_string();
+    camera_fx_ = get_parameter("camera_fx").as_double();
+    camera_fy_ = get_parameter("camera_fy").as_double();
+    camera_cx_ = get_parameter("camera_cx").as_double();
+    camera_cy_ = get_parameter("camera_cy").as_double();
+    camera_mount_yaw_deg_ = static_cast<int>(get_parameter("camera_mount_yaw_deg").as_int());
+    camera_offset_x_ = get_parameter("camera_offset_x").as_double();
+    camera_offset_y_ = get_parameter("camera_offset_y").as_double();
+    camera_offset_z_ = get_parameter("camera_offset_z").as_double();
+    pose_stale_s_ = get_parameter("pose_stale_s").as_double();
+    const double mount_rad = static_cast<double>(camera_mount_yaw_deg_) * M_PI / 180.0;
+    mount_cos_ = std::cos(mount_rad);
+    mount_sin_ = std::sin(mount_rad);
   }
 
   void validateParameters() const
@@ -419,6 +457,25 @@ private:
       // inside that window changes target_id on reappearance and the controller,
       // which has permanently locked the old id, can never reacquire it.
       throw std::invalid_argument("track_max_missed_s must be >= 1.0");
+    }
+    if (local_pose_topic_.empty()) {
+      throw std::invalid_argument("local_pose_topic must not be empty");
+    }
+    if (camera_fx_ < 50.0 || camera_fx_ > 10000.0 ||
+      camera_fy_ < 50.0 || camera_fy_ > 10000.0)
+    {
+      throw std::invalid_argument("camera_fx/camera_fy must be in [50, 10000]");
+    }
+    if (camera_cx_ < 0.0 || camera_cy_ < 0.0) {
+      throw std::invalid_argument("camera_cx/camera_cy must be >= 0");
+    }
+    if (camera_mount_yaw_deg_ != 0 && camera_mount_yaw_deg_ != 90 &&
+      camera_mount_yaw_deg_ != 180 && camera_mount_yaw_deg_ != 270)
+    {
+      throw std::invalid_argument("camera_mount_yaw_deg must be 0, 90, 180 or 270");
+    }
+    if (pose_stale_s_ <= 0.0 || pose_stale_s_ > 5.0) {
+      throw std::invalid_argument("pose_stale_s must be in (0, 5]");
     }
   }
 
@@ -1022,6 +1079,102 @@ private:
     return (label.empty() ? std::string("target") : label) + "_" + std::to_string(track_id);
   }
 
+  struct PoseSample
+  {
+    bool valid = false;
+    double px = 0.0;
+    double py = 0.0;
+    double pz = 0.0;
+    double qw = 1.0;
+    double qx = 0.0;
+    double qy = 0.0;
+    double qz = 0.0;
+  };
+
+  void handleLocalPose(const geometry_msgs::msg::PoseStamped::SharedPtr pose)
+  {
+    // Runs on the executor thread: copy only, no I/O and no logging here.
+    std::lock_guard<std::mutex> lock(servo_mutex_);
+    pose_px_ = pose->pose.position.x;
+    pose_py_ = pose->pose.position.y;
+    pose_pz_ = pose->pose.position.z;
+    pose_qw_ = pose->pose.orientation.w;
+    pose_qx_ = pose->pose.orientation.x;
+    pose_qy_ = pose->pose.orientation.y;
+    pose_qz_ = pose->pose.orientation.z;
+    pose_received_at_ = Clock::now();
+    pose_received_ = true;
+  }
+
+  PoseSample currentPoseSample()
+  {
+    PoseSample sample;
+    std::lock_guard<std::mutex> lock(servo_mutex_);
+    if (!pose_received_ ||
+      elapsedSeconds(pose_received_at_, Clock::now()) > pose_stale_s_)
+    {
+      return sample;  // no flight controller feed (bench) or a stale one: stay dormant
+    }
+    sample.valid = true;
+    sample.px = pose_px_;
+    sample.py = pose_py_;
+    sample.pz = pose_pz_;
+    sample.qw = pose_qw_;
+    sample.qx = pose_qx_;
+    sample.qy = pose_qy_;
+    sample.qz = pose_qz_;
+    return sample;
+  }
+
+  static std::array<double, 3> rotateByQuaternion(
+    double qw, double qx, double qy, double qz, const std::array<double, 3> &v)
+  {
+    // v' = v + qw * t + q_vec x t, where t = 2 * q_vec x v.
+    const double tx = 2.0 * (qy * v[2] - qz * v[1]);
+    const double ty = 2.0 * (qz * v[0] - qx * v[2]);
+    const double tz = 2.0 * (qx * v[1] - qy * v[0]);
+    return {
+      v[0] + qw * tx + (qy * tz - qz * ty),
+      v[1] + qw * ty + (qz * tx - qx * tz),
+      v[2] + qw * tz + (qx * ty - qy * tx)};
+  }
+
+  // Projects pixel (u, v) onto the ground plane (z = 0) of the local_position
+  // frame. The pose z is the rangefinder-fused height above ground, so the
+  // camera height is pose z plus the rotated lens-above-rangefinder offset.
+  std::optional<std::pair<double, double>> projectPixelToGround(
+    const PoseSample &pose, double u, double v) const
+  {
+    // Pixel to a unit-depth ray in the optical frame.
+    const double xc = (u - camera_cx_) / camera_fx_;
+    const double yc = (v - camera_cy_) / camera_fy_;
+    // Mount yaw about the optical axis; 0 deg = image top toward the nose
+    // (bench-verified: flying forward moves ground objects toward image bottom,
+    // flying left moves them toward image right). The angle counts CLOCKWISE
+    // seen from above (opposite to FLU body yaw): 90 = image top toward the
+    // RIGHT wing, 270 = toward the LEFT wing.
+    const double xr = mount_cos_ * xc - mount_sin_ * yc;
+    const double yr = mount_sin_ * xc + mount_cos_ * yc;
+    // Nadir camera to body FLU: front = -image_down, left = -image_right, up = -optical.
+    const std::array<double, 3> ray_body{-yr, -xr, -1.0};
+    const std::array<double, 3> ray_world =
+      rotateByQuaternion(pose.qw, pose.qx, pose.qy, pose.qz, ray_body);
+    if (ray_world[2] > -0.05) {
+      return std::nullopt;  // extreme tilt: the ray misses the ground ahead
+    }
+    const std::array<double, 3> offset_world = rotateByQuaternion(
+      pose.qw, pose.qx, pose.qy, pose.qz,
+      {camera_offset_x_, camera_offset_y_, camera_offset_z_});
+    const double cam_x = pose.px + offset_world[0];
+    const double cam_y = pose.py + offset_world[1];
+    const double cam_z = pose.pz + offset_world[2];
+    if (cam_z < 0.1) {
+      return std::nullopt;  // on the ground or bad height: no meaningful intersection
+    }
+    const double t = cam_z / -ray_world[2];
+    return std::make_pair(cam_x + t * ray_world[0], cam_y + t * ray_world[1]);
+  }
+
   const TrackedDetection *findTrackByTrackId(std::uint64_t track_id) const
   {
     for (const TrackedDetection &track : tracked_detections_) {
@@ -1184,6 +1337,18 @@ private:
         std::clamp((snapshot.center_x - half_width) / half_width, -1.0, 1.0) : 0.0;
       snapshot.error_y = half_height > 0.0 ?
         std::clamp((snapshot.center_y - half_height) / half_height, -1.0, 1.0) : 0.0;
+      if (ground_projection_enabled_) {
+        const PoseSample pose = currentPoseSample();
+        if (pose.valid) {
+          if (const auto ground = projectPixelToGround(
+              pose, snapshot.center_x, snapshot.center_y))
+          {
+            snapshot.ground_valid = true;
+            snapshot.ground_x = ground->first;
+            snapshot.ground_y = ground->second;
+          }
+        }
+      }
     }
     {
       std::lock_guard<std::mutex> lock(servo_mutex_);
@@ -1312,11 +1477,13 @@ private:
     const std::uint64_t published_delta = servo_published_count_ - last_log_published_;
     RCLCPP_INFO(get_logger(),
       "ANIMAL_SERVO seq=%u frame=%llu id=%s label=%s valid=%d confirmed=%d conf=%.3f "
-      "center=(%.1f,%.1f)px err=(%.4f,%.4f) img=%ux%u age_ms=%.1f active=%d state=%s",
+      "center=(%.1f,%.1f)px err=(%.4f,%.4f) ground_valid=%d ground=(%.2f,%.2f) "
+      "img=%ux%u age_ms=%.1f active=%d state=%s",
       message.sequence, static_cast<unsigned long long>(snapshot.frame_id),
       message.target_id.c_str(), snapshot.label.c_str(), message.valid ? 1 : 0,
       message.confirmed ? 1 : 0, message.confidence, message.center_x, message.center_y,
-      message.error_x, message.error_y, message.image_width, message.image_height,
+      message.error_x, message.error_y, snapshot.ground_valid ? 1 : 0,
+      snapshot.ground_x, snapshot.ground_y, message.image_width, message.image_height,
       age_s >= 0.0 ? age_s * 1000.0 : -1.0, status_active ? 1 : 0,
       status_state.empty() ? "none" : status_state.c_str());
     RCLCPP_INFO(get_logger(),
@@ -1853,6 +2020,30 @@ private:
   std::atomic<std::uint64_t> servo_snapshot_count_{0};
   // Owned by the detection publish thread only.
   std::string servo_sticky_target_id_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr local_pose_sub_;
+  // Local pose cache, guarded by servo_mutex_ (leaf lock; copy-only accesses).
+  bool pose_received_ = false;
+  double pose_px_ = 0.0;
+  double pose_py_ = 0.0;
+  double pose_pz_ = 0.0;
+  double pose_qw_ = 1.0;
+  double pose_qx_ = 0.0;
+  double pose_qy_ = 0.0;
+  double pose_qz_ = 0.0;
+  Clock::time_point pose_received_at_{};
+  bool ground_projection_enabled_ = true;
+  std::string local_pose_topic_ = "/mavros/local_position/pose";
+  double camera_fx_ = 914.0;
+  double camera_fy_ = 914.0;
+  double camera_cx_ = 640.0;
+  double camera_cy_ = 360.0;
+  int camera_mount_yaw_deg_ = 0;
+  double camera_offset_x_ = 0.0;
+  double camera_offset_y_ = -0.08;
+  double camera_offset_z_ = 0.08;
+  double pose_stale_s_ = 0.3;
+  double mount_cos_ = 1.0;
+  double mount_sin_ = 0.0;
   std::uint64_t servo_seen_session_epoch_ = 0;
   // Owned by the servo publish thread only.
   std::uint32_t servo_sequence_ = 0;

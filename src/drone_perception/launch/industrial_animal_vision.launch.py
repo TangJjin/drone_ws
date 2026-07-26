@@ -12,6 +12,7 @@ from launch_ros.actions import Node
 
 STRING_ARGUMENTS = (
     "camera_device", "model_path", "servo_target_topic", "servo_status_topic",
+    "local_pose_topic",
 )
 INTEGER_ARGUMENTS = (
     "camera_width", "camera_height", "camera_fps", "decode_width", "decode_height",
@@ -19,17 +20,19 @@ INTEGER_ARGUMENTS = (
     "brightness", "contrast", "saturation", "gamma", "sharpness",
     "backlight_compensation", "white_balance_auto", "white_balance_temperature",
     "power_line_frequency", "focus_auto", "focus_absolute", "zoom_absolute",
-    "servo_confirm_min_hits",
+    "servo_confirm_min_hits", "camera_mount_yaw_deg",
 )
 FLOAT_ARGUMENTS = (
     "display_fps_limit", "confidence_threshold", "nms_threshold", "track_iou_threshold",
     "track_max_missed_s",
     "servo_publish_rate_hz", "servo_stale_timeout_s", "servo_confirm_min_score",
     "servo_confirm_max_center_jump", "servo_confirm_max_area_ratio", "servo_log_period_s",
+    "camera_fx", "camera_fy", "camera_cx", "camera_cy",
+    "camera_offset_x", "camera_offset_y", "camera_offset_z", "pose_stale_s",
 )
 BOOLEAN_ARGUMENTS = (
     "display_enabled", "enable_zero_copy", "enable_rga_preprocess",
-    "cpu_affinity_enabled",
+    "cpu_affinity_enabled", "ground_projection_enabled",
 )
 
 

@@ -11,6 +11,7 @@ find_package(Threads REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(drone_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -81,7 +82,8 @@ if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}" AND GSTREAMER_FOUND
   target_compile_options(industrial_animal_vision_node PRIVATE
     ${GSTREAMER_CFLAGS_OTHER}
   )
-  ament_target_dependencies(industrial_animal_vision_node rclcpp ament_index_cpp drone_msgs)
+  ament_target_dependencies(
+    industrial_animal_vision_node rclcpp ament_index_cpp geometry_msgs drone_msgs)
   target_link_libraries(industrial_animal_vision_node
     rknn_yolo_detector
     ${OpenCV_LIBS}

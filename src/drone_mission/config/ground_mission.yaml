@@ -174,15 +174,4 @@ mission:
     - type: "land"
 
 system:
-  use_camera_aim: false
-  camera_aim_pid_p: 0.01
-  camera_aim_pid_i: 0.00
-  camera_aim_pid_d: 0.01
-  camera_aim_target_timeout_s: 1.00
-  camera_aim_stable_cycles: 15
-  camera_aim_max_step: 0.05
-  camera_aim_wait_first_targets_timeout_s: 8.00
-  camera_aim_no_target_confirm_s: 3.00
-  camera_aim_record_result_timeout_s: 10.00
-  camera_aim_scan_point_timeout_s: 30.00
   auto_start_mission: false

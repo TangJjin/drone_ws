@@ -7,6 +7,8 @@
 #include <cmath>
 #include <memory>
 
+#include "drone_control/visual_servo_controller.hpp"
+
 namespace offboard_run {
     
     // 定义一个空间点类，表示无人机在3D空间中的位置
@@ -45,7 +47,7 @@ namespace offboard_run {
     enum class ActionType {
         MOVE_TO_POSITION = 0,  // 移动到目标位置
         HOVER,                 // 悬停
-        CAMERA_AIM,            // 摄像头瞄准
+        VISUAL_SERVO,          // 通用单目标视觉伺服
         LAND,                  // 着陆
         TAKEOFF,               // 起飞
     };
@@ -57,13 +59,6 @@ namespace offboard_run {
         COMPLETED,  // 执行完成
         FAILED,     // 执行失败
         ABORTED,    // 执行中止
-    };
-
-    // 定义用于控制无人机在特定轴上保持位置的枚举
-    enum class HoldAxis {
-        X = 0,  // X轴
-        Y,      // Y轴
-        Z,      // Z轴
     };
 
     // DroneAction 类，用于定义和管理无人机动作
@@ -114,20 +109,13 @@ namespace offboard_run {
             return action;
         }
 
-        // 工厂方法，创建 "摄像头瞄准" 的动作
-        static std::shared_ptr<DroneAction> createCameraAimAction(
-            const geometry_msgs::msg::PoseStamped &target_pose,
-            double camera_aim_tolerance = 10.0,
-            double position_tolerance = 0.5,
-            HoldAxis axis = HoldAxis::Z, Frame frame = Frame::WORLD_BODY
-        ) {
+        static std::shared_ptr<DroneAction> createVisualServoAction(
+            const VisualServoConfig &config,
+            bool continue_on_timeout = true) {
             auto action = std::make_shared<DroneAction>(PrivateTag{});
-            action->type_ = ActionType::CAMERA_AIM;  // 设置动作类型为摄像头瞄准
-            action->target_pose_ = target_pose;  // 设置目标位置
-            action->camera_aim_tolerance_ = camera_aim_tolerance;  // 设置摄像头瞄准公差
-            action->position_tolerance_ = position_tolerance;  // 设置位置公差
-            action->axis_ = axis;  // 设置保持的轴
-            action->frame_ = frame;  // 设置参考坐标系
+            action->type_ = ActionType::VISUAL_SERVO;
+            action->visual_servo_config_ = config;
+            action->visual_servo_continue_on_timeout_ = continue_on_timeout;
             return action;
         }
 
@@ -157,9 +145,6 @@ namespace offboard_run {
         // 获取位置公差
         double getPositionTolerance() const { return position_tolerance_; }
 
-        // 获取摄像头瞄准的公差
-        double getCameraAimTolerance() const { return camera_aim_tolerance_; }
-
         // 获取目标高度
         double getTargetAltitude() const { return target_altitude_; }
 
@@ -174,9 +159,6 @@ namespace offboard_run {
 
         // 获取动作开始时间
         rclcpp::Time getStartTime() const {return start_time_; }
-
-        // 获取保持轴
-        HoldAxis getHoldAxis() const{ return axis_; }
 
         // 检查起始位置是否已初始化
         bool isStartPoseInitialized() const { return init_start_pose_; }
@@ -214,6 +196,12 @@ namespace offboard_run {
         double getMoveMaxZSpeed() const { return move_max_z_speed_mps_; }
         double getMoveMaxYawRateRadps() const { return move_max_yaw_rate_radps_; }
         double getYawToleranceRad() const { return yaw_tolerance_rad_; }
+        const VisualServoConfig &getVisualServoConfig() const {
+            return visual_servo_config_;
+        }
+        bool shouldContinueOnVisualServoTimeout() const {
+            return visual_servo_continue_on_timeout_;
+        }
 
     private:
         // 动作类型（如悬停、移动等）
@@ -235,14 +223,8 @@ namespace offboard_run {
         // 位置公差，用于判断是否到达目标位置
         double position_tolerance_ = 0.1;
 
-        // 摄像头瞄准的公差
-        double camera_aim_tolerance_ = 10.0;
-
         // 默认目标高度
         double target_altitude_ = 1.2;
-
-        // 摄像头瞄准时的保持轴
-        HoldAxis axis_ = HoldAxis::Z;
 
         // 起始位置
         geometry_msgs::msg::PoseStamped start_pose_;
@@ -266,5 +248,8 @@ namespace offboard_run {
         // 这里用 5.0 * M_PI / 180.0 是把 5 deg 转成弧度制，
         // 表示当前 yaw 与目标 yaw 的误差小于约 5 度时，可认为朝向已经到位。
         double yaw_tolerance_rad_ = 5.0 * M_PI / 180.0;
+
+        VisualServoConfig visual_servo_config_;
+        bool visual_servo_continue_on_timeout_ = true;
     };
 }

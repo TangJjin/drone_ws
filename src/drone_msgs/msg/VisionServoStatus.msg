@@ -1,0 +1,11 @@
+builtin_interfaces/Time stamp
+bool active
+string state
+string requested_target_id
+string tracked_target_id
+uint32 target_sequence
+bool target_visible
+bool aligned
+float64 filtered_error_x
+float64 filtered_error_y
+string detail

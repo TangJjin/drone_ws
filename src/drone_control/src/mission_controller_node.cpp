@@ -34,7 +34,6 @@ class MissionController {
         tf_listener_(tf_buffer_, node_, true) {
     mission_config_path_ =
         node_->declare_parameter<std::string>("mission_config_path", "");
-    use_camera_aim_ = node_->declare_parameter<bool>("use_camera_aim", true);
     auto_start_mission_ =
         node_->declare_parameter<bool>("auto_start_mission", true);
     takeoff_altitude_ =
@@ -77,9 +76,9 @@ class MissionController {
     publishTaskStatus(false, "idle", 0, static_cast<uint8_t>(mission_actions_.size()));
 
     RCLCPP_INFO(node_->get_logger(),
-                "任务控制器已就绪。自动启动：%s，相机瞄准：%s，起飞高度：%.2f m",
+                "任务控制器已就绪。自动启动：%s，起飞高度：%.2f m",
                 auto_start_mission_ ? "是" : "否",
-                use_camera_aim_ ? "启用" : "禁用", takeoff_altitude_);
+                takeoff_altitude_);
   }
 
   void controlLoop() {
@@ -137,14 +136,11 @@ class MissionController {
       return false;
     }
 
-    if (config["system"]) {
-      use_camera_aim_ =
-          config["system"]["use_camera_aim"]
-              ? config["system"]["use_camera_aim"].as<bool>()
-              : use_camera_aim_;
+    system_config_ = config["system"] ? config["system"] : YAML::Node();
+    if (system_config_) {
       auto_start_mission_ =
-          config["system"]["auto_start_mission"]
-              ? config["system"]["auto_start_mission"].as<bool>()
+          system_config_["auto_start_mission"]
+              ? system_config_["auto_start_mission"].as<bool>()
               : auto_start_mission_;
     }
 
@@ -193,14 +189,8 @@ class MissionController {
         action = DroneAction::createHoverAction(duration, vision_hover);
         RCLCPP_INFO(node_->get_logger(), "  %zu：悬停 %.2f s，视觉悬停通知：%s",
                     i, duration, vision_hover ? "true" : "false");
-      } else if (type == "camera_aim") {
-        if (use_camera_aim_) {
-          action = parseCameraAimAction(item, i);
-        } else {
-          RCLCPP_WARN(node_->get_logger(),
-                      "第 %zu 个相机瞄准动作被跳过：use_camera_aim=false。",
-                      i);
-        }
+      } else if (type == "visual_servo") {
+        action = parseVisualServoAction(item, i);
       } else {
         RCLCPP_WARN(node_->get_logger(), "未知动作类型 '%s'，已跳过。",
                     type.c_str());
@@ -214,6 +204,18 @@ class MissionController {
     RCLCPP_INFO(node_->get_logger(), "任务加载完成，有效动作数量：%zu。",
                 mission_actions_.size());
     return !mission_actions_.empty();
+  }
+
+  template <typename T>
+  T actionOrSystemValue(const YAML::Node &action, const char *key,
+                        const T &built_in_default) const {
+    if (action[key]) {
+      return action[key].as<T>();
+    }
+    if (system_config_ && system_config_[key]) {
+      return system_config_[key].as<T>();
+    }
+    return built_in_default;
   }
 
   std::shared_ptr<DroneAction> parseMoveAction(const YAML::Node &item,
@@ -241,15 +243,15 @@ class MissionController {
     target.pose.orientation = tf2::toMsg(q);
 
     const double tolerance =
-        item["tolerance"] ? item["tolerance"].as<double>() : 0.1;
+        actionOrSystemValue<double>(item, "tolerance", 0.1);
     const double yaw_tolerance_deg =
-        item["yaw_tolerance_deg"] ? item["yaw_tolerance_deg"].as<double>() : 5.0;
+        actionOrSystemValue<double>(item, "yaw_tolerance_deg", 5.0);
     const double max_xy_speed_mps =
-        item["max_xy_speed_mps"] ? item["max_xy_speed_mps"].as<double>() : 0.35;
+        actionOrSystemValue<double>(item, "max_xy_speed_mps", 0.35);
     const double max_z_speed_mps =
-        item["max_z_speed_mps"] ? item["max_z_speed_mps"].as<double>() : 0.20;
+        actionOrSystemValue<double>(item, "max_z_speed_mps", 0.20);
     const double max_yaw_rate_deg_s =
-        item["max_yaw_rate_deg_s"] ? item["max_yaw_rate_deg_s"].as<double>() : 30.0;
+        actionOrSystemValue<double>(item, "max_yaw_rate_deg_s", 30.0);
 
     auto use_frame = parseFrame(frame);
     RCLCPP_INFO(node_->get_logger(),
@@ -270,36 +272,98 @@ class MissionController {
         max_yaw_rate_deg_s * kDegToRad);
   }
 
-  std::shared_ptr<DroneAction> parseCameraAimAction(const YAML::Node &item,
-                                                    std::size_t index) {
-    geometry_msgs::msg::PoseStamped target;
-    const std::string frame =
-        item["frame"] ? item["frame"].as<std::string>() : "world_body";
-    const YAML::Node pos = item["position"];
-    if (!pos || pos.size() != 3) {
-      RCLCPP_WARN(node_->get_logger(),
-                  "第 %zu 个相机瞄准动作缺少 position: [x, y, z]。", index);
+  BodyAxis parseBodyAxis(const std::string &axis, BodyAxis fallback,
+                         std::size_t index, const char *field) const {
+    if (axis == "x" || axis == "X") {
+      return BodyAxis::X;
+    }
+    if (axis == "y" || axis == "Y") {
+      return BodyAxis::Y;
+    }
+    if (axis == "z" || axis == "Z") {
+      return BodyAxis::Z;
+    }
+    RCLCPP_WARN(node_->get_logger(),
+                "第 %zu 个 visual_servo 的 %s=%s 无效，使用默认轴。",
+                index, field, axis.c_str());
+    return fallback;
+  }
+
+  std::shared_ptr<DroneAction> parseVisualServoAction(
+      const YAML::Node &item, std::size_t index) {
+    VisualServoConfig config;
+    config.target_id =
+        actionOrSystemValue<std::string>(item, "target_id", "");
+    config.require_confirmed =
+        actionOrSystemValue<bool>(item, "require_confirmed", true);
+    config.image_x_axis = parseBodyAxis(
+        actionOrSystemValue<std::string>(item, "image_x_axis", "y"),
+        BodyAxis::Y, index, "image_x_axis");
+    config.image_y_axis = parseBodyAxis(
+        actionOrSystemValue<std::string>(item, "image_y_axis", "z"),
+        BodyAxis::Z, index, "image_y_axis");
+    if (config.image_x_axis == config.image_y_axis) {
+      RCLCPP_ERROR(node_->get_logger(),
+                   "第 %zu 个 visual_servo 的图像 X/Y 不能映射到同一机体系轴。",
+                   index);
       return nullptr;
     }
 
-    target.header.frame_id = frame;
-    target.pose.position.x = pos[0].as<double>();
-    target.pose.position.y = pos[1].as<double>();
-    target.pose.position.z = pos[2].as<double>();
-    target.pose.orientation.w = 1.0;
+    config.image_x_sign =
+        actionOrSystemValue<double>(item, "image_x_sign", -1.0);
+    config.image_y_sign =
+        actionOrSystemValue<double>(item, "image_y_sign", -1.0);
+    config.kp_x = actionOrSystemValue<double>(item, "kp_x", 0.35);
+    config.ki_x = actionOrSystemValue<double>(item, "ki_x", 0.0);
+    config.kd_x = actionOrSystemValue<double>(item, "kd_x", 0.02);
+    config.kp_y = actionOrSystemValue<double>(item, "kp_y", 0.35);
+    config.ki_y = actionOrSystemValue<double>(item, "ki_y", 0.0);
+    config.kd_y = actionOrSystemValue<double>(item, "kd_y", 0.02);
+    config.integral_limit =
+        actionOrSystemValue<double>(item, "integral_limit", 0.5);
+    config.filter_alpha =
+        actionOrSystemValue<double>(item, "filter_alpha", 0.35);
+    config.enter_tolerance_x =
+        actionOrSystemValue<double>(item, "enter_tolerance_x", 0.04);
+    config.enter_tolerance_y =
+        actionOrSystemValue<double>(item, "enter_tolerance_y", 0.04);
+    config.exit_tolerance_x =
+        actionOrSystemValue<double>(item, "exit_tolerance_x", 0.07);
+    config.exit_tolerance_y =
+        actionOrSystemValue<double>(item, "exit_tolerance_y", 0.07);
+    config.settle_time_s =
+        actionOrSystemValue<double>(item, "settle_time_s", 0.6);
+    config.acquire_timeout_s =
+        actionOrSystemValue<double>(item, "acquire_timeout_s", 5.0);
+    config.lost_timeout_s =
+        actionOrSystemValue<double>(item, "lost_timeout_s", 1.0);
+    config.overall_timeout_s =
+        actionOrSystemValue<double>(item, "overall_timeout_s", 20.0);
+    config.max_body_speed_mps =
+        actionOrSystemValue<double>(item, "max_body_speed_mps", 0.20);
+    const bool continue_on_timeout =
+        actionOrSystemValue<bool>(item, "continue_on_timeout", true);
 
-    const std::string axis_text =
-        item["axis"] ? item["axis"].as<std::string>() : "z";
-    const HoldAxis axis = parseHoldAxis(axis_text);
-    const double tolerance =
-        item["tolerance"] ? item["tolerance"].as<double>() : 10.0;
+    if (config.enter_tolerance_x <= 0.0 || config.enter_tolerance_y <= 0.0 ||
+        config.exit_tolerance_x < config.enter_tolerance_x ||
+        config.exit_tolerance_y < config.enter_tolerance_y ||
+        config.settle_time_s < 0.0 || config.acquire_timeout_s <= 0.0 ||
+        config.lost_timeout_s <= 0.0 || config.overall_timeout_s <= 0.0 ||
+        config.max_body_speed_mps <= 0.0) {
+      RCLCPP_ERROR(node_->get_logger(),
+                   "第 %zu 个 visual_servo 参数非法：请检查容差、超时和速度限制。",
+                   index);
+      return nullptr;
+    }
 
-    RCLCPP_INFO(node_->get_logger(),
-                "  %zu：相机瞄准 [%.2f, %.2f, %.2f]，保持轴=%s，容差=%.2f px",
-                index, target.pose.position.x, target.pose.position.y,
-                target.pose.position.z, axis_text.c_str(), tolerance);
-    return DroneAction::createCameraAimAction(target, tolerance, 0.5, axis,
-                                              parseFrame(frame));
+    RCLCPP_INFO(
+        node_->get_logger(),
+        "  %zu：通用视觉伺服，target_id=%s，轴映射=(%d,%d)，最大速度=%.2f m/s，总超时=%.1f s",
+        index, config.target_id.empty() ? "<any>" : config.target_id.c_str(),
+        static_cast<int>(config.image_x_axis),
+        static_cast<int>(config.image_y_axis), config.max_body_speed_mps,
+        config.overall_timeout_s);
+    return DroneAction::createVisualServoAction(config, continue_on_timeout);
   }
 
   DroneAction::Frame parseFrame(const std::string &frame) const {
@@ -310,16 +374,6 @@ class MissionController {
       return DroneAction::Frame::WORLD_ENU;
     }
     return DroneAction::Frame::WORLD_BODY;
-  }
-
-  HoldAxis parseHoldAxis(const std::string &axis) const {
-    if (axis == "x" || axis == "X") {
-      return HoldAxis::X;
-    }
-    if (axis == "y" || axis == "Y") {
-      return HoldAxis::Y;
-    }
-    return HoldAxis::Z;
   }
 
   bool hasStartRequest() const {
@@ -526,6 +580,7 @@ class MissionController {
   std::vector<std::shared_ptr<DroneAction>> mission_actions_;
   mavros_msgs::msg::State current_state_;
   std::string mission_config_path_;
+  YAML::Node system_config_;
 
   rclcpp::Publisher<drone_msgs::msg::TaskStatus>::SharedPtr task_status_pub_;
 
@@ -533,7 +588,6 @@ class MissionController {
   bool tf_ready_logged_ = false;
   bool initialized_ = false;
   bool initial_setpoints_sent_ = false;
-  bool use_camera_aim_ = true;
   bool auto_start_mission_ = true;
   bool mission_start_requested_ = false;
   bool mission_running_ = false;

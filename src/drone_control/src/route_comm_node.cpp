@@ -24,7 +24,6 @@ namespace
       mission_config_path_ = declare_parameter<std::string>("mission_config_path", "");
       enable_offboard_control_ =
           declare_parameter<bool>("enable_offboard_control", false);
-      use_camera_aim_ = declare_parameter<bool>("use_camera_aim", true);
 
       const auto qos =
           rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local();
@@ -92,10 +91,6 @@ namespace
         return;
       }
 
-      if (config["system"] && config["system"]["use_camera_aim"])
-      {
-        use_camera_aim_ = config["system"]["use_camera_aim"].as<bool>();
-      }
 
       if (!config["mission"] || !config["mission"]["actions"])
       {
@@ -136,18 +131,8 @@ namespace
           continue;
         }
 
-        if (type == "camera_aim")
+        if (type == "visual_servo")
         {
-          if (!use_camera_aim_)
-          {
-            RCLCPP_WARN(get_logger(),
-                        "第 %zu 个相机瞄准动作被跳过：use_camera_aim=false。", i);
-            continue;
-          }
-          if (!hasValidPosition(item, i, "相机瞄准"))
-          {
-            continue;
-          }
           ++mission_valid_action_count_;
           continue;
         }
@@ -309,7 +294,6 @@ namespace
 
     std::string mission_config_path_;
     bool enable_offboard_control_ = false;
-    bool use_camera_aim_ = true;
     bool route_loaded_ = false;
     bool task_status_received_ = false;
     bool route_echo_published_ = false;

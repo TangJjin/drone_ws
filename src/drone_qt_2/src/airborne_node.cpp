@@ -454,16 +454,22 @@ void AirborneNode::handleUploadMissionSummary(
         path_points.push_back(AirborneWorldCoord{point.x, point.y, point.z, point.yaw});
     }
 
+    // 生成任务分支中的结果需要在函数末尾写入响应，因此变量必须定义在 if 外。
+    uint32_t action_count = 0;
+    std::string generated_mission_path;
+
     if(waypoint_or_button_ == true){
         //从mission summary中提取选项参数，并使用路径点和选项参数生成mission yaml文本，同时统计mission action的数量
         const auto options = AirborneMissionYamlBuilder::fromMissionSummary(request->summary);
         const QString mission_yaml = AirborneMissionYamlBuilder::buildMissionYaml(path_points, options);
-        const uint32_t action_count = AirborneMissionYamlBuilder::countMissionActions(path_points, options);
+        action_count = AirborneMissionYamlBuilder::countMissionActions(path_points, options);
 
-        std::string saved_path;
         std::string error_message;
         //将生成的mission yaml文本保存到文件中，并获取保存路径和错误信息
-        const bool ok = saveMissionYamlToFile(mission_yaml.toStdString(), saved_path, error_message);
+        const bool ok = saveMissionYamlToFile(
+            mission_yaml.toStdString(),
+            generated_mission_path,
+            error_message);
 
         if (!ok) {
             response->success = false;
@@ -480,18 +486,19 @@ void AirborneNode::handleUploadMissionSummary(
 
     if(waypoint_or_button_ == false)
     {
-        current_mission_path_ = "/home/sunrise/drone_ws/src/drone_mission/warehouse/mission.yaml";
+        current_mission_path_ = "/home/orangepi/drone_ws/src/drone_mission/warehouse/mission.yaml";
     }
     else
     {
-        current_mission_path_ = "/home/sunrise/drone_ws/src/drone_mission/config/ground_mission.yaml";
+        // 使用保存函数实际返回的路径，避免再维护一份可能不一致的硬编码路径。
+        current_mission_path_ = generated_mission_path;
     }
 
     response->success = true;
     //response->message = "mission 摘要上传成功，机载端已生成 YAML";
     response->message = "正在初始化";
-    response->saved_path = file_path;
-    response->action_count = 0;
+    response->saved_path = current_mission_path_;
+    response->action_count = action_count;
 }
 
 bool AirborneNode::startOffboardCommand()

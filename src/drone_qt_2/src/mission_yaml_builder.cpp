@@ -241,7 +241,8 @@ QString AirborneMissionYamlBuilder::buildMissionYaml(const std::vector<AirborneW
         writeMoveStep(
             out,
             frame,
-            MissionMoveStep{point.x, point.y, point.move_altitude, point.yaw});
+            // 严格使用地面站上传的 x、y、z、yaw，不用全局 move_altitude 覆盖点高度。
+            MissionMoveStep{point.x, point.y, point.z, point.yaw});
         writeVisualServoStep(out);
 
         if (options.add_hover_between_moves) {

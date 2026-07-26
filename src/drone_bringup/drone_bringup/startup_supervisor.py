@@ -93,13 +93,13 @@ class StartupSupervisor:
                 timeout_sec=15,
                 ready_qos_reliability='reliable',
             ),
-            StartupStep(
-                name='airborne_node',
-                command=['ros2', 'run', 'drone_qt_2', 'airborne_node'],
-                ready_topic='/drone/status',
-                ready_type='drone_msgs/msg/DroneStatus',
-                timeout_sec=15,
-                ready_qos_reliability='best_effort',
+            # StartupStep(
+            #     name='airborne_node',
+            #     command=['ros2', 'run', 'drone_qt_2', 'airborne_node'],
+            #     ready_topic='/drone/status',
+            #     ready_type='drone_msgs/msg/DroneStatus',
+            #     timeout_sec=15,
+            #     ready_qos_reliability='best_effort',
             ),
         ]
 

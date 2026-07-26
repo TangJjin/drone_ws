@@ -13,7 +13,9 @@ industrial_animal_vision:
     # 向相机请求的图像高度，单位为像素。
     camera_height: 720
     # 向相机请求的采集帧率；相机驱动不支持时会协商为实际可用档位。
-    camera_fps: 120
+    # 60 已覆盖伺服 25Hz 需求；上板后用 HUD 的 Capture FPS 确认协商结果
+    # （此前请求 120 时板端实测漂移到 127-370fps，协商不受控）。
+    camera_fps: 60
 
     # MPP 解码后交给检测器的 RGB 图像宽度，单位为像素。
     decode_width: 1280
@@ -102,5 +104,8 @@ industrial_animal_vision:
     # 使用 RGA 硬件完成 1280x720 到模型 letterbox 有效区域的缩放。
     # 板端未安装 librga 或运行失败时会自动回退 OpenCV。
     enable_rga_preprocess: true
-    # 将进程限制到 CPU4-7，并将三个推理线程分别绑定到 CPU5-7。
-    cpu_affinity_enabled: true
+    # 绑核已改由 launch 的 taskset 前缀完成（cpu_set 参数，默认 6,7；
+    # 在 exec 时生效，能圈住节点构造前就已创建的 DDS 线程）。
+    # 保持 false：置 true 时节点会自绑 CPU4-7，并把三个推理线程绑到
+    # CPU5-7——CPU4、CPU5 在 taskset 掩码之外，会越界占用留给外部的核。
+    cpu_affinity_enabled: false

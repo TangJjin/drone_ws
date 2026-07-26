@@ -1,6 +1,7 @@
 """Launch the industrial-camera MPP and RKNN animal detector."""
 
 import os
+import re
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -62,6 +63,13 @@ def _launch_node(context):
                 raise RuntimeError(f"{name} must be 'true' or 'false'")
             overrides[name] = normalized == "true"
 
+    # taskset must wrap the process from exec time: DDS threads are created
+    # during the rclcpp::Node base construction, before the in-process
+    # sched_setaffinity call runs, so only an external prefix constrains them.
+    cpu_set = LaunchConfiguration("cpu_set").perform(context).strip()
+    if cpu_set and not re.fullmatch(r"[0-9]+(?:[,-][0-9]+)*", cpu_set):
+        raise RuntimeError("cpu_set must be a CPU list like '6,7' or '4-7'")
+
     return [
         Node(
             package="drone_perception",
@@ -69,6 +77,7 @@ def _launch_node(context):
             name="industrial_animal_vision",
             output="screen",
             emulate_tty=True,
+            prefix=f"taskset -c {cpu_set}" if cpu_set else None,
             parameters=[profile_path, overrides],
         )
     ]
@@ -84,4 +93,12 @@ def generate_launch_description():
                 description=f"Optional override for the '{name}' node parameter",
             )
         )
+    arguments.append(
+        DeclareLaunchArgument(
+            "cpu_set",
+            default_value="6,7",
+            description="CPU list for the taskset prefix that pins the whole "
+                        "process including DDS threads; empty disables pinning",
+        )
+    )
     return LaunchDescription(arguments + [OpaqueFunction(function=_launch_node)])

@@ -8,9 +8,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <deque>
 #include <fcntl.h>
 #include <functional>
@@ -171,10 +168,6 @@ public:
     }
     if (ui_thread_.joinable()) {
       ui_thread_.join();
-    }
-    if (calib_log_.is_open()) {
-      calib_log_.flush();
-      calib_log_.close();
     }
     if (pipeline_ != nullptr) {
       gst_element_set_state(pipeline_, GST_STATE_NULL);
@@ -350,10 +343,6 @@ private:
     declare_parameter<double>("camera_offset_y", -0.08);
     declare_parameter<double>("camera_offset_z", 0.08);
     declare_parameter<double>("pose_stale_s", 0.3);
-    declare_parameter<bool>("calib_log_enabled", true);
-    declare_parameter<std::string>("calib_log_dir", "");
-    declare_parameter<double>("calib_min_height_m", 0.5);
-    declare_parameter<double>("calib_settle_s", 2.0);
   }
 
   void readParameters()
@@ -412,10 +401,6 @@ private:
     camera_offset_y_ = get_parameter("camera_offset_y").as_double();
     camera_offset_z_ = get_parameter("camera_offset_z").as_double();
     pose_stale_s_ = get_parameter("pose_stale_s").as_double();
-    calib_log_enabled_ = get_parameter("calib_log_enabled").as_bool();
-    calib_log_dir_ = get_parameter("calib_log_dir").as_string();
-    calib_min_height_m_ = get_parameter("calib_min_height_m").as_double();
-    calib_settle_s_ = get_parameter("calib_settle_s").as_double();
     const double mount_rad = static_cast<double>(camera_mount_yaw_deg_) * M_PI / 180.0;
     mount_cos_ = std::cos(mount_rad);
     mount_sin_ = std::sin(mount_rad);
@@ -477,10 +462,12 @@ private:
     if (local_pose_topic_.empty()) {
       throw std::invalid_argument("local_pose_topic must not be empty");
     }
-    if (camera_fx_ < 50.0 || camera_fx_ > 10000.0 ||
-      camera_fy_ < 50.0 || camera_fy_ > 10000.0)
+    // 上限按 5-50mm 变焦镜头长焦端取：50mm 全幅缩放约 fx=10300，若 720p
+    // 走裁切读出可到 3 万级，故放宽到 50000（仍能拦住数量级手误）。
+    if (camera_fx_ < 50.0 || camera_fx_ > 50000.0 ||
+      camera_fy_ < 50.0 || camera_fy_ > 50000.0)
     {
-      throw std::invalid_argument("camera_fx/camera_fy must be in [50, 10000]");
+      throw std::invalid_argument("camera_fx/camera_fy must be in [50, 50000]");
     }
     if (camera_cx_ < 0.0 || camera_cy_ < 0.0) {
       throw std::invalid_argument("camera_cx/camera_cy must be >= 0");
@@ -492,12 +479,6 @@ private:
     }
     if (pose_stale_s_ <= 0.0 || pose_stale_s_ > 5.0) {
       throw std::invalid_argument("pose_stale_s must be in (0, 5]");
-    }
-    if (calib_min_height_m_ <= 0.0 || calib_min_height_m_ > 10.0) {
-      throw std::invalid_argument("calib_min_height_m must be in (0, 10]");
-    }
-    if (calib_settle_s_ < 0.0 || calib_settle_s_ > 60.0) {
-      throw std::invalid_argument("calib_settle_s must be in [0, 60]");
     }
   }
 
@@ -1197,103 +1178,6 @@ private:
     return std::make_pair(cam_x + t * ray_world[0], cam_y + t * ray_world[1]);
   }
 
-  void openCalibLog()
-  {
-    std::string dir = calib_log_dir_;
-    if (dir.empty()) {
-      const char *home = std::getenv("HOME");
-      dir = (home != nullptr ? std::string(home) : std::string("/tmp")) +
-        "/animal_calib_logs";
-    }
-    std::error_code dir_error;
-    std::filesystem::create_directories(dir, dir_error);
-    if (dir_error) {
-      RCLCPP_WARN(get_logger(), "Calibration log disabled: cannot create %s (%s)",
-        dir.c_str(), dir_error.message().c_str());
-      calib_log_enabled_ = false;
-      return;
-    }
-    const std::time_t wall = std::time(nullptr);
-    std::tm stamp{};
-    localtime_r(&wall, &stamp);
-    char name[64];
-    std::strftime(name, sizeof(name), "calib_%Y%m%d_%H%M%S.csv", &stamp);
-    const std::string path = dir + "/" + name;
-    calib_log_.open(path, std::ios::out | std::ios::trunc);
-    if (!calib_log_.is_open()) {
-      RCLCPP_WARN(get_logger(), "Calibration log disabled: cannot open %s", path.c_str());
-      calib_log_enabled_ = false;
-      return;
-    }
-    // The offline fx solver needs the configuration the rows were produced with.
-    char header[256];
-    std::snprintf(header, sizeof(header),
-      "# fx=%.1f fy=%.1f cx=%.1f cy=%.1f mount_yaw=%d "
-      "offset=(%.3f,%.3f,%.3f) min_height=%.2f settle=%.1f\n",
-      camera_fx_, camera_fy_, camera_cx_, camera_cy_, camera_mount_yaw_deg_,
-      camera_offset_x_, camera_offset_y_, camera_offset_z_,
-      calib_min_height_m_, calib_settle_s_);
-    calib_log_ << header
-               << "# time_s,frame,u,v,target,score,px,py,pz,qw,qx,qy,qz,zoom,"
-                  "ground_valid,ground_x,ground_y\n";
-    RCLCPP_INFO(get_logger(), "ANIMAL_SERVO_EVENT type=calib_log_open path=%s", path.c_str());
-  }
-
-  // Appends one calibration row. Gates: airborne (pose z above calib_min_height_m
-  // continuously for calib_settle_s, which also drops the pre-takeoff garbage z)
-  // and a detected target this frame (the caller only invokes it with one).
-  void maybeWriteCalibRow(const ServoSnapshot &snapshot, const PoseSample &pose)
-  {
-    if (!calib_log_enabled_) {
-      return;
-    }
-    const Clock::time_point now_at = Clock::now();
-    if (pose.pz < calib_min_height_m_) {
-      if (calib_airborne_since_ != Clock::time_point{} && calib_log_.is_open()) {
-        // Landing edge: force everything to storage so a battery pull right
-        // after touchdown cannot lose the flight that was just recorded.
-        calib_log_.flush();
-        ::sync();
-      }
-      calib_airborne_since_ = Clock::time_point{};  // on the ground or landing
-      return;
-    }
-    if (calib_airborne_since_ == Clock::time_point{}) {
-      calib_airborne_since_ = now_at;
-    }
-    if (elapsedSeconds(calib_airborne_since_, now_at) < calib_settle_s_) {
-      return;
-    }
-    if (!calib_log_.is_open()) {
-      openCalibLog();
-      if (!calib_log_.is_open()) {
-        return;
-      }
-    }
-    int zoom = 0;
-    {
-      std::lock_guard<std::mutex> lock(camera_control_mutex_);
-      zoom = camera_settings_.zoom_absolute;
-    }
-    const double wall_s = std::chrono::duration<double>(
-      std::chrono::system_clock::now().time_since_epoch()).count();
-    char row[320];
-    std::snprintf(row, sizeof(row),
-      "%.3f,%llu,%.1f,%.1f,%s,%.3f,%.3f,%.3f,%.3f,%.6f,%.6f,%.6f,%.6f,%d,%d,%.3f,%.3f\n",
-      wall_s, static_cast<unsigned long long>(snapshot.frame_id),
-      snapshot.center_x, snapshot.center_y,
-      snapshot.target_id.empty() ? "none" : snapshot.target_id.c_str(),
-      snapshot.confidence, pose.px, pose.py, pose.pz,
-      pose.qw, pose.qx, pose.qy, pose.qz, zoom,
-      snapshot.ground_valid ? 1 : 0, snapshot.ground_x, snapshot.ground_y);
-    calib_log_ << row;
-    // Frequent small flushes: at 30-90 Hz this bounds the data at risk from a
-    // sudden power cut to well under a second (plus the ext4 commit window).
-    if (++calib_rows_ % 16U == 0U) {
-      calib_log_.flush();
-    }
-  }
-
   const TrackedDetection *findTrackByTrackId(std::uint64_t track_id) const
   {
     for (const TrackedDetection &track : tracked_detections_) {
@@ -1466,7 +1350,6 @@ private:
             snapshot.ground_x = ground->first;
             snapshot.ground_y = ground->second;
           }
-          maybeWriteCalibRow(snapshot, pose);
         }
       }
     }
@@ -2164,15 +2047,6 @@ private:
   double pose_stale_s_ = 0.3;
   double mount_cos_ = 1.0;
   double mount_sin_ = 0.0;
-  // Calibration flight log: written only by the tracking thread, closed after
-  // every worker thread has been joined.
-  bool calib_log_enabled_ = true;
-  std::string calib_log_dir_;
-  double calib_min_height_m_ = 0.5;
-  double calib_settle_s_ = 2.0;
-  std::ofstream calib_log_;
-  Clock::time_point calib_airborne_since_{};
-  std::uint64_t calib_rows_ = 0;
   std::uint64_t servo_seen_session_epoch_ = 0;
   // Owned by the servo publish thread only.
   std::uint32_t servo_sequence_ = 0;

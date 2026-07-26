@@ -12,7 +12,7 @@ from launch_ros.actions import Node
 
 STRING_ARGUMENTS = (
     "camera_device", "model_path", "servo_target_topic", "servo_status_topic",
-    "local_pose_topic", "calib_log_dir",
+    "local_pose_topic",
 )
 INTEGER_ARGUMENTS = (
     "camera_width", "camera_height", "camera_fps", "decode_width", "decode_height",
@@ -29,11 +29,10 @@ FLOAT_ARGUMENTS = (
     "servo_confirm_max_center_jump", "servo_confirm_max_area_ratio", "servo_log_period_s",
     "camera_fx", "camera_fy", "camera_cx", "camera_cy",
     "camera_offset_x", "camera_offset_y", "camera_offset_z", "pose_stale_s",
-    "calib_min_height_m", "calib_settle_s",
 )
 BOOLEAN_ARGUMENTS = (
     "display_enabled", "enable_zero_copy", "enable_rga_preprocess",
-    "cpu_affinity_enabled", "ground_projection_enabled", "calib_log_enabled",
+    "cpu_affinity_enabled", "ground_projection_enabled",
 )
 
 
@@ -74,7 +73,7 @@ def _launch_node(context):
     if cpu_set and not re.fullmatch(r"[0-9]+(?:[,-][0-9]+)*", cpu_set):
         raise RuntimeError("cpu_set must be a CPU list like '6,7' or '4-7'")
 
-    return [
+    nodes = [
         Node(
             package="drone_perception",
             executable="industrial_animal_vision_node",
@@ -85,6 +84,32 @@ def _launch_node(context):
             parameters=[profile_path, overrides],
         )
     ]
+
+    # 相机参数调试台（网页端，独立于 OpenCV 调试窗口），默认关闭。
+    # 开启后浏览器访问 http://<板子IP>:<camera_tuner_port>/ 动态调参。
+    tuner_enabled = LaunchConfiguration(
+        "camera_tuner_enabled").perform(context).strip().lower()
+    if tuner_enabled not in ("", "false", "true"):
+        raise RuntimeError("camera_tuner_enabled must be 'true' or 'false'")
+    if tuner_enabled == "true":
+        tuner_parameters = {
+            "http_port": int(LaunchConfiguration(
+                "camera_tuner_port").perform(context)),
+        }
+        if "camera_device" in overrides:
+            tuner_parameters["camera_device"] = overrides["camera_device"]
+        nodes.append(
+            Node(
+                package="drone_perception",
+                executable="camera_param_tuner.py",
+                name="camera_param_tuner",
+                output="screen",
+                emulate_tty=True,
+                parameters=[tuner_parameters],
+            )
+        )
+
+    return nodes
 
 
 def generate_launch_description():
@@ -103,6 +128,21 @@ def generate_launch_description():
             default_value="6,7",
             description="CPU list for the taskset prefix that pins the whole "
                         "process including DDS threads; empty disables pinning",
+        )
+    )
+    arguments.append(
+        DeclareLaunchArgument(
+            "camera_tuner_enabled",
+            default_value="false",
+            description="Start the web-based camera parameter tuner "
+                        "(http://<board>:<camera_tuner_port>/)",
+        )
+    )
+    arguments.append(
+        DeclareLaunchArgument(
+            "camera_tuner_port",
+            default_value="8899",
+            description="HTTP port for the camera parameter tuner page",
         )
     )
     return LaunchDescription(arguments + [OpaqueFunction(function=_launch_node)])

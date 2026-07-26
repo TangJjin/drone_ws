@@ -47,6 +47,7 @@ install(PROGRAMS
   scripts/orangepi_realsense_h264_sender.sh
   scripts/rdk_mjpeg_rtp_display.sh
   scripts/rdk_mjpeg_rtp_cv_display.py
+  scripts/camera_param_tuner.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

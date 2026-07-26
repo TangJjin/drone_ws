@@ -230,3 +230,51 @@ ros2 topic info -v /industrial_camera/params
 
 视觉端不会提供可订阅的相机状态话题；检查写入失败或范围裁剪时，请查看
 `industrial_animal_vision_node` 的日志。
+
+## 9. 排障补充（2026-07-27，板端实测后追加）
+
+### 9.1 曝光的物理天花板：不是 bug
+
+`exposure_absolute` 范围虽是 `1..10000`（单位 0.1ms），但相机跑 60fps 时每帧只有
+16.7ms 曝光预算，**有效上限约 167**；再往上驱动照单全收、读回也是大数值，但光学
+上不再变亮。自动模式看起来更亮是因为 AEC 联动了 ISP 内部增益（AGC），其幅度超过
+手动 `gain` 滑块的上限 190。给用户的正确预期：手动补亮 = 曝光≤167 + gain 拉满 +
+gamma/brightness 辅助。界面上建议在曝光滑块旁标注"60fps 下 >167 无效果"。
+
+### 9.2 "关掉自动曝光后手动曝光仍无效"的三个必查点
+
+1. **每一包都必须是"当前参数"的完整快照**（第 2 节的核心约定）。典型错误：切手动
+   曝光发了 `auto_exposure=false`，随后拖动曝光滑块时组包却用了默认/过期状态，
+   `auto_exposure` 又变回 `true`——视觉端会先把相机切回自动、再静默跳过手动值。
+   症状即"关了自动，一拖曝光又变回自动的亮度"。
+2. **组包前必须 `setByteOrder(LittleEndian)`**（与 `ground_link_bridge.cpp` 的
+   `configureStream` 一致）。QDataStream 默认大端；忘了设置时 bool（单字节）全部
+   正常、int32 全部乱码（会被视觉端钳到 min/max），恰好表现成"开关有用、滑块疯了"。
+3. **载荷定长 49 字节、字段顺序照第 3 节**，多一字节少一字节整包被机载端丢弃，
+   仅在机载日志留一条 `invalid IndustrialCameraParams serial payload`。
+
+### 9.3 板端对照工具与联调方法
+
+视觉端自带网页调参台（旁路验证"节点→相机"半条链）：
+
+```bash
+ros2 launch drone_perception industrial_animal_vision.launch.py camera_tuner_enabled:=true
+# 浏览器打开 http://<板子IP>:8899/，逐项显示驱动真实范围、实际值与生效状态
+```
+
+联调地面站时在板上同步执行：
+
+```bash
+ros2 topic echo /industrial_camera/params
+```
+
+地面站每拖一次滑块，echo 应出现一条完整消息；重点核对 `auto_exposure` 是否意外
+翻回 `true`、整数字段是否为期望值。echo 正常而画面无变化 → 查 9.1 的物理上限；
+echo 里值就不对 → 查 9.2。
+
+### 9.4 锁存消息的双发布者竞争
+
+桥接端与调参台的发布者都是 transient_local：视觉节点每次重启都会收到**每个存活
+发布者**各自的最后一条消息，后到者覆盖先到者（含 yaml 启动值）。联调结束后请关闭
+调参台（不带 `camera_tuner_enabled` 重启即可），避免飞行中节点重启时被调试参数
+覆盖。

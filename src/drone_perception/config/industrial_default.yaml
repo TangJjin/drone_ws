@@ -118,6 +118,19 @@ industrial_animal_vision:
     # 位姿超过该秒数未更新就暂停换算（ground_valid=0），不影响伺服发布。
     pose_stale_s: 0.3
 
+    # ── 标定飞行日志（离线求解 fx 用）──────────────────────
+    # 节点启动即待命，满足两道闸门才写入：①对地高度 >= calib_min_height_m
+    # 且持续 calib_settle_s 秒（挡掉起飞前的坏 z，降落时自动停）；
+    # ②当帧识别到目标且位姿新鲜。每次运行生成一个新 CSV，文件头记录
+    # 当时的内参/偏移/变焦配置。飞完把整个目录拷出即可离线解算 fx。
+    calib_log_enabled: true
+    # 留空 = $HOME/animal_calib_logs（重启不丢；勿用 /tmp，重启会清空）。
+    calib_log_dir: ""
+    # 判定"已起飞"的最低对地高度，单位米。
+    calib_min_height_m: 0.5
+    # 高度达标后再等待的稳定时间，单位秒。
+    calib_settle_s: 2.0
+
     # 同一类别目标跨帧关联所需的最小检测框 IoU。
     track_iou_threshold: 0.3
     # 目标允许消失的最长时间（秒）；窗口内重现会保持原 track_id 和确认状态。

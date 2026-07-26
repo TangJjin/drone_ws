@@ -12,7 +12,7 @@ from launch_ros.actions import Node
 
 STRING_ARGUMENTS = (
     "camera_device", "model_path", "servo_target_topic", "servo_status_topic",
-    "local_pose_topic",
+    "local_pose_topic", "calib_log_dir",
 )
 INTEGER_ARGUMENTS = (
     "camera_width", "camera_height", "camera_fps", "decode_width", "decode_height",
@@ -29,10 +29,11 @@ FLOAT_ARGUMENTS = (
     "servo_confirm_max_center_jump", "servo_confirm_max_area_ratio", "servo_log_period_s",
     "camera_fx", "camera_fy", "camera_cx", "camera_cy",
     "camera_offset_x", "camera_offset_y", "camera_offset_z", "pose_stale_s",
+    "calib_min_height_m", "calib_settle_s",
 )
 BOOLEAN_ARGUMENTS = (
     "display_enabled", "enable_zero_copy", "enable_rga_preprocess",
-    "cpu_affinity_enabled", "ground_projection_enabled",
+    "cpu_affinity_enabled", "ground_projection_enabled", "calib_log_enabled",
 )
 
 

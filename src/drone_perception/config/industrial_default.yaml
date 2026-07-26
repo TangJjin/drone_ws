@@ -124,8 +124,9 @@ industrial_animal_vision:
     # ②当帧识别到目标且位姿新鲜。每次运行生成一个新 CSV，文件头记录
     # 当时的内参/偏移/变焦配置。飞完把整个目录拷出即可离线解算 fx。
     calib_log_enabled: true
-    # 留空 = $HOME/animal_calib_logs（重启不丢；勿用 /tmp，重启会清空）。
-    calib_log_dir: ""
+    # 存储在板载 eMMC，断电/重启均不丢；勿改到 /tmp（重启会清空）。
+    # 降落沿（高度跌破阈值）会强制 sync 落盘，落地后即可安全拔电。
+    calib_log_dir: /home/orangepi/animal_calib_logs
     # 判定"已起飞"的最低对地高度，单位米。
     calib_min_height_m: 0.5
     # 高度达标后再等待的稳定时间，单位秒。

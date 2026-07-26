@@ -1249,6 +1249,12 @@ private:
     }
     const Clock::time_point now_at = Clock::now();
     if (pose.pz < calib_min_height_m_) {
+      if (calib_airborne_since_ != Clock::time_point{} && calib_log_.is_open()) {
+        // Landing edge: force everything to storage so a battery pull right
+        // after touchdown cannot lose the flight that was just recorded.
+        calib_log_.flush();
+        ::sync();
+      }
       calib_airborne_since_ = Clock::time_point{};  // on the ground or landing
       return;
     }
@@ -1281,7 +1287,9 @@ private:
       pose.qw, pose.qx, pose.qy, pose.qz, zoom,
       snapshot.ground_valid ? 1 : 0, snapshot.ground_x, snapshot.ground_y);
     calib_log_ << row;
-    if (++calib_rows_ % 64U == 0U) {
+    // Frequent small flushes: at 30-90 Hz this bounds the data at risk from a
+    // sudden power cut to well under a second (plus the ext4 commit window).
+    if (++calib_rows_ % 16U == 0U) {
       calib_log_.flush();
     }
   }

@@ -13,3 +13,6 @@ CMakeLists.txt.user
 
 *.swp
 *.swo
+
+# 标定飞行数据（从板端拉回的 CSV，仅本地分析用，不入库）
+animal_calib_logs/

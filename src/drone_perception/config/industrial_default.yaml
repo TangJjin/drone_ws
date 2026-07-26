@@ -27,13 +27,13 @@ industrial_animal_vision:
     # 板端实测（2026-07-27）：自动模式亮度靠 AE 的 ISP 内部数字增益，手动模式拿不到；
     # 手动曝光的有效上限 = 帧预算（60fps 下约 167，单位 0.1ms），超出部分被传感器时序丢弃。
     exposure_auto: 3
-    # 手动曝光值，仅在 exposure_auto=1 时写入相机。167 = 60fps 下的最亮档；
-    # 若拖影影响检测再往下调（旧值 40 = 4ms 防拖影档）。
-    exposure_absolute: 167
+    # 手动曝光值，仅在 exposure_auto=1 时写入相机。156 = 驱动出厂默认，
+    # 已接近 60fps 帧预算上限 167；若拖影影响检测可往下调（40 = 4ms 防拖影档）。
+    exposure_absolute: 156
     # 0=自动曝光不允许降低帧率；1=允许降低帧率换取更亮画面。
     exposure_auto_priority: 0
-    # 图像增益：越大越亮，同时噪点也越明显。
-    gain: 190
+    # 图像增益：越大越亮，同时噪点也越明显。130 = 驱动出厂默认（上限 190）。
+    gain: 130
 
     # 图像亮度，具体取值范围由相机驱动决定。
     brightness: 128
@@ -45,8 +45,8 @@ industrial_animal_vision:
     gamma: 130
     # 图像锐化强度，过高可能放大噪点。
     sharpness: 128
-    # 逆光补偿强度，用于主体背后存在强光的场景。
-    backlight_compensation: 16
+    # 逆光补偿强度，用于主体背后存在强光的场景。48 = 驱动出厂默认（范围 16~160）。
+    backlight_compensation: 48
 
     # 自动白平衡：1=自动，0=手动。
     white_balance_auto: 1
@@ -59,8 +59,9 @@ industrial_animal_vision:
     focus_auto: 1
     # 手动焦点位置；仅在 focus_auto=0 时写入相机。
     focus_absolute: 0
-    # 变焦值；具体对应光学还是数字变焦取决于相机。
-    zoom_absolute: 120
+    # 数字变焦（UVC 裁切缩放），100=1.0x 无裁切，范围 100~200。
+    # ⚠ 直接乘进有效 fx（120 → ×1.2），标定与飞行必须用同一个值。
+    zoom_absolute: 100
 
     # 是否在香橙派桌面显示检测窗口。
     display_enabled: true

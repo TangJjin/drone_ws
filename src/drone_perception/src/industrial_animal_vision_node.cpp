@@ -271,21 +271,21 @@ private:
   struct CameraSettings
   {
     int exposure_auto = V4L2_EXPOSURE_APERTURE_PRIORITY;
-    int exposure_absolute = 40;
+    int exposure_absolute = 156;
     int exposure_auto_priority = 0;
-    int gain = 190;
+    int gain = 130;
     int brightness = 128;
     int contrast = 65;
     int saturation = 90;
     int gamma = 130;
     int sharpness = 128;
-    int backlight_compensation = 16;
+    int backlight_compensation = 48;
     int white_balance_auto = 1;
     int white_balance_temperature = 4650;
     int power_line_frequency = 1;
     int focus_auto = 1;
     int focus_absolute = 0;
-    int zoom_absolute = 120;
+    int zoom_absolute = 100;
   };
 
   void declareParameters()
@@ -299,21 +299,21 @@ private:
     declare_parameter<int>("decode_width", 1280);
     declare_parameter<int>("decode_height", 720);
     declare_parameter<int>("exposure_auto", 3);
-    declare_parameter<int>("exposure_absolute", 40);
+    declare_parameter<int>("exposure_absolute", 156);
     declare_parameter<int>("exposure_auto_priority", 0);
-    declare_parameter<int>("gain", 190);
+    declare_parameter<int>("gain", 130);
     declare_parameter<int>("brightness", 128);
     declare_parameter<int>("contrast", 65);
     declare_parameter<int>("saturation", 90);
     declare_parameter<int>("gamma", 130);
     declare_parameter<int>("sharpness", 128);
-    declare_parameter<int>("backlight_compensation", 16);
+    declare_parameter<int>("backlight_compensation", 48);
     declare_parameter<int>("white_balance_auto", 1);
     declare_parameter<int>("white_balance_temperature", 4650);
     declare_parameter<int>("power_line_frequency", 1);
     declare_parameter<int>("focus_auto", 1);
     declare_parameter<int>("focus_absolute", 0);
-    declare_parameter<int>("zoom_absolute", 120);
+    declare_parameter<int>("zoom_absolute", 100);
     declare_parameter<bool>("display_enabled", true);
     declare_parameter<double>("display_fps_limit", 60.0);
     declare_parameter<double>("confidence_threshold", 0.5);

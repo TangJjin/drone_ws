@@ -287,7 +287,7 @@ class FastLioToMavrosOdomOut : public rclcpp::Node {
 
     consecutive_bad_frames_ = 0;
     odom_pub_->publish(odom_msg);
-    vision_pub_->publish(vision_pose);
+    //vision_pub_->publish(vision_pose);
 
     if (input_twist_near_zero) {
       RCLCPP_WARN_THROTTLE(

@@ -18,10 +18,11 @@ INTEGER_ARGUMENTS = (
     "brightness", "contrast", "saturation", "gamma", "sharpness",
     "backlight_compensation", "white_balance_auto", "white_balance_temperature",
     "power_line_frequency", "focus_auto", "focus_absolute", "zoom_absolute",
-    "track_max_missed_frames", "servo_confirm_min_hits",
+    "servo_confirm_min_hits",
 )
 FLOAT_ARGUMENTS = (
     "display_fps_limit", "confidence_threshold", "nms_threshold", "track_iou_threshold",
+    "track_max_missed_s",
     "servo_publish_rate_hz", "servo_stale_timeout_s", "servo_confirm_min_score",
     "servo_confirm_max_center_jump", "servo_confirm_max_area_ratio", "servo_log_period_s",
 )

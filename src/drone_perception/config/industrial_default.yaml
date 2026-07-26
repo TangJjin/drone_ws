@@ -89,13 +89,13 @@ industrial_animal_vision:
 
     # 同一类别目标跨帧关联所需的最小检测框 IoU。
     track_iou_threshold: 0.3
-    # 目标允许连续未检测到的最大采集帧数；窗口内重现会保持原 track_id。
-    # 注意：按相机采集帧计数（camera_fps=120 时 15 帧仅约 0.125 秒）。
-    # 视觉伺服要求 该值/camera_fps >= 控制端 lost_timeout_s(1.0s)，
-    # 即 120fps 下约需 120；遮挡超过当前窗口后 track_id 会换新，
-    # 控制端锁定的旧 ID 永远等不到，动作将以 target lost 超时失败。
-    # 当前默认为旧值，板端实测遮挡表现后再调整。
-    track_max_missed_frames: 15
+    # 目标允许消失的最长时间（秒）；窗口内重现会保持原 track_id 和确认状态。
+    # 按墙上时间计算，不受采集帧率波动影响（板端实测采集率在 127-370fps 漂移）。
+    # 必须 >= 控制端 lost_timeout_s(1.0s)，否则遮挡恢复后 track_id 换新，
+    # 控制端锁定的旧 ID 永远等不到；节点启动时会强制校验该下限。
+    # 调大：短暂遮挡/移出画面再回来仍保持原编号；代价是旧轨迹保留更久，
+    # 相邻同类目标更容易被错误关联。
+    track_max_missed_s: 1.5
 
     # 使用 RKNN 原生输入内存，FP16 模型建议保持 true。
     enable_zero_copy: true

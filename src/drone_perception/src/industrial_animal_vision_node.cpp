@@ -47,6 +47,10 @@ namespace
 using Clock = std::chrono::steady_clock;
 constexpr std::size_t kWorkerCount = 3;
 constexpr std::size_t kTaskQueueCapacity = 3;
+// Long enough that normal inference jitter never trips it (frames arrive every
+// ~11 ms at 90 fps) and short enough to stay under servo_stale_timeout_s, so a
+// single abandoned frame never reaches the control side as a lost target.
+constexpr int kDetectionFrameWaitMs = 100;
 
 struct GstSampleDeleter
 {
@@ -191,6 +195,9 @@ private:
     std::uint64_t frame_id = 0;
     int image_width = 0;
     int image_height = 0;
+    // Stamped by the worker when inference finished, so track ageing measures
+    // observation time rather than the delay before this loop drains the frame.
+    Clock::time_point produced_at{};
     std::vector<Detection> detections;
     std::vector<std::string> labels;
   };
@@ -201,6 +208,10 @@ private:
     int class_id = -1;
     cv::Rect box;
     std::uint64_t last_seen_frame_id = 0;
+    // Wall-clock rather than a frame count: frame ids advance at the capture
+    // rate, which was measured drifting between 127 and 370 fps, so a fixed
+    // frame budget maps to a wildly varying amount of real time.
+    Clock::time_point last_seen_at{};
     std::string label;
     // Streak of consecutive stable hits driving the confirmed flag. A missed frame
     // resets the streak but keeps confirmed: a target reappearing inside the miss
@@ -306,7 +317,7 @@ private:
     declare_parameter<double>("servo_confirm_max_area_ratio", 1.8);
     declare_parameter<double>("servo_log_period_s", 1.0);
     declare_parameter<double>("track_iou_threshold", 0.3);
-    declare_parameter<int>("track_max_missed_frames", 15);
+    declare_parameter<double>("track_max_missed_s", 1.5);
   }
 
   void readParameters()
@@ -353,8 +364,7 @@ private:
     servo_confirm_max_area_ratio_ = get_parameter("servo_confirm_max_area_ratio").as_double();
     servo_log_period_s_ = get_parameter("servo_log_period_s").as_double();
     track_iou_threshold_ = static_cast<float>(get_parameter("track_iou_threshold").as_double());
-    track_max_missed_frames_ = static_cast<int>(
-      get_parameter("track_max_missed_frames").as_int());
+    track_max_missed_s_ = get_parameter("track_max_missed_s").as_double();
   }
 
   void validateParameters() const
@@ -404,8 +414,11 @@ private:
     if (track_iou_threshold_ < 0.0F || track_iou_threshold_ > 1.0F) {
       throw std::invalid_argument("track_iou_threshold must be in [0, 1]");
     }
-    if (track_max_missed_frames_ < 0) {
-      throw std::invalid_argument("track_max_missed_frames must be >= 0");
+    if (track_max_missed_s_ < 1.0) {
+      // Must cover the control side lost_timeout_s (1.0 s): a track that dies
+      // inside that window changes target_id on reappearance and the controller,
+      // which has permanently locked the old id, can never reacquire it.
+      throw std::invalid_argument("track_max_missed_s must be >= 1.0");
     }
   }
 
@@ -796,6 +809,7 @@ private:
     frame.frame_id = frame_id;
     frame.image_width = image_width;
     frame.image_height = image_height;
+    frame.produced_at = Clock::now();
     frame.detections = detections;
     frame.labels.reserve(detections.size());
     for (const Detection &detection : detections) {
@@ -804,6 +818,12 @@ private:
 
     {
       std::lock_guard<std::mutex> lock(detection_result_mutex_);
+      // A frame whose slot was already abandoned by the timeout in
+      // detectionPublishLoop must not re-enter the map: its id is below the
+      // cursor and would drag the ordered publish sequence backwards.
+      if (frame_id < next_detection_frame_id_) {
+        return;
+      }
       pending_detection_frames_.emplace(frame_id, std::move(frame));
     }
     detection_result_ready_.notify_one();
@@ -813,6 +833,9 @@ private:
   {
     {
       std::lock_guard<std::mutex> lock(detection_result_mutex_);
+      if (frame_id < next_detection_frame_id_) {
+        return;
+      }
       skipped_detection_frames_.insert(frame_id);
     }
     detection_result_ready_.notify_one();
@@ -824,11 +847,44 @@ private:
       std::optional<DetectionFrame> frame;
       {
         std::unique_lock<std::mutex> lock(detection_result_mutex_);
-        detection_result_ready_.wait(lock, [this] {
-          return pending_detection_frames_.count(next_detection_frame_id_) > 0U ||
-                 skipped_detection_frames_.count(next_detection_frame_id_) > 0U ||
-                 !running_.load() || !rclcpp::ok();
-        });
+        // Bounded wait: a frame handed to a worker that never returns (an NPU
+        // submit that stalls, for example) lands in neither the pending nor the
+        // skipped set. An unbounded wait would freeze this loop -- and therefore
+        // the servo snapshot -- permanently while the other workers keep running,
+        // which looks perfectly healthy from the display and the frame counters.
+        const bool ready = detection_result_ready_.wait_for(
+          lock, std::chrono::milliseconds(kDetectionFrameWaitMs), [this] {
+            return pending_detection_frames_.count(next_detection_frame_id_) > 0U ||
+                   skipped_detection_frames_.count(next_detection_frame_id_) > 0U ||
+                   !running_.load() || !rclcpp::ok();
+          });
+        if (!ready) {
+          // Jump to the smallest frame id that can still make progress, from
+          // either set; both only hold ids at or above the cursor.
+          std::uint64_t jump_to = 0;
+          bool has_jump = false;
+          if (!pending_detection_frames_.empty()) {
+            jump_to = pending_detection_frames_.begin()->first;
+            has_jump = true;
+          }
+          if (!skipped_detection_frames_.empty()) {
+            const std::uint64_t skipped_front = *skipped_detection_frames_.begin();
+            if (!has_jump || skipped_front < jump_to) {
+              jump_to = skipped_front;
+              has_jump = true;
+            }
+          }
+          if (has_jump && jump_to > next_detection_frame_id_) {
+            RCLCPP_WARN_THROTTLE(
+              get_logger(), *get_clock(), 5000,
+              "Detection frame %llu did not complete within %d ms; skipping to %llu",
+              static_cast<unsigned long long>(next_detection_frame_id_),
+              kDetectionFrameWaitMs,
+              static_cast<unsigned long long>(jump_to));
+            next_detection_frame_id_ = jump_to;
+          }
+          continue;
+        }
 
         while (skipped_detection_frames_.erase(next_detection_frame_id_) > 0U) {
           ++next_detection_frame_id_;
@@ -911,6 +967,7 @@ private:
       track.last_score = detection.score;
       track.box = detection.box;
       track.last_seen_frame_id = frame.frame_id;
+      track.last_seen_at = frame.produced_at;
       track_ids[candidate.detection_index] = track.track_id;
       detection_matched[candidate.detection_index] = true;
       track_matched[candidate.track_index] = true;
@@ -938,6 +995,7 @@ private:
         detection.class_id,
         detection.box,
         frame.frame_id,
+        frame.produced_at,
         frame.labels[detection_index],
         1U,
         false,
@@ -951,8 +1009,8 @@ private:
       std::remove_if(
         tracked_detections_.begin(), tracked_detections_.end(),
         [this, &frame](const TrackedDetection &track) {
-          return frame.frame_id - track.last_seen_frame_id >
-                 static_cast<std::uint64_t>(track_max_missed_frames_);
+          return elapsedSeconds(track.last_seen_at, frame.produced_at) >
+                 track_max_missed_s_;
         }),
       tracked_detections_.end());
 
@@ -1869,7 +1927,7 @@ private:
   float confidence_threshold_ = 0.5F;
   float nms_threshold_ = 0.45F;
   float track_iou_threshold_ = 0.3F;
-  int track_max_missed_frames_ = 15;
+  double track_max_missed_s_ = 1.5;
   const std::string window_name_ = "Industrial Camera Animal RKNN";
 };
 }  // namespace

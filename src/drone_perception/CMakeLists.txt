@@ -11,6 +11,12 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# aarch64 GCC 对 std::pair 等小聚合类型的返回打印 psABI 变更注记，
+# 仅在与 GCC<10.1 编译的旧目标文件混链时才有意义；全工程同版本编译，静音之。
+if(CMAKE_COMPILER_IS_GNUCXX)
+  add_compile_options(-Wno-psabi)
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)

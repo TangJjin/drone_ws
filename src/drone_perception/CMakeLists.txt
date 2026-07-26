@@ -44,8 +44,11 @@ install(PROGRAMS
   scripts/k230_animals_image_saver.sh
   scripts/k230_snapshot_decode.sh
   scripts/rdk_udp_vpu_bridge.sh
+  scripts/rdk_rtsp_vpu_bridge.sh
   scripts/rdk_nv12_display.py
   scripts/rdk_udp_vpu_display.sh
+  scripts/rdk_k230_link_probe.py
+  scripts/rdk_k230_video_vision.sh
   scripts/rdk_realsense_vpu_display.sh
   scripts/orangepi_mjpeg_h264_sender.sh
   scripts/orangepi_mjpeg_rtp_sender.sh

@@ -76,6 +76,11 @@ void writeMoveStep(QTextStream &out, const QString &frame, const MissionMoveStep
     out << "      yaw: " << step.yaw << "\n\n";
 }
 
+void writeVisualServoStep(QTextStream &out)
+{
+    out << "    - type: \"visual_servo\"\n\n";
+}
+
 QString yamlQuoted(QString value)
 {
     value.replace("\\", "\\\\");
@@ -161,20 +166,18 @@ uint32_t AirborneMissionYamlBuilder::countMissionActions(const std::vector<Airbo
         return 0;
     }
 
-    const auto steps = expandMissionSteps(points);
-
     uint32_t count = 0;
     count += 1;
     if (options.add_hover_between_takeoff) {
         count += 1;
     }
-    for (const auto &step : steps) {
-        Q_UNUSED(step);
-        count += 1;
-        if (options.add_hover_between_moves) {
-            count += 1;
-        }
+
+    // 每个原始航点固定生成一个 move 和一个 visual_servo。
+    count += static_cast<uint32_t>(points.size()) * 2U;
+    if (options.add_hover_between_moves) {
+        count += static_cast<uint32_t>(points.size());
     }
+
     if (options.add_hover_between_landing) {
         count += 1;
     }
@@ -194,13 +197,15 @@ QString AirborneMissionYamlBuilder::buildMissionYaml(const std::vector<AirborneW
     // 1. y 变化时先去 x=0、再走 y
     // 2. 同 y 时先改高度、再改 yaw、最后走 x
     // 3. 所有航点结束后的回收动作
-    const auto steps = expandMissionSteps(points);
+    // 保留旧的受限路线生成入口；下方注释块需要切回旧逻辑时可直接启用。
+    // const auto steps = expandMissionSteps(points);
 
     // 开始拼接最终的 mission yaml 文本。
     QString yaml;
     QTextStream out(&yaml);
-    out.setRealNumberNotation(QTextStream::FixedNotation);
-    out.setRealNumberPrecision(2);
+    // 保留输入点的 x/y/z/yaw 精度，不再强制舍入到两位小数。
+    out.setRealNumberNotation(QTextStream::SmartNotation);
+    out.setRealNumberPrecision(15);
 
     // 任务头：mission 基本结构和起飞动作，这一段按你的要求保持原样。
     out << "# Mission configuration\n";
@@ -216,16 +221,31 @@ QString AirborneMissionYamlBuilder::buildMissionYaml(const std::vector<AirborneW
         out << "      duration: " << options.takeoff_hover_duration << "\n\n";
     }
 
-    const QString frame = QString::fromStdString(options.frame);
-    for (const auto &step : steps) {
-        // 输出一个 move 动作。
-        // 每个 move 已经是按你的规则拆好的最终步骤，不再在这里额外判断。
-        writeMoveStep(out, frame, step);
+    // const QString frame = QString::fromStdString(options.frame);
+    // for (const auto &step : steps) {
+    //     // 输出一个 move 动作。
+    //     // 每个 move 已经是按你的规则拆好的最终步骤，不再在这里额外判断。
+    //     writeMoveStep(out, frame, step);
 
-        // 如果配置允许，每个 move 后面都跟一个 hover。
-        // 其中只有“最终到达原始航点且 x>0”的 hover 会带 vision_hover: true。
+    //     // 如果配置允许，每个 move 后面都跟一个 hover。
+    //     // 其中只有“最终到达原始航点且 x>0”的 hover 会带 vision_hover: true。
+    //     if (options.add_hover_between_moves) {
+    //         writeMoveHover(out, options.move_hover_duration, step.final_waypoint && step.vision_hover);
+    //     }
+    // }
+
+    // 当前逻辑不拆分、不压缩、不补充返航点，严格按照 points 的原始顺序。
+    // 每个输入点生成一个完整 move，随后立即执行一次视觉伺服动作。
+    const QString frame = QString::fromStdString(options.frame);
+    for (const auto &point : points) {
+        writeMoveStep(
+            out,
+            frame,
+            MissionMoveStep{point.x, point.y, point.move_altitude, point.yaw});
+        writeVisualServoStep(out);
+
         if (options.add_hover_between_moves) {
-            writeMoveHover(out, options.move_hover_duration, step.final_waypoint && step.vision_hover);
+            writeMoveHover(out, options.move_hover_duration, false);
         }
     }
 

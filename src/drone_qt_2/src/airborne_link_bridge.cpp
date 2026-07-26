@@ -196,6 +196,12 @@ void AirborneLinkBridge::setupRosInterfaces()
 
     stop_push_client_ = this->create_client<drone_msgs::srv::StartTask>(
         "/drone/stop_push");
+
+    // 使用瞬态本地 QoS，保证视觉节点晚启动时也能收到最后一套参数。
+    industrial_camera_params_pub_ =
+        this->create_publisher<drone_msgs::msg::IndustrialCameraParams>(
+            "/industrial_camera/params",
+            rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local());
 }
 
 /************************ 用户层 *************************/
@@ -258,6 +264,9 @@ void AirborneLinkBridge::handlePacket(const Packet &packet)
         break;  
     case lp::kTypeStopPushReq:
         handleStopPushRequest(packet.seq, packet.payload);
+        break;
+    case lp::kTypeIndustrialCameraParams:
+        handleIndustrialCameraParams(packet.payload);
         break;
     default:
         RCLCPP_WARN(this->get_logger(), "unknown packet type: 0x%02X", packet.type);
@@ -485,6 +494,59 @@ void AirborneLinkBridge::publishLocalPosition(const geometry_msgs::msg::PoseStam
 
 // 收到地面的上传任务请求后：先还原路线和任务参数，再调用机载本地 ROS 服务，
 // 最后把本地服务的执行结果重新装成串口响应发回地面。
+void AirborneLinkBridge::handleIndustrialCameraParams(const QByteArray &payload)
+{
+    QDataStream stream(payload);
+    configureStream(stream);
+
+    quint8 auto_exposure = 0;
+    qint32 exposure_absolute = 0;
+    quint8 auto_exposure_priority = 0;
+    qint32 gain = 0;
+    qint32 brightness = 0;
+    qint32 contrast = 0;
+    qint32 saturation = 0;
+    qint32 gamma = 0;
+    qint32 sharpness = 0;
+    qint32 backlight_compensation = 0;
+    quint8 auto_white_balance = 0;
+    qint32 white_balance_temperature = 0;
+    quint8 power_line_frequency = 0;
+    quint8 auto_focus = 0;
+    qint32 focus_absolute = 0;
+    qint32 zoom_absolute = 0;
+
+    stream >> auto_exposure >> exposure_absolute >> auto_exposure_priority;
+    stream >> gain >> brightness >> contrast >> saturation >> gamma;
+    stream >> sharpness >> backlight_compensation >> auto_white_balance;
+    stream >> white_balance_temperature >> power_line_frequency >> auto_focus;
+    stream >> focus_absolute >> zoom_absolute;
+
+    if (!streamFullyConsumed(stream)) {
+        RCLCPP_WARN(this->get_logger(),
+                    "invalid IndustrialCameraParams serial payload");
+        return;
+    }
+
+    drone_msgs::msg::IndustrialCameraParams message;
+    message.auto_exposure = auto_exposure != 0;
+    message.exposure_absolute = exposure_absolute;
+    message.auto_exposure_priority = auto_exposure_priority != 0;
+    message.gain = gain;
+    message.brightness = brightness;
+    message.contrast = contrast;
+    message.saturation = saturation;
+    message.gamma = gamma;
+    message.sharpness = sharpness;
+    message.backlight_compensation = backlight_compensation;
+    message.auto_white_balance = auto_white_balance != 0;
+    message.white_balance_temperature = white_balance_temperature;
+    message.power_line_frequency = power_line_frequency;
+    message.auto_focus = auto_focus != 0;
+    message.focus_absolute = focus_absolute;
+    message.zoom_absolute = zoom_absolute;
+    industrial_camera_params_pub_->publish(message);
+}
 void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const QByteArray &payload)
 {
     if (!upload_mission_summary_client_ || !upload_mission_summary_client_->service_is_ready()) {
@@ -502,38 +564,29 @@ void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const Q
 
     quint16 point_count = 0;
     stream >> point_count;
-
-    const int fixed_summary_size =
-        8 * 8 +   // 8个float64
-        6 * 1 +   // 6个bool按uint8发
-        10 * 8 +  // 10个新增float64
-        2 +       // camera_aim_stable_cycles(uint16)
-        2;        // frame_len
-
-    if (payload.size() < 2 + static_cast<int>(point_count) * 16 + fixed_summary_size) {
-        const QByteArray msg = QByteArray("invalid payload for UploadMissionSummaryReq");
-        const QByteArray saved_path;
+    // V3 fixed fields: 12 mission doubles, 5 mission bools, 19 visual doubles,
+    // 2 visual bools, and four uint16 string-length prefixes.
+    constexpr int kFixedSummarySize = 12 * 8 + 5 + 19 * 8 + 2 + 4 * 2;
+    if (stream.status() != QDataStream::Ok ||
+        payload.size() < 2 + static_cast<int>(point_count) * 16 + kFixedSummarySize) {
+        const QByteArray msg = QByteArray("invalid V3 UploadMissionSummaryReq payload");
         cacheAndSendResponse(
             lp::kTypeUploadMissionSummaryResp,
             seq,
-            encodeUploadResponsePayload(false, msg, saved_path, 0));
+            encodeUploadResponsePayload(false, msg, QByteArray(), 0));
         return;
     }
 
     auto request = std::make_shared<drone_msgs::srv::UploadMissionSummary::Request>();
     request->points.reserve(point_count);
 
-    //按顺序读取所有参数
     useSinglePrecision(stream);
     for (quint16 i = 0; i < point_count; ++i) {
         float x = 0.0f;
         float y = 0.0f;
         float z = 0.0f;
         float yaw = 0.0f;
-        stream >> x;
-        stream >> y;
-        stream >> z;
-        stream >> yaw;
+        stream >> x >> y >> z >> yaw;
 
         drone_msgs::msg::WorldPoint point;
         point.x = x;
@@ -550,6 +603,10 @@ void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const Q
     stream >> summary.start_altitude;
     stream >> summary.yaw;
     stream >> summary.tolerance;
+    stream >> summary.yaw_tolerance_deg;
+    stream >> summary.max_xy_speed_mps;
+    stream >> summary.max_z_speed_mps;
+    stream >> summary.max_yaw_rate_deg_s;
     stream >> summary.takeoff_hover_duration;
     stream >> summary.landing_hover_duration;
     stream >> summary.move_hover_duration;
@@ -557,48 +614,82 @@ void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const Q
     quint8 add_hover_between_takeoff = 0;
     quint8 add_hover_between_landing = 0;
     quint8 add_hover_between_moves = 0;
-    quint8 use_camera_aim = 0;
     quint8 auto_start_mission = 0;
     quint8 compress_straight_segments = 0;
-
     stream >> add_hover_between_takeoff;
     stream >> add_hover_between_landing;
     stream >> add_hover_between_moves;
-    stream >> use_camera_aim;
     stream >> auto_start_mission;
     stream >> compress_straight_segments;
 
     summary.add_hover_between_takeoff = (add_hover_between_takeoff != 0);
     summary.add_hover_between_landing = (add_hover_between_landing != 0);
     summary.add_hover_between_moves = (add_hover_between_moves != 0);
-    summary.use_camera_aim = (use_camera_aim != 0);
     summary.auto_start_mission = (auto_start_mission != 0);
     summary.compress_straight_segments = (compress_straight_segments != 0);
 
-    stream >> summary.cam_tolerance;
-    stream >> summary.camera_aim_pid_p;
-    stream >> summary.camera_aim_pid_i;
-    stream >> summary.camera_aim_pid_d;
-    stream >> summary.camera_aim_target_timeout_s;
-    stream >> summary.camera_aim_stable_cycles;
-    stream >> summary.camera_aim_max_step;
-    stream >> summary.camera_aim_wait_first_targets_timeout_s;
-    stream >> summary.camera_aim_no_target_confirm_s;
-    stream >> summary.camera_aim_record_result_timeout_s;
-    stream >> summary.camera_aim_scan_point_timeout_s;
-
-    //readSizedBytes函数为读取字符串函数，streamFullyConsumed要求payload 恰好读完
     QByteArray frame_bytes;
-    if (!readSizedBytes(stream, frame_bytes) || !streamFullyConsumed(stream)) {
-        const QByteArray msg = QByteArray("invalid frame in UploadMissionSummaryReq");
-        const QByteArray saved_path;
+    QByteArray target_id_bytes;
+    QByteArray image_x_axis_bytes;
+    QByteArray image_y_axis_bytes;
+    quint8 require_confirmed = 0;
+    auto &visual = summary.visual_servo;
+    if (!readSizedBytes(stream, frame_bytes) ||
+        !readSizedBytes(stream, target_id_bytes)) {
+        const QByteArray msg = QByteArray("invalid V3 mission strings");
         cacheAndSendResponse(
             lp::kTypeUploadMissionSummaryResp,
             seq,
-            encodeUploadResponsePayload(false, msg, saved_path, 0));
+            encodeUploadResponsePayload(false, msg, QByteArray(), 0));
         return;
     }
+    stream >> require_confirmed;
+    if (!readSizedBytes(stream, image_x_axis_bytes) ||
+        !readSizedBytes(stream, image_y_axis_bytes)) {
+        const QByteArray msg = QByteArray("invalid V3 visual-servo axis strings");
+        cacheAndSendResponse(
+            lp::kTypeUploadMissionSummaryResp,
+            seq,
+            encodeUploadResponsePayload(false, msg, QByteArray(), 0));
+        return;
+    }
+
     summary.frame = frame_bytes.toStdString();
+    visual.target_id = target_id_bytes.toStdString();
+    visual.require_confirmed = (require_confirmed != 0);
+    visual.image_x_axis = image_x_axis_bytes.toStdString();
+    visual.image_y_axis = image_y_axis_bytes.toStdString();
+    stream >> visual.image_x_sign;
+    stream >> visual.image_y_sign;
+    stream >> visual.kp_x;
+    stream >> visual.ki_x;
+    stream >> visual.kd_x;
+    stream >> visual.kp_y;
+    stream >> visual.ki_y;
+    stream >> visual.kd_y;
+    stream >> visual.integral_limit;
+    stream >> visual.filter_alpha;
+    stream >> visual.enter_tolerance_x;
+    stream >> visual.enter_tolerance_y;
+    stream >> visual.exit_tolerance_x;
+    stream >> visual.exit_tolerance_y;
+    stream >> visual.settle_time_s;
+    stream >> visual.acquire_timeout_s;
+    stream >> visual.lost_timeout_s;
+    stream >> visual.overall_timeout_s;
+    stream >> visual.max_body_speed_mps;
+
+    quint8 continue_on_timeout = 0;
+    stream >> continue_on_timeout;
+    visual.continue_on_timeout = (continue_on_timeout != 0);
+    if (!streamFullyConsumed(stream)) {
+        const QByteArray msg = QByteArray("invalid trailing V3 mission data");
+        cacheAndSendResponse(
+            lp::kTypeUploadMissionSummaryResp,
+            seq,
+            encodeUploadResponsePayload(false, msg, QByteArray(), 0));
+        return;
+    }
 
     upload_mission_summary_client_->async_send_request(
         request,

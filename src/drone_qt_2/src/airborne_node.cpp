@@ -490,7 +490,7 @@ void AirborneNode::handleUploadMissionSummary(
     response->success = true;
     //response->message = "mission 摘要上传成功，机载端已生成 YAML";
     response->message = "正在初始化";
-    response->saved_path = current_mission_path_;
+    response->saved_path = file_path;
     response->action_count = 0;
 }
 

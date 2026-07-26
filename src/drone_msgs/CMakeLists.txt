@@ -13,6 +13,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AnimalDetection.msg"
   "msg/AnimalDetections.msg"
   "msg/IndustrialCameraParams.msg"
+  "msg/VisualServoConfig.msg"
   "msg/K230AnimalCenter.msg"
   "msg/K230AnimalTarget.msg"
   "msg/K230AnimalTargets.msg"

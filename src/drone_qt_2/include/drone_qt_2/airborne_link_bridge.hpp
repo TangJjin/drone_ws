@@ -16,6 +16,7 @@
 #include "drone_msgs/msg/ready_status.hpp"
 #include "drone_msgs/msg/world_group.hpp"
 #include "drone_msgs/msg/barcode_capture.hpp"
+#include "drone_msgs/msg/industrial_camera_params.hpp"
 #include <geometry_msgs/msg/vector3.hpp>
 #include "drone_msgs/srv/upload_mission_summary.hpp"
 #include "drone_msgs/srv/start_offboard.hpp"
@@ -66,6 +67,7 @@ private:
     void handleStartOffboardRequest(uint16_t seq, const QByteArray &payload);
     void handleStartTaskRequest(uint16_t seq, const QByteArray &payload);
     void handleStopPushRequest(uint16_t seq, const QByteArray &payload);
+    void handleIndustrialCameraParams(const QByteArray &payload);
 
     //发布状态消息到ROS话题
     void publishDroneStatus(const drone_msgs::msg::DroneStatus::SharedPtr msg);
@@ -87,6 +89,7 @@ private:
     rclcpp::Client<drone_msgs::srv::StartOffboard>::SharedPtr start_offboard_client_;
     rclcpp::Client<drone_msgs::srv::StartTask>::SharedPtr start_task_client_;
     rclcpp::Client<drone_msgs::srv::StartTask>::SharedPtr stop_push_client_;
+    rclcpp::Publisher<drone_msgs::msg::IndustrialCameraParams>::SharedPtr industrial_camera_params_pub_;
 
     rclcpp::Subscription<drone_msgs::msg::DroneStatus>::SharedPtr status_sub_;
     rclcpp::Subscription<drone_msgs::msg::TaskStatus>::SharedPtr task_status_sub_;

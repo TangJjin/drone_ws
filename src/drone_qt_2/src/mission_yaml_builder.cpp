@@ -68,17 +68,21 @@ std::vector<MissionMoveStep> expandMissionSteps(const std::vector<AirborneWorldC
     return steps;
 }
 
-void writeMoveStep(QTextStream &out, const QString &frame, const MissionMoveStep &step, double tolerance)
+void writeMoveStep(QTextStream &out, const QString &frame, const MissionMoveStep &step)
 {
     out << "    - type: \"move\"\n";
     out << "      frame: \"" << frame << "\"\n";
     out << "      position: [" << step.x << ", " << step.y << ", " << step.z << "]\n";
-    out << "      yaw: " << step.yaw << "\n";
-    out << "      tolerance: " << tolerance << "\n";
-    out << "      yaw_tolerance_deg: 4.0\n";
-    out << "      max_xy_speed_mps: 0.50\n";
-    out << "      max_z_speed_mps: 0.30\n";
-    out << "      max_yaw_rate_deg_s: 40.0\n\n";
+    out << "      yaw: " << step.yaw << "\n\n";
+}
+
+QString yamlQuoted(QString value)
+{
+    value.replace("\\", "\\\\");
+    value.replace("\"", "\\\"");
+    value.replace("\n", "\\n");
+    value.replace("\r", "\\r");
+    return "\"" + value + "\"";
 }
 
 void writeMoveHover(QTextStream &out, double duration, bool vision_hover)
@@ -134,28 +138,20 @@ AirborneMissionYamlBuilder::Options AirborneMissionYamlBuilder::fromMissionSumma
     options.start_altitude = summary.start_altitude;
     options.yaw = summary.yaw;
     options.tolerance = summary.tolerance;
+    options.yaw_tolerance_deg = summary.yaw_tolerance_deg;
+    options.max_xy_speed_mps = summary.max_xy_speed_mps;
+    options.max_z_speed_mps = summary.max_z_speed_mps;
+    options.max_yaw_rate_deg_s = summary.max_yaw_rate_deg_s;
     options.takeoff_hover_duration = summary.takeoff_hover_duration;
     options.landing_hover_duration = summary.landing_hover_duration;
     options.move_hover_duration = summary.move_hover_duration;
     options.add_hover_between_takeoff = summary.add_hover_between_takeoff;
     options.add_hover_between_landing = summary.add_hover_between_landing;
     options.add_hover_between_moves = summary.add_hover_between_moves;
-    options.use_camera_aim = summary.use_camera_aim;
     options.auto_start_mission = summary.auto_start_mission;
     options.compress_straight_segments = summary.compress_straight_segments;
     options.frame = summary.frame;
-
-    options.cam_tolerance = summary.cam_tolerance;
-    options.camera_aim_pid_p = summary.camera_aim_pid_p;
-    options.camera_aim_pid_i = summary.camera_aim_pid_i;
-    options.camera_aim_pid_d = summary.camera_aim_pid_d;
-    options.camera_aim_target_timeout_s = summary.camera_aim_target_timeout_s;
-    options.camera_aim_stable_cycles = summary.camera_aim_stable_cycles;
-    options.camera_aim_max_step = summary.camera_aim_max_step;
-    options.camera_aim_wait_first_targets_timeout_s = summary.camera_aim_wait_first_targets_timeout_s;
-    options.camera_aim_no_target_confirm_s = summary.camera_aim_no_target_confirm_s;
-    options.camera_aim_record_result_timeout_s = summary.camera_aim_record_result_timeout_s;
-    options.camera_aim_scan_point_timeout_s = summary.camera_aim_scan_point_timeout_s;
+    options.visual_servo = summary.visual_servo;
     return options;
 }
 
@@ -176,9 +172,6 @@ uint32_t AirborneMissionYamlBuilder::countMissionActions(const std::vector<Airbo
         Q_UNUSED(step);
         count += 1;
         if (options.add_hover_between_moves) {
-            count += 1;
-        }
-        if (options.use_camera_aim && step.final_waypoint) {
             count += 1;
         }
     }
@@ -227,22 +220,12 @@ QString AirborneMissionYamlBuilder::buildMissionYaml(const std::vector<AirborneW
     for (const auto &step : steps) {
         // 输出一个 move 动作。
         // 每个 move 已经是按你的规则拆好的最终步骤，不再在这里额外判断。
-        writeMoveStep(out, frame, step, options.tolerance);
+        writeMoveStep(out, frame, step);
 
         // 如果配置允许，每个 move 后面都跟一个 hover。
         // 其中只有“最终到达原始航点且 x>0”的 hover 会带 vision_hover: true。
         if (options.add_hover_between_moves) {
             writeMoveHover(out, options.move_hover_duration, step.final_waypoint && step.vision_hover);
-        }
-
-        // camera_aim 只挂在“最终到达原始航点”的动作后面，
-        // 中间过渡点（原地改高、原地转向、去 x=0、沿 y 过渡）不会插这个动作。
-        if (options.use_camera_aim && step.final_waypoint) {
-            out << "    - type: \"camera_aim\"\n";
-            out << "      frame: \"" << frame << "\"\n";
-            out << "      position: [" << step.x << ", " << step.y << ", " << step.z << "]\n";
-            out << "      axis: \"z\"\n";
-            out << "      tolerance: " << options.cam_tolerance << "\n\n";
         }
     }
 
@@ -251,23 +234,40 @@ QString AirborneMissionYamlBuilder::buildMissionYaml(const std::vector<AirborneW
         out << "    - type: \"hover\"\n";
         out << "      duration: " << options.landing_hover_duration << "\n\n";
     }
-
-    // land 和 system 整段保持不动。
     out << "    - type: \"land\"\n\n";
+
+    // System keys stay flat. Mission actions read these values as global defaults.
+    const auto &visual = options.visual_servo;
     out << "system:\n";
-    out << "  use_camera_aim: " << (options.use_camera_aim ? "true" : "false") << "\n";
-
-    out << "  camera_aim_pid_p: " << options.camera_aim_pid_p << "\n";
-    out << "  camera_aim_pid_i: " << options.camera_aim_pid_i << "\n";
-    out << "  camera_aim_pid_d: " << options.camera_aim_pid_d << "\n";
-    out << "  camera_aim_target_timeout_s: " << options.camera_aim_target_timeout_s << "\n";
-    out << "  camera_aim_stable_cycles: " << options.camera_aim_stable_cycles << "\n";
-    out << "  camera_aim_max_step: " << options.camera_aim_max_step << "\n";
-    out << "  camera_aim_wait_first_targets_timeout_s: " << options.camera_aim_wait_first_targets_timeout_s << "\n";
-    out << "  camera_aim_no_target_confirm_s: " << options.camera_aim_no_target_confirm_s << "\n";
-    out << "  camera_aim_record_result_timeout_s: " << options.camera_aim_record_result_timeout_s << "\n";
-    out << "  camera_aim_scan_point_timeout_s: " << options.camera_aim_scan_point_timeout_s << "\n";
-
+    out << "  tolerance: " << options.tolerance << "\n";
+    out << "  yaw_tolerance_deg: " << options.yaw_tolerance_deg << "\n";
+    out << "  max_xy_speed_mps: " << options.max_xy_speed_mps << "\n";
+    out << "  max_z_speed_mps: " << options.max_z_speed_mps << "\n";
+    out << "  max_yaw_rate_deg_s: " << options.max_yaw_rate_deg_s << "\n";
+    out << "  target_id: " << yamlQuoted(QString::fromStdString(visual.target_id)) << "\n";
+    out << "  require_confirmed: " << (visual.require_confirmed ? "true" : "false") << "\n";
+    out << "  image_x_axis: " << yamlQuoted(QString::fromStdString(visual.image_x_axis)) << "\n";
+    out << "  image_y_axis: " << yamlQuoted(QString::fromStdString(visual.image_y_axis)) << "\n";
+    out << "  image_x_sign: " << visual.image_x_sign << "\n";
+    out << "  image_y_sign: " << visual.image_y_sign << "\n";
+    out << "  kp_x: " << visual.kp_x << "\n";
+    out << "  ki_x: " << visual.ki_x << "\n";
+    out << "  kd_x: " << visual.kd_x << "\n";
+    out << "  kp_y: " << visual.kp_y << "\n";
+    out << "  ki_y: " << visual.ki_y << "\n";
+    out << "  kd_y: " << visual.kd_y << "\n";
+    out << "  integral_limit: " << visual.integral_limit << "\n";
+    out << "  filter_alpha: " << visual.filter_alpha << "\n";
+    out << "  enter_tolerance_x: " << visual.enter_tolerance_x << "\n";
+    out << "  enter_tolerance_y: " << visual.enter_tolerance_y << "\n";
+    out << "  exit_tolerance_x: " << visual.exit_tolerance_x << "\n";
+    out << "  exit_tolerance_y: " << visual.exit_tolerance_y << "\n";
+    out << "  settle_time_s: " << visual.settle_time_s << "\n";
+    out << "  acquire_timeout_s: " << visual.acquire_timeout_s << "\n";
+    out << "  lost_timeout_s: " << visual.lost_timeout_s << "\n";
+    out << "  overall_timeout_s: " << visual.overall_timeout_s << "\n";
+    out << "  max_body_speed_mps: " << visual.max_body_speed_mps << "\n";
+    out << "  continue_on_timeout: " << (visual.continue_on_timeout ? "true" : "false") << "\n";
     out << "  auto_start_mission: " << (options.auto_start_mission ? "true" : "false") << "\n";
 
     return yaml;

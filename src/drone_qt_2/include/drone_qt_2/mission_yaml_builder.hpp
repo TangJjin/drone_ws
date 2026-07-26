@@ -24,29 +24,23 @@ public:
         double move_altitude{1.2};
         double start_altitude{0.0};
         double yaw{0.0};
-        double tolerance{0.12};
+        double tolerance{0.10};
+        double yaw_tolerance_deg{4.0};
+        double max_xy_speed_mps{0.50};
+        double max_z_speed_mps{0.30};
+        double max_yaw_rate_deg_s{40.0};
         double takeoff_hover_duration{5.0};
         double landing_hover_duration{5.0};
         double move_hover_duration{5.0};
         bool add_hover_between_takeoff{true};
         bool add_hover_between_landing{false};
         bool add_hover_between_moves{true};
-        bool use_camera_aim{false};
         bool auto_start_mission{false};
         bool compress_straight_segments{false};
         std::string frame{"world_body"};
 
-        double cam_tolerance{0.0};
-        double camera_aim_pid_p{0.0};
-        double camera_aim_pid_i{0.0};
-        double camera_aim_pid_d{0.0};
-        double camera_aim_target_timeout_s{0.0};
-        int camera_aim_stable_cycles{0};
-        double camera_aim_max_step{0.0};
-        double camera_aim_wait_first_targets_timeout_s{0.0};
-        double camera_aim_no_target_confirm_s{0.0};
-        double camera_aim_record_result_timeout_s{0.0};
-        double camera_aim_scan_point_timeout_s{0.0};
+        // Defaults are transported as one ROS message and emitted as flat system keys.
+        drone_msgs::msg::VisualServoConfig visual_servo;
     };
 
     //压缩路径中的直线段，返回一个新的路径点列表，其中连续共线的点被压缩为起点和终点两个点

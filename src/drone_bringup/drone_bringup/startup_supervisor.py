@@ -70,10 +70,12 @@ class StartupSupervisor:
             StartupStep(
                 name='qr_vision_node',
                 command=['ros2', 'launch', 'drone_perception', 'industrial_animal_vision.launch.py'],
-                ready_topic='/animal_vision/detections',
-                ready_type='drone_msgs/msg/AnimalDetections',
-                timeout_sec=15,
-                ready_qos_reliability='reliable',
+                # 视觉伺服目标话题以 SensorDataQoS(best_effort) 发布；
+                # 探针必须用 best_effort 订阅，reliable 会因 QoS 不兼容而永远收不到。
+                ready_topic='/vision/servo/target',
+                ready_type='drone_msgs/msg/VisionServoTarget',
+                timeout_sec=20,
+                ready_qos_reliability='best_effort',
             ),
             StartupStep(
                 name='airborne_link_bridge',

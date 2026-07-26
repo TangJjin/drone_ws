@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
@@ -15,6 +16,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -34,9 +36,9 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include "drone_msgs/msg/animal_detection.hpp"
-#include "drone_msgs/msg/animal_detections.hpp"
 #include "drone_msgs/msg/industrial_camera_params.hpp"
+#include "drone_msgs/msg/vision_servo_status.hpp"
+#include "drone_msgs/msg/vision_servo_target.hpp"
 #include "drone_perception/industrial_animal_vision_node.hpp"
 #include "drone_perception/rknn_yolo_detector.hpp"
 
@@ -76,8 +78,15 @@ public:
     configureCameraControls();
     startPipeline();
     initializeDetectors();
-    detections_pub_ = create_publisher<drone_msgs::msg::AnimalDetections>(
-      detections_topic_, rclcpp::QoS(10).reliable());
+    servo_target_pub_ = create_publisher<drone_msgs::msg::VisionServoTarget>(
+      servo_target_topic_, rclcpp::SensorDataQoS());
+    // QoS must match the control side publisher exactly: reliable + transient_local
+    // depth 10, so the latched status survives when this node starts late.
+    servo_status_sub_ = create_subscription<drone_msgs::msg::VisionServoStatus>(
+      servo_status_topic_, rclcpp::QoS(10).reliable().transient_local(),
+      [this](const drone_msgs::msg::VisionServoStatus::SharedPtr message) {
+        handleServoStatus(message);
+      });
     camera_params_sub_ = create_subscription<drone_msgs::msg::IndustrialCameraParams>(
       "/industrial_camera/params", rclcpp::QoS(1).reliable().transient_local(),
       [this](const drone_msgs::msg::IndustrialCameraParams::SharedPtr message) {
@@ -85,6 +94,7 @@ public:
       });
 
     detection_publish_thread_ = std::thread(&IndustrialAnimalVisionNode::detectionPublishLoop, this);
+    servo_publish_thread_ = std::thread(&IndustrialAnimalVisionNode::servoPublishLoop, this);
     for (std::size_t index = 0; index < kWorkerCount; ++index) {
       workers_[index] = std::thread(&IndustrialAnimalVisionNode::workerLoop, this, index);
     }
@@ -96,18 +106,35 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Industrial animal vision ready: profile=%s model=%s camera=%s "
-      "request=MJPEG %dx%d@%d display=%s preprocess=%s detections_topic=%s",
+      "request=MJPEG %dx%d@%d display=%s preprocess=%s servo_target_topic=%s rate=%.1fHz",
       camera_profile_.c_str(), model_path_.c_str(), camera_device_.c_str(),
       camera_width_, camera_height_, camera_fps_, display_enabled_ ? "on" : "off",
-      preprocess_mode_.c_str(), detections_topic_.c_str());
+      preprocess_mode_.c_str(), servo_target_topic_.c_str(), servo_publish_rate_hz_);
   }
 
   ~IndustrialAnimalVisionNode() override
   {
     running_.store(false);
+    // Acquire and release each mutex before notifying: a waiter that evaluated
+    // its predicate just before the store above has not blocked yet and would
+    // miss a lock-free notification forever (detectionPublishLoop and workerLoop
+    // wait without a timeout).
+    {
+      std::lock_guard<std::mutex> lock(task_mutex_);
+    }
     task_ready_.notify_all();
+    {
+      std::lock_guard<std::mutex> lock(result_mutex_);
+    }
     result_ready_.notify_all();
+    {
+      std::lock_guard<std::mutex> lock(detection_result_mutex_);
+    }
     detection_result_ready_.notify_all();
+    {
+      std::lock_guard<std::mutex> lock(servo_wake_mutex_);
+    }
+    servo_wake_.notify_all();
 
     if (pipeline_ != nullptr) {
       gst_element_send_event(pipeline_, gst_event_new_eos());
@@ -122,6 +149,9 @@ public:
     }
     if (detection_publish_thread_.joinable()) {
       detection_publish_thread_.join();
+    }
+    if (servo_publish_thread_.joinable()) {
+      servo_publish_thread_.join();
     }
     if (ui_thread_.joinable()) {
       ui_thread_.join();
@@ -171,6 +201,16 @@ private:
     int class_id = -1;
     cv::Rect box;
     std::uint64_t last_seen_frame_id = 0;
+    std::string label;
+    // Streak of consecutive stable hits driving the confirmed flag. A missed frame
+    // resets the streak but keeps confirmed: a target reappearing inside the miss
+    // window must stay confirmed, otherwise the control-side settle timer restarts
+    // on every dropped detection.
+    std::uint32_t hit_streak = 0;
+    bool confirmed = false;
+    cv::Point last_center;
+    int last_area = 0;
+    float last_score = 0.0F;
   };
 
   struct TrackMatch
@@ -178,6 +218,29 @@ private:
     std::size_t detection_index = 0;
     std::size_t track_index = 0;
     float iou = 0.0F;
+  };
+
+  // Value-semantic handover from the tracking thread to the servo publish thread.
+  // Guarded by servo_mutex_.
+  struct ServoSnapshot
+  {
+    bool source_valid = false;  // at least one inference frame has been produced
+    bool has_target = false;
+    bool confirmed = false;
+    // Kept filled even when the target is missing so the string stays byte-stable
+    // for the whole servo action (the control side locks the first fresh id).
+    std::string target_id;
+    std::string label;
+    double confidence = 0.0;
+    double error_x = 0.0;
+    double error_y = 0.0;
+    double center_x = 0.0;
+    double center_y = 0.0;
+    std::uint32_t image_width = 0;
+    std::uint32_t image_height = 0;
+    std::uint64_t frame_id = 0;
+    Clock::time_point produced_at{};      // steady clock, staleness checks only
+    builtin_interfaces::msg::Time stamp;  // inference completion time, diagnostics
   };
 
   struct CameraSettings
@@ -210,7 +273,7 @@ private:
     declare_parameter<int>("camera_fps", 120);
     declare_parameter<int>("decode_width", 1280);
     declare_parameter<int>("decode_height", 720);
-    declare_parameter<int>("exposure_auto", 1);
+    declare_parameter<int>("exposure_auto", 3);
     declare_parameter<int>("exposure_absolute", 40);
     declare_parameter<int>("exposure_auto_priority", 0);
     declare_parameter<int>("gain", 190);
@@ -233,7 +296,15 @@ private:
     declare_parameter<bool>("enable_zero_copy", true);
     declare_parameter<bool>("enable_rga_preprocess", true);
     declare_parameter<bool>("cpu_affinity_enabled", true);
-    declare_parameter<std::string>("detections_topic", "/animal_vision/detections");
+    declare_parameter<std::string>("servo_target_topic", "/vision/servo/target");
+    declare_parameter<std::string>("servo_status_topic", "/control/vision_servo/status");
+    declare_parameter<double>("servo_publish_rate_hz", 25.0);
+    declare_parameter<double>("servo_stale_timeout_s", 0.25);
+    declare_parameter<int>("servo_confirm_min_hits", 5);
+    declare_parameter<double>("servo_confirm_min_score", 0.55);
+    declare_parameter<double>("servo_confirm_max_center_jump", 0.12);
+    declare_parameter<double>("servo_confirm_max_area_ratio", 1.8);
+    declare_parameter<double>("servo_log_period_s", 1.0);
     declare_parameter<double>("track_iou_threshold", 0.3);
     declare_parameter<int>("track_max_missed_frames", 15);
   }
@@ -272,7 +343,15 @@ private:
     enable_zero_copy_ = get_parameter("enable_zero_copy").as_bool();
     enable_rga_preprocess_ = get_parameter("enable_rga_preprocess").as_bool();
     cpu_affinity_enabled_ = get_parameter("cpu_affinity_enabled").as_bool();
-    detections_topic_ = get_parameter("detections_topic").as_string();
+    servo_target_topic_ = get_parameter("servo_target_topic").as_string();
+    servo_status_topic_ = get_parameter("servo_status_topic").as_string();
+    servo_publish_rate_hz_ = get_parameter("servo_publish_rate_hz").as_double();
+    servo_stale_timeout_s_ = get_parameter("servo_stale_timeout_s").as_double();
+    servo_confirm_min_hits_ = static_cast<int>(get_parameter("servo_confirm_min_hits").as_int());
+    servo_confirm_min_score_ = get_parameter("servo_confirm_min_score").as_double();
+    servo_confirm_max_center_jump_ = get_parameter("servo_confirm_max_center_jump").as_double();
+    servo_confirm_max_area_ratio_ = get_parameter("servo_confirm_max_area_ratio").as_double();
+    servo_log_period_s_ = get_parameter("servo_log_period_s").as_double();
     track_iou_threshold_ = static_cast<float>(get_parameter("track_iou_threshold").as_double());
     track_max_missed_frames_ = static_cast<int>(
       get_parameter("track_max_missed_frames").as_int());
@@ -294,8 +373,33 @@ private:
     if (display_fps_limit_ < 0.0) {
       throw std::invalid_argument("display_fps_limit must be >= 0");
     }
-    if (detections_topic_.empty()) {
-      throw std::invalid_argument("detections_topic must not be empty");
+    if (servo_target_topic_.empty() || servo_status_topic_.empty()) {
+      throw std::invalid_argument("servo_target_topic and servo_status_topic must not be empty");
+    }
+    if (servo_publish_rate_hz_ < 15.0 || servo_publish_rate_hz_ > 60.0) {
+      // The vision servo interface contract requires a sustained rate of >= 15 Hz.
+      throw std::invalid_argument("servo_publish_rate_hz must be in [15, 60]");
+    }
+    if (servo_stale_timeout_s_ <= 0.0 || servo_stale_timeout_s_ > 0.5) {
+      // Must stay well below the control side lost_timeout_s (1.0 s) so the
+      // vision side declares target loss before the controller keeps flying on
+      // stale errors.
+      throw std::invalid_argument("servo_stale_timeout_s must be in (0, 0.5]");
+    }
+    if (servo_confirm_min_hits_ < 1 || servo_confirm_min_hits_ > 1000) {
+      throw std::invalid_argument("servo_confirm_min_hits must be in [1, 1000]");
+    }
+    if (servo_confirm_min_score_ < 0.0 || servo_confirm_min_score_ > 1.0) {
+      throw std::invalid_argument("servo_confirm_min_score must be in [0, 1]");
+    }
+    if (servo_confirm_max_center_jump_ <= 0.0 || servo_confirm_max_center_jump_ > 1.0) {
+      throw std::invalid_argument("servo_confirm_max_center_jump must be in (0, 1]");
+    }
+    if (servo_confirm_max_area_ratio_ < 1.0) {
+      throw std::invalid_argument("servo_confirm_max_area_ratio must be >= 1.0");
+    }
+    if (servo_log_period_s_ < 0.0) {
+      throw std::invalid_argument("servo_log_period_s must be >= 0");
     }
     if (track_iou_threshold_ < 0.0F || track_iou_threshold_ > 1.0F) {
       throw std::invalid_argument("track_iou_threshold must be in [0, 1]");
@@ -739,16 +843,16 @@ private:
       }
 
       try {
-        publishDetectionFrame(*frame);
+        updateTrackingAndSnapshot(*frame);
       } catch (const std::exception &error) {
         RCLCPP_ERROR_THROTTLE(
           get_logger(), *get_clock(), 2000,
-          "Animal vision detection publication failed: %s", error.what());
+          "Animal vision tracking update failed: %s", error.what());
       }
     }
   }
 
-  void publishDetectionFrame(const DetectionFrame &frame)
+  void updateTrackingAndSnapshot(const DetectionFrame &frame)
   {
     std::vector<TrackMatch> candidates;
     candidates.reserve(frame.detections.size() * tracked_detections_.size());
@@ -768,6 +872,8 @@ private:
       return first.iou > second.iou;
     });
 
+    const double image_diagonal = std::hypot(
+      static_cast<double>(frame.image_width), static_cast<double>(frame.image_height));
     std::vector<std::uint64_t> track_ids(frame.detections.size(), 0);
     std::vector<bool> detection_matched(frame.detections.size(), false);
     std::vector<bool> track_matched(tracked_detections_.size(), false);
@@ -776,11 +882,46 @@ private:
         continue;
       }
       TrackedDetection &track = tracked_detections_[candidate.track_index];
-      track.box = frame.detections[candidate.detection_index].box;
+      const Detection &detection = frame.detections[candidate.detection_index];
+      // A hit advances the confirmation streak only while score, center motion and
+      // box area stay stable; an unstable hit restarts the streak at this frame.
+      const double center_jump = image_diagonal > 0.0 ? std::hypot(
+        static_cast<double>(detection.center.x - track.last_center.x),
+        static_cast<double>(detection.center.y - track.last_center.y)) / image_diagonal : 1.0;
+      const int area = std::max(1, detection.box.area());
+      const int last_area = std::max(1, track.last_area);
+      const double area_ratio = static_cast<double>(std::max(area, last_area)) /
+        static_cast<double>(std::min(area, last_area));
+      const bool stable_step =
+        static_cast<double>(detection.score) >= servo_confirm_min_score_ &&
+        center_jump <= servo_confirm_max_center_jump_ &&
+        area_ratio <= servo_confirm_max_area_ratio_;
+      track.hit_streak = stable_step ? track.hit_streak + 1U : 1U;
+      if (!track.confirmed &&
+        track.hit_streak >= static_cast<std::uint32_t>(servo_confirm_min_hits_))
+      {
+        track.confirmed = true;
+        RCLCPP_INFO(get_logger(),
+          "ANIMAL_SERVO_EVENT type=target_confirmed id=%s hits=%u frame=%llu",
+          makeTargetId(track.label, track.track_id).c_str(), track.hit_streak,
+          static_cast<unsigned long long>(frame.frame_id));
+      }
+      track.last_center = detection.center;
+      track.last_area = detection.box.area();
+      track.last_score = detection.score;
+      track.box = detection.box;
       track.last_seen_frame_id = frame.frame_id;
       track_ids[candidate.detection_index] = track.track_id;
       detection_matched[candidate.detection_index] = true;
       track_matched[candidate.track_index] = true;
+    }
+
+    // Must run before new tracks are appended: track_matched indexes the
+    // pre-append vector.
+    for (std::size_t track_index = 0; track_index < track_matched.size(); ++track_index) {
+      if (!track_matched[track_index]) {
+        tracked_detections_[track_index].hit_streak = 0U;
+      }
     }
 
     for (std::size_t detection_index = 0; detection_index < frame.detections.size(); ++detection_index) {
@@ -790,12 +931,19 @@ private:
       if (next_track_id_ == std::numeric_limits<std::uint64_t>::max()) {
         throw std::runtime_error("animal vision track_id space exhausted");
       }
+      const Detection &detection = frame.detections[detection_index];
       const std::uint64_t track_id = next_track_id_++;
       tracked_detections_.push_back(TrackedDetection{
         track_id,
-        frame.detections[detection_index].class_id,
-        frame.detections[detection_index].box,
-        frame.frame_id});
+        detection.class_id,
+        detection.box,
+        frame.frame_id,
+        frame.labels[detection_index],
+        1U,
+        false,
+        detection.center,
+        detection.box.area(),
+        detection.score});
       track_ids[detection_index] = track_id;
     }
 
@@ -808,39 +956,324 @@ private:
         }),
       tracked_detections_.end());
 
-    drone_msgs::msg::AnimalDetections message;
-    message.stamp = now();
-    message.frame_seq = frame.frame_id;
-    message.image_width = static_cast<std::uint32_t>(frame.image_width);
-    message.image_height = static_cast<std::uint32_t>(frame.image_height);
-    message.targets.reserve(frame.detections.size());
-    const int image_center_x = frame.image_width / 2;
-    const int image_center_y = frame.image_height / 2;
-    const double half_width = static_cast<double>(frame.image_width) / 2.0;
-    const double half_height = static_cast<double>(frame.image_height) / 2.0;
-    for (std::size_t index = 0; index < frame.detections.size(); ++index) {
-      const Detection &detection = frame.detections[index];
-      drone_msgs::msg::AnimalDetection target;
-      target.label = frame.labels[index];
-      target.track_id = track_ids[index];
-      target.score = detection.score;
-      target.cx = detection.center.x;
-      target.cy = detection.center.y;
-      target.err_x = detection.center.x - image_center_x;
-      target.err_y = detection.center.y - image_center_y;
-      target.norm_x = half_width > 0.0 ? static_cast<double>(target.err_x) / half_width : 0.0;
-      target.norm_y = half_height > 0.0 ? static_cast<double>(target.err_y) / half_height : 0.0;
-      target.x1 = detection.box.x;
-      target.y1 = detection.box.y;
-      target.x2 = detection.box.x + detection.box.width;
-      target.y2 = detection.box.y + detection.box.height;
-      target.bbox_w = detection.box.width;
-      target.bbox_h = detection.box.height;
-      target.bbox_area = detection.box.area();
-      message.targets.push_back(std::move(target));
+    updateServoSnapshot(frame, track_ids);
+  }
+
+  static std::string makeTargetId(const std::string &label, std::uint64_t track_id)
+  {
+    return (label.empty() ? std::string("target") : label) + "_" + std::to_string(track_id);
+  }
+
+  const TrackedDetection *findTrackByTrackId(std::uint64_t track_id) const
+  {
+    for (const TrackedDetection &track : tracked_detections_) {
+      if (track.track_id == track_id) {
+        return &track;
+      }
     }
-    message.target_count = static_cast<std::uint32_t>(message.targets.size());
-    detections_pub_->publish(message);
+    return nullptr;
+  }
+
+  bool trackAliveById(const std::string &target_id) const
+  {
+    for (const TrackedDetection &track : tracked_detections_) {
+      if (makeTargetId(track.label, track.track_id) == target_id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  std::optional<std::size_t> findDetectionIndexById(
+    const DetectionFrame &frame, const std::vector<std::uint64_t> &track_ids,
+    const std::string &target_id) const
+  {
+    for (std::size_t index = 0; index < frame.detections.size(); ++index) {
+      if (makeTargetId(frame.labels[index], track_ids[index]) == target_id) {
+        return index;
+      }
+    }
+    return std::nullopt;
+  }
+
+  std::optional<std::size_t> pickBestDetection(
+    const DetectionFrame &frame, const std::vector<std::uint64_t> &track_ids) const
+  {
+    // Deterministic ranking: confirmed first, then longest streak, then score,
+    // then oldest track. Never "closest to image center" -- that would switch
+    // the selected target while the drone moves.
+    std::optional<std::size_t> best;
+    const TrackedDetection *best_track = nullptr;
+    for (std::size_t index = 0; index < frame.detections.size(); ++index) {
+      const TrackedDetection *track = findTrackByTrackId(track_ids[index]);
+      if (track == nullptr) {
+        continue;
+      }
+      if (!best) {
+        best = index;
+        best_track = track;
+        continue;
+      }
+      if (track->confirmed != best_track->confirmed) {
+        if (track->confirmed) {
+          best = index;
+          best_track = track;
+        }
+        continue;
+      }
+      if (track->hit_streak != best_track->hit_streak) {
+        if (track->hit_streak > best_track->hit_streak) {
+          best = index;
+          best_track = track;
+        }
+        continue;
+      }
+      if (frame.detections[index].score != frame.detections[*best].score) {
+        if (frame.detections[index].score > frame.detections[*best].score) {
+          best = index;
+          best_track = track;
+        }
+        continue;
+      }
+      if (track->track_id < best_track->track_id) {
+        best = index;
+        best_track = track;
+      }
+    }
+    return best;
+  }
+
+  void updateServoSnapshot(const DetectionFrame &frame, const std::vector<std::uint64_t> &track_ids)
+  {
+    std::string requested_id;
+    std::string control_locked_id;
+    std::uint64_t session_epoch = 0;
+    bool status_active = false;
+    {
+      std::lock_guard<std::mutex> lock(servo_mutex_);
+      requested_id = servo_status_requested_id_;
+      control_locked_id = servo_status_tracked_id_;
+      session_epoch = servo_session_epoch_;
+      status_active = servo_status_active_;
+    }
+    if (session_epoch != servo_seen_session_epoch_) {
+      // active true->false edge: the servo session ended, release the self lock.
+      servo_seen_session_epoch_ = session_epoch;
+      if (!servo_sticky_target_id_.empty()) {
+        RCLCPP_INFO(get_logger(), "ANIMAL_SERVO_EVENT type=session_end released_id=%s",
+          servo_sticky_target_id_.c_str());
+        servo_sticky_target_id_.clear();
+      }
+    }
+
+    // The control side permanently locks the first fresh target_id of an action,
+    // so its tracked id must win over the mission request and our own choice.
+    // Gated on active: the transient_local latch retains the final status of a
+    // finished action (active=false, tracked id still set), which must not
+    // re-lock the target the session_end release just dropped.
+    std::string desired;
+    if (status_active) {
+      desired = !control_locked_id.empty() ? control_locked_id : requested_id;
+    }
+    std::optional<std::size_t> chosen;
+    std::string snapshot_target_id;
+    if (!desired.empty()) {
+      snapshot_target_id = desired;
+      servo_sticky_target_id_ = desired;
+      chosen = findDetectionIndexById(frame, track_ids, desired);
+    } else if (!servo_sticky_target_id_.empty()) {
+      chosen = findDetectionIndexById(frame, track_ids, servo_sticky_target_id_);
+      if (chosen || trackAliveById(servo_sticky_target_id_)) {
+        // Missing this frame but still tracked: publish valid=false and wait for
+        // it instead of silently switching to another target.
+        snapshot_target_id = servo_sticky_target_id_;
+      } else {
+        servo_sticky_target_id_.clear();
+      }
+    }
+    if (!chosen && desired.empty() && servo_sticky_target_id_.empty()) {
+      chosen = pickBestDetection(frame, track_ids);
+      if (chosen) {
+        servo_sticky_target_id_ = makeTargetId(frame.labels[*chosen], track_ids[*chosen]);
+        snapshot_target_id = servo_sticky_target_id_;
+        RCLCPP_INFO(get_logger(),
+          "ANIMAL_SERVO_EVENT type=target_selected id=%s label=%s frame=%llu",
+          servo_sticky_target_id_.c_str(), frame.labels[*chosen].c_str(),
+          static_cast<unsigned long long>(frame.frame_id));
+      }
+    }
+
+    ServoSnapshot snapshot;
+    snapshot.source_valid = true;
+    snapshot.target_id = snapshot_target_id;
+    snapshot.image_width = static_cast<std::uint32_t>(frame.image_width);
+    snapshot.image_height = static_cast<std::uint32_t>(frame.image_height);
+    snapshot.frame_id = frame.frame_id;
+    snapshot.produced_at = Clock::now();
+    snapshot.stamp = now();
+    if (chosen) {
+      const Detection &detection = frame.detections[*chosen];
+      const TrackedDetection *track = findTrackByTrackId(track_ids[*chosen]);
+      const double half_width = static_cast<double>(frame.image_width) / 2.0;
+      const double half_height = static_cast<double>(frame.image_height) / 2.0;
+      snapshot.has_target = true;
+      snapshot.confirmed = track != nullptr && track->confirmed;
+      snapshot.label = frame.labels[*chosen];
+      snapshot.confidence = static_cast<double>(detection.score);
+      snapshot.center_x = static_cast<double>(detection.center.x);
+      snapshot.center_y = static_cast<double>(detection.center.y);
+      snapshot.error_x = half_width > 0.0 ?
+        std::clamp((snapshot.center_x - half_width) / half_width, -1.0, 1.0) : 0.0;
+      snapshot.error_y = half_height > 0.0 ?
+        std::clamp((snapshot.center_y - half_height) / half_height, -1.0, 1.0) : 0.0;
+    }
+    {
+      std::lock_guard<std::mutex> lock(servo_mutex_);
+      servo_snapshot_ = std::move(snapshot);
+    }
+    servo_snapshot_count_.fetch_add(1);
+  }
+
+  void handleServoStatus(const drone_msgs::msg::VisionServoStatus::SharedPtr status)
+  {
+    // Runs on the executor thread: copy only, no I/O and no logging here.
+    std::lock_guard<std::mutex> lock(servo_mutex_);
+    const bool was_active = servo_status_active_;
+    servo_status_active_ = status->active;
+    servo_status_state_ = status->state;
+    servo_status_requested_id_ = status->requested_target_id;
+    servo_status_tracked_id_ = status->tracked_target_id;
+    if (was_active && !status->active) {
+      ++servo_session_epoch_;
+    }
+  }
+
+  void servoPublishLoop()
+  {
+    const auto period = std::chrono::duration_cast<Clock::duration>(
+      std::chrono::duration<double>(1.0 / servo_publish_rate_hz_));
+    Clock::time_point next_wake = Clock::now();
+    while (running_.load() && rclcpp::ok()) {
+      next_wake += period;
+      {
+        std::unique_lock<std::mutex> lock(servo_wake_mutex_);
+        servo_wake_.wait_until(lock, next_wake, [this] {
+          return !running_.load() || !rclcpp::ok();
+        });
+      }
+      if (!running_.load() || !rclcpp::ok()) {
+        break;
+      }
+      const Clock::time_point now_at = Clock::now();
+      if (now_at > next_wake + period) {
+        next_wake = now_at;  // re-align after a long stall instead of bursting
+      }
+      try {
+        publishServoTarget();
+      } catch (const std::exception &error) {
+        RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "Vision servo target publication failed: %s", error.what());
+      }
+    }
+  }
+
+  void publishServoTarget()
+  {
+    ServoSnapshot snapshot;
+    bool status_active = false;
+    std::string status_state;
+    {
+      std::lock_guard<std::mutex> lock(servo_mutex_);
+      snapshot = servo_snapshot_;
+      status_active = servo_status_active_;
+      status_state = servo_status_state_;
+    }
+    const double age_s = snapshot.source_valid ?
+      elapsedSeconds(snapshot.produced_at, Clock::now()) : -1.0;
+    const bool fresh = snapshot.source_valid && age_s >= 0.0 && age_s <= servo_stale_timeout_s_;
+
+    drone_msgs::msg::VisionServoTarget message;
+    message.sequence = ++servo_sequence_;  // increments on no-target heartbeats too
+    message.valid = fresh && snapshot.has_target;
+    message.confirmed = message.valid && snapshot.confirmed;
+    message.target_id = snapshot.target_id;
+    // The control side checks isfinite(error) before checking valid, so every
+    // numeric field must be a finite literal on the valid=false path. Stale
+    // coordinates are structurally unreachable here: values are only copied out
+    // of the snapshot when it is fresh.
+    message.confidence = message.valid ? snapshot.confidence : 0.0;
+    message.error_x = message.valid ? snapshot.error_x : 0.0;
+    message.error_y = message.valid ? snapshot.error_y : 0.0;
+    message.center_x = message.valid ? snapshot.center_x : 0.0;
+    message.center_y = message.valid ? snapshot.center_y : 0.0;
+    message.image_width = snapshot.source_valid ? snapshot.image_width :
+      static_cast<std::uint32_t>(std::max(0, actual_width_.load()));
+    message.image_height = snapshot.source_valid ? snapshot.image_height :
+      static_cast<std::uint32_t>(std::max(0, actual_height_.load()));
+    if (message.valid) {
+      message.stamp = snapshot.stamp;
+    } else {
+      message.stamp = now();
+    }
+    servo_target_pub_->publish(message);
+
+    const bool id_changed = message.target_id != last_pub_target_id_;
+    if (message.valid != last_pub_valid_ || id_changed) {
+      RCLCPP_INFO(get_logger(),
+        "ANIMAL_SERVO_EVENT type=%s seq=%u id=%s valid=%d confirmed=%d err=(%.4f,%.4f) "
+        "age_ms=%.1f active=%d state=%s",
+        message.valid ? (id_changed ? "target_switch" : "target_acquired") : "target_lost",
+        message.sequence, message.target_id.c_str(), message.valid ? 1 : 0,
+        message.confirmed ? 1 : 0, message.error_x, message.error_y,
+        age_s >= 0.0 ? age_s * 1000.0 : -1.0, status_active ? 1 : 0,
+        status_state.empty() ? "none" : status_state.c_str());
+    }
+    last_pub_valid_ = message.valid;
+    last_pub_target_id_ = message.target_id;
+
+    servo_published_count_ += 1U;
+    if (message.valid) {
+      servo_valid_count_ += 1U;
+    }
+    if (snapshot.source_valid && !fresh) {
+      servo_stale_count_ += 1U;
+    }
+    if (servo_log_period_s_ <= 0.0) {
+      return;
+    }
+    const Clock::time_point log_now = Clock::now();
+    if (last_servo_log_at_ != Clock::time_point{} &&
+      elapsedSeconds(last_servo_log_at_, log_now) < servo_log_period_s_)
+    {
+      return;
+    }
+    const double interval = last_servo_log_at_ == Clock::time_point{} ?
+      0.0 : elapsedSeconds(last_servo_log_at_, log_now);
+    const std::uint64_t snapshots = servo_snapshot_count_.load();
+    const std::uint64_t published_delta = servo_published_count_ - last_log_published_;
+    RCLCPP_INFO(get_logger(),
+      "ANIMAL_SERVO seq=%u frame=%llu id=%s label=%s valid=%d confirmed=%d conf=%.3f "
+      "center=(%.1f,%.1f)px err=(%.4f,%.4f) img=%ux%u age_ms=%.1f active=%d state=%s",
+      message.sequence, static_cast<unsigned long long>(snapshot.frame_id),
+      message.target_id.c_str(), snapshot.label.c_str(), message.valid ? 1 : 0,
+      message.confirmed ? 1 : 0, message.confidence, message.center_x, message.center_y,
+      message.error_x, message.error_y, message.image_width, message.image_height,
+      age_s >= 0.0 ? age_s * 1000.0 : -1.0, status_active ? 1 : 0,
+      status_state.empty() ? "none" : status_state.c_str());
+    RCLCPP_INFO(get_logger(),
+      "ANIMAL_SERVO_RATE pub_hz=%.2f snapshot_hz=%.2f valid_ratio=%.3f stale=%llu published=%llu",
+      interval > 0.0 ? static_cast<double>(published_delta) / interval : 0.0,
+      interval > 0.0 ? static_cast<double>(snapshots - last_log_snapshots_) / interval : 0.0,
+      published_delta > 0U ?
+        static_cast<double>(servo_valid_count_ - last_log_valid_) /
+        static_cast<double>(published_delta) : 0.0,
+      static_cast<unsigned long long>(servo_stale_count_),
+      static_cast<unsigned long long>(servo_published_count_));
+    last_servo_log_at_ = log_now;
+    last_log_published_ = servo_published_count_;
+    last_log_valid_ = servo_valid_count_;
+    last_log_snapshots_ = snapshots;
   }
 
   std::string buildPipelineDescription() const
@@ -1332,6 +1765,7 @@ private:
   std::thread capture_thread_;
   std::thread ui_thread_;
   std::thread detection_publish_thread_;
+  std::thread servo_publish_thread_;
   GstElement *pipeline_ = nullptr;
   GstElement *app_sink_ = nullptr;
   std::mutex task_mutex_;
@@ -1347,7 +1781,34 @@ private:
   std::map<std::uint64_t, DetectionFrame> pending_detection_frames_;
   std::set<std::uint64_t> skipped_detection_frames_;
   std::vector<TrackedDetection> tracked_detections_;
-  rclcpp::Publisher<drone_msgs::msg::AnimalDetections>::SharedPtr detections_pub_;
+  // servo_mutex_ is a leaf lock guarding the snapshot and the status cache.
+  // Never acquire it while holding task_mutex_ or detection_result_mutex_.
+  std::mutex servo_mutex_;
+  ServoSnapshot servo_snapshot_;
+  bool servo_status_active_ = false;
+  std::string servo_status_state_;
+  std::string servo_status_requested_id_;
+  std::string servo_status_tracked_id_;
+  std::uint64_t servo_session_epoch_ = 0;
+  std::mutex servo_wake_mutex_;
+  std::condition_variable servo_wake_;
+  std::atomic<std::uint64_t> servo_snapshot_count_{0};
+  // Owned by the detection publish thread only.
+  std::string servo_sticky_target_id_;
+  std::uint64_t servo_seen_session_epoch_ = 0;
+  // Owned by the servo publish thread only.
+  std::uint32_t servo_sequence_ = 0;
+  bool last_pub_valid_ = false;
+  std::string last_pub_target_id_;
+  std::uint64_t servo_published_count_ = 0;
+  std::uint64_t servo_valid_count_ = 0;
+  std::uint64_t servo_stale_count_ = 0;
+  Clock::time_point last_servo_log_at_{};
+  std::uint64_t last_log_published_ = 0;
+  std::uint64_t last_log_valid_ = 0;
+  std::uint64_t last_log_snapshots_ = 0;
+  rclcpp::Publisher<drone_msgs::msg::VisionServoTarget>::SharedPtr servo_target_pub_;
+  rclcpp::Subscription<drone_msgs::msg::VisionServoStatus>::SharedPtr servo_status_sub_;
   rclcpp::Subscription<drone_msgs::msg::IndustrialCameraParams>::SharedPtr camera_params_sub_;
   std::atomic<bool> running_{true};
   std::atomic<std::uint64_t> next_frame_id_{1};
@@ -1382,7 +1843,15 @@ private:
   std::string driver_version_;
   std::string zero_copy_mode_;
   std::string preprocess_mode_;
-  std::string detections_topic_ = "/animal_vision/detections";
+  std::string servo_target_topic_ = "/vision/servo/target";
+  std::string servo_status_topic_ = "/control/vision_servo/status";
+  double servo_publish_rate_hz_ = 25.0;
+  double servo_stale_timeout_s_ = 0.25;
+  int servo_confirm_min_hits_ = 5;
+  double servo_confirm_min_score_ = 0.55;
+  double servo_confirm_max_center_jump_ = 0.12;
+  double servo_confirm_max_area_ratio_ = 1.8;
+  double servo_log_period_s_ = 1.0;
   int camera_width_ = 1280;
   int camera_height_ = 720;
   int camera_fps_ = 120;

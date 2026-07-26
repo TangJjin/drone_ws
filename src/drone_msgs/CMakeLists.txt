@@ -10,8 +10,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TaskStatus.msg"
   "msg/ReadyStatus.msg"
   "msg/BarcodeCapture.msg"
-  "msg/AnimalDetection.msg"
-  "msg/AnimalDetections.msg"
   "msg/IndustrialCameraParams.msg"
   "msg/VisualServoConfig.msg"
   "msg/K230AnimalCenter.msg"

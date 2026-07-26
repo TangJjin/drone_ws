@@ -67,11 +67,34 @@ industrial_animal_vision:
     # NMS 重叠框抑制阈值；越低越容易合并重叠检测框。
     nms_threshold: 0.45
 
-    # 发布工业相机多目标检测结果的话题。
-    detections_topic: /animal_vision/detections
+    # 向控制端发布视觉伺服目标的话题（QoS: SensorDataQoS / best_effort）。
+    servo_target_topic: /vision/servo/target
+    # 订阅控制端伺服状态的话题（QoS: reliable + transient_local）。
+    servo_status_topic: /control/vision_servo/status
+    # 目标发布频率；接口契约要求 20-30 Hz，最低持续 15 Hz。
+    servo_publish_rate_hz: 25.0
+    # 超过该秒数没有新的推理结果就发布 valid=false，绝不重发旧坐标。
+    # 必须远小于控制端 lost_timeout_s(1.0s)，让视觉端先于控制端宣告目标丢失。
+    servo_stale_timeout_s: 0.25
+    # confirmed 置位所需的连续稳定命中帧数；不允许单帧检测直接置位。
+    servo_confirm_min_hits: 5
+    # 参与确认统计的最低单帧置信度；只影响 confirmed，不影响 valid。
+    servo_confirm_min_score: 0.55
+    # 单帧目标中心跳变上限（归一化到图像对角线）；超过则确认计数重置。
+    servo_confirm_max_center_jump: 0.12
+    # 单帧检测框面积变化倍率上限；超过则确认计数重置。
+    servo_confirm_max_area_ratio: 1.8
+    # 伺服联调日志周期，单位秒；0 表示关闭周期日志。
+    servo_log_period_s: 1.0
+
     # 同一类别目标跨帧关联所需的最小检测框 IoU。
     track_iou_threshold: 0.3
     # 目标允许连续未检测到的最大采集帧数；窗口内重现会保持原 track_id。
+    # 注意：按相机采集帧计数（camera_fps=120 时 15 帧仅约 0.125 秒）。
+    # 视觉伺服要求 该值/camera_fps >= 控制端 lost_timeout_s(1.0s)，
+    # 即 120fps 下约需 120；遮挡超过当前窗口后 track_id 会换新，
+    # 控制端锁定的旧 ID 永远等不到，动作将以 target lost 超时失败。
+    # 当前默认为旧值，板端实测遮挡表现后再调整。
     track_max_missed_frames: 15
 
     # 使用 RKNN 原生输入内存，FP16 模型建议保持 true。

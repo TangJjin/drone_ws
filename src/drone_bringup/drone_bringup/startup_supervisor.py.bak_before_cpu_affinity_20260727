@@ -61,10 +61,7 @@ class StartupSupervisor:
             ),
             StartupStep(
                 name='fast_lio',
-                command=[
-                    '/usr/bin/taskset', '-c', '4,5',
-                    'ros2', 'launch', 'fast_lio', 'mapping.launch.py',
-                ],
+                command=['ros2', 'launch', 'fast_lio', 'mapping.launch.py'],
                 ready_topic='/Odometry',
                 ready_type='nav_msgs/msg/Odometry',
                 timeout_sec=20,

@@ -27,7 +27,6 @@ class StartupStep:
     max_attempts: int = 1
     recovery_usb_id: Optional[str] = None
     recovery_settle_sec: float = 0.0
-    retry_delay_sec: float = 2.0
 
 
 class StartupSupervisor:
@@ -57,14 +56,10 @@ class StartupSupervisor:
                 ready_type='livox_ros_driver2/msg/CustomMsg',
                 timeout_sec=15,
                 ready_qos_reliability='best_effort',
-                max_attempts=2,
             ),
             StartupStep(
                 name='fast_lio',
-                command=[
-                    '/usr/bin/taskset', '-c', '4,5',
-                    'ros2', 'launch', 'fast_lio', 'mapping.launch.py',
-                ],
+                command=['ros2', 'launch', 'fast_lio', 'mapping.launch.py'],
                 ready_topic='/Odometry',
                 ready_type='nav_msgs/msg/Odometry',
                 timeout_sec=20,
@@ -320,23 +315,17 @@ class StartupSupervisor:
         return process
 
     def recover_step(self, step: StartupStep) -> bool:
-        if step.recovery_usb_id is not None:
-            if not self.reset_usb_device(step.recovery_usb_id):
-                return False
+        if step.recovery_usb_id is None:
+            return False
+        if not self.reset_usb_device(step.recovery_usb_id):
+            return False
 
-            if step.recovery_settle_sec > 0.0:
-                self.log(
-                    f'Waiting for USB device to settle: '
-                    f'{step.recovery_settle_sec}s'
-                )
-                time.sleep(step.recovery_settle_sec)
-        elif step.retry_delay_sec > 0.0:
+        if step.recovery_settle_sec > 0.0:
             self.log(
-                f'Waiting before retry: {step.name}, '
-                f'delay={step.retry_delay_sec}s'
+                f'Waiting for USB device to settle: '
+                f'{step.recovery_settle_sec}s'
             )
-            time.sleep(step.retry_delay_sec)
-
+            time.sleep(step.recovery_settle_sec)
         return self.running
 
     def stop_all_processes(self):

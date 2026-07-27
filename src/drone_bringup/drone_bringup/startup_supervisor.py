@@ -23,7 +23,7 @@ class StartupStep:
     ready_stable_sec: float = 2.0
     ready_min_messages: int = 5
     ready_max_gap_sec: float = 2.0
-    post_ready_delay_sec: float = 1.0
+    post_ready_delay_sec: float = 0.0
     max_attempts: int = 1
     recovery_usb_id: Optional[str] = None
     recovery_settle_sec: float = 0.0
@@ -64,6 +64,10 @@ class StartupSupervisor:
                 ready_type='nav_msgs/msg/Odometry',
                 timeout_sec=20,
                 ready_qos_reliability='best_effort',
+                ready_stable_sec=3.0,
+                ready_min_messages=20,
+                ready_max_gap_sec=0.15,
+                max_attempts=2,
             ),
             StartupStep(
                 name='fastlio_to_mavros',

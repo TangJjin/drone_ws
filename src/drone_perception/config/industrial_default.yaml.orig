@@ -1,0 +1,82 @@
+# 工业相机默认参数。
+# 启动命令中的同名参数会覆盖此处的默认值，例如 gain:=170。
+industrial_animal_vision:
+  ros__parameters:
+    # 仅用于日志和显示界面标识。
+    camera_profile: default
+
+    # 相机 V4L2 设备路径。
+    camera_device: /dev/video1
+    # 向相机请求的图像宽度，单位为像素。
+    camera_width: 1280
+    # 向相机请求的图像高度，单位为像素。
+    camera_height: 720
+    # 向相机请求的采集帧率；相机驱动不支持时会协商为实际可用档位。
+    camera_fps: 120
+
+    # MPP 解码后交给检测器的 RGB 图像宽度，单位为像素。
+    decode_width: 1280
+    # MPP 解码后交给检测器的 RGB 图像高度，单位为像素。
+    # 模型输入仍是 640x640；检测器会进行 RGA letterbox 缩放。
+    decode_height: 720
+
+    # 曝光模式：1=手动；3=自动（部分驱动显示为光圈优先）。
+    exposure_auto: 3
+    # 手动曝光值，仅在 exposure_auto=1 时写入相机。
+    exposure_absolute: 40
+    # 0=自动曝光不允许降低帧率；1=允许降低帧率换取更亮画面。
+    exposure_auto_priority: 0
+    # 图像增益：越大越亮，同时噪点也越明显。
+    gain: 190
+
+    # 图像亮度，具体取值范围由相机驱动决定。
+    brightness: 128
+    # 图像明暗反差，具体取值范围由相机驱动决定。
+    contrast: 65
+    # 图像颜色饱和度，数值越大颜色通常越鲜艳。
+    saturation: 90
+    # 图像中间亮度校正值，不等同于曝光。
+    gamma: 130
+    # 图像锐化强度，过高可能放大噪点。
+    sharpness: 128
+    # 逆光补偿强度，用于主体背后存在强光的场景。
+    backlight_compensation: 16
+
+    # 自动白平衡：1=自动，0=手动。
+    white_balance_auto: 1
+    # 手动白平衡色温；仅在 white_balance_auto=0 时写入相机。
+    white_balance_temperature: 4650
+    # 防闪烁频率：0=关闭，1=50Hz，2=60Hz，3=自动（取决于驱动支持）。
+    power_line_frequency: 1
+
+    # 对焦：focus_auto=1 自动；设为 0 后 focus_absolute 才生效。
+    focus_auto: 1
+    # 手动焦点位置；仅在 focus_auto=0 时写入相机。
+    focus_absolute: 0
+    # 变焦值；具体对应光学还是数字变焦取决于相机。
+    zoom_absolute: 120
+
+    # 是否在香橙派桌面显示检测窗口。
+    display_enabled: true
+    # 最大显示刷新率；不会限制相机采集和 NPU 推理速度。
+    display_fps_limit: 60.0
+
+    # 最低检测置信度；提高可减少误检，但可能增加漏检。
+    confidence_threshold: 0.5
+    # NMS 重叠框抑制阈值；越低越容易合并重叠检测框。
+    nms_threshold: 0.45
+
+    # 发布工业相机多目标检测结果的话题。
+    detections_topic: /animal_vision/detections
+    # 同一类别目标跨帧关联所需的最小检测框 IoU。
+    track_iou_threshold: 0.3
+    # 目标允许连续未检测到的最大采集帧数；窗口内重现会保持原 track_id。
+    track_max_missed_frames: 15
+
+    # 使用 RKNN 原生输入内存，FP16 模型建议保持 true。
+    enable_zero_copy: true
+    # 使用 RGA 硬件完成 1280x720 到模型 letterbox 有效区域的缩放。
+    # 板端未安装 librga 或运行失败时会自动回退 OpenCV。
+    enable_rga_preprocess: true
+    # 将进程限制到 CPU4-7，并将三个推理线程分别绑定到 CPU5-7。
+    cpu_affinity_enabled: true

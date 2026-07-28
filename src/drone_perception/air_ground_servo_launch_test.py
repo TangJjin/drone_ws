@@ -40,11 +40,11 @@ def test_servo_config_defines_target_point_topic():
     assert servo["point_topic"] == "/air_ground_servo/target_point"
 
 
-def test_servo_config_defines_cross_tracking_parameters():
+def test_servo_config_defines_target_geometry_parameters():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
-    assert servo["min_cross_angle_deg"] == 60.0
-    assert servo["tracking_enabled"] is True
+    assert servo["outer_diameter_m"] == 0.50
+    assert servo["inner_diameter_m"] == 0.30
     assert servo["canny_low_threshold"] < servo["canny_high_threshold"]
 
 

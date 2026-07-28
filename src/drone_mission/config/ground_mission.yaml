@@ -1,172 +1,612 @@
-# Mission configuration
+# Ellipse/stadium mission: 100 move points.
+# Geometry: radius=0.75 m, straight section=1.50 m, altitude=1.50 m.
+# Coordinate convention: up is x+, right is y-. A is the route origin.
+# Point allocation: A-B=19, B-C=31, C-D=19, D-A=30 intervals.
 mission:
-  takeoff_altitude: 0.00
+  takeoff_altitude: 1.50
   actions:
     - type: "takeoff"
-      altitude: 0.00
+      altitude: 1.50
 
+    # Point 001 - A (start)
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 0.00
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.000, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 002 - A to B
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.079, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 003 - A to B
     - type: "move"
       frame: "world_body"
-      position: [0.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.158, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 004 - A to B
     - type: "move"
       frame: "world_body"
-      position: [1.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.237, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 005 - A to B
     - type: "move"
       frame: "world_body"
-      position: [1.25, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.316, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 006 - A to B
     - type: "move"
       frame: "world_body"
-      position: [0.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.395, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 007 - A to B
     - type: "move"
       frame: "world_body"
-      position: [1.25, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.474, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 008 - A to B
     - type: "move"
       frame: "world_body"
-      position: [1.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.553, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 009 - A to B
     - type: "move"
       frame: "world_body"
-      position: [0.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.632, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 010 - A to B
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.711, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 011 - A to B
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 0.00
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.789, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 012 - A to B
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.00]
-      yaw: 0.00
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.868, 0.000, 1.500]
+      yaw: 0.000
 
-    - type: "hover"
-      duration: 3.00
+    # Point 013 - A to B
+    - type: "move"
+      frame: "world_body"
+      position: [0.947, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 014 - A to B
+    - type: "move"
+      frame: "world_body"
+      position: [1.026, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 015 - A to B
+    - type: "move"
+      frame: "world_body"
+      position: [1.105, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 016 - A to B
+    - type: "move"
+      frame: "world_body"
+      position: [1.184, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 017 - A to B
+    - type: "move"
+      frame: "world_body"
+      position: [1.263, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 018 - A to B
+    - type: "move"
+      frame: "world_body"
+      position: [1.342, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 019 - A to B
+    - type: "move"
+      frame: "world_body"
+      position: [1.421, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 020 - B
+    - type: "move"
+      frame: "world_body"
+      position: [1.500, 0.000, 1.500]
+      yaw: 0.000
+
+    # Point 021 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.576, -0.004, 1.500]
+      yaw: -0.101
+
+    # Point 022 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.651, -0.015, 1.500]
+      yaw: -0.203
+
+    # Point 023 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.725, -0.034, 1.500]
+      yaw: -0.304
+
+    # Point 024 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.796, -0.061, 1.500]
+      yaw: -0.405
+
+    # Point 025 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.864, -0.094, 1.500]
+      yaw: -0.507
+
+    # Point 026 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.928, -0.134, 1.500]
+      yaw: -0.608
+
+    # Point 027 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.989, -0.181, 1.500]
+      yaw: -0.709
+
+    # Point 028 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.044, -0.233, 1.500]
+      yaw: -0.811
+
+    # Point 029 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.093, -0.291, 1.500]
+      yaw: -0.912
+
+    # Point 030 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.136, -0.353, 1.500]
+      yaw: -1.013
+
+    # Point 031 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.173, -0.420, 1.500]
+      yaw: -1.115
+
+    # Point 032 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.203, -0.490, 1.500]
+      yaw: -1.216
+
+    # Point 033 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.226, -0.562, 1.500]
+      yaw: -1.317
+
+    # Point 034 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.241, -0.636, 1.500]
+      yaw: -1.419
+
+    # Point 035 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.249, -0.712, 1.500]
+      yaw: -1.520
+
+    # Point 036 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.249, -0.788, 1.500]
+      yaw: -1.621
+
+    # Point 037 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.241, -0.864, 1.500]
+      yaw: -1.723
+
+    # Point 038 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.226, -0.938, 1.500]
+      yaw: -1.824
+
+    # Point 039 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.203, -1.010, 1.500]
+      yaw: -1.925
+
+    # Point 040 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.173, -1.080, 1.500]
+      yaw: -2.027
+
+    # Point 041 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.136, -1.147, 1.500]
+      yaw: -2.128
+
+    # Point 042 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.093, -1.209, 1.500]
+      yaw: -2.230
+
+    # Point 043 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [2.044, -1.267, 1.500]
+      yaw: -2.331
+
+    # Point 044 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.989, -1.319, 1.500]
+      yaw: -2.432
+
+    # Point 045 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.928, -1.366, 1.500]
+      yaw: -2.534
+
+    # Point 046 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.864, -1.406, 1.500]
+      yaw: -2.635
+
+    # Point 047 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.796, -1.439, 1.500]
+      yaw: -2.736
+
+    # Point 048 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.725, -1.466, 1.500]
+      yaw: -2.838
+
+    # Point 049 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.651, -1.485, 1.500]
+      yaw: -2.939
+
+    # Point 050 - upper semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [1.576, -1.496, 1.500]
+      yaw: -3.040
+
+    # Point 051 - C
+    - type: "move"
+      frame: "world_body"
+      position: [1.500, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 052 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [1.421, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 053 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [1.342, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 054 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [1.263, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 055 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [1.184, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 056 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [1.105, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 057 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [1.026, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 058 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.947, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 059 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.868, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 060 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.789, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 061 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.711, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 062 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.632, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 063 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.553, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 064 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.474, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 065 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.395, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 066 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.316, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 067 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.237, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 068 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.158, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 069 - C to D
+    - type: "move"
+      frame: "world_body"
+      position: [0.079, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 070 - D
+    - type: "move"
+      frame: "world_body"
+      position: [0.000, -1.500, 1.500]
+      yaw: -3.142
+
+    # Point 071 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.078, -1.496, 1.500]
+      yaw: 3.037
+
+    # Point 072 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.156, -1.484, 1.500]
+      yaw: 2.932
+
+    # Point 073 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.232, -1.463, 1.500]
+      yaw: 2.827
+
+    # Point 074 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.305, -1.435, 1.500]
+      yaw: 2.723
+
+    # Point 075 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.375, -1.400, 1.500]
+      yaw: 2.618
+
+    # Point 076 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.441, -1.357, 1.500]
+      yaw: 2.513
+
+    # Point 077 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.502, -1.307, 1.500]
+      yaw: 2.409
+
+    # Point 078 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.557, -1.252, 1.500]
+      yaw: 2.304
+
+    # Point 079 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.607, -1.191, 1.500]
+      yaw: 2.199
+
+    # Point 080 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.650, -1.125, 1.500]
+      yaw: 2.094
+
+    # Point 081 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.685, -1.055, 1.500]
+      yaw: 1.990
+
+    # Point 082 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.713, -0.982, 1.500]
+      yaw: 1.885
+
+    # Point 083 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.734, -0.906, 1.500]
+      yaw: 1.780
+
+    # Point 084 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.746, -0.828, 1.500]
+      yaw: 1.676
+
+    # Point 085 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.750, -0.750, 1.500]
+      yaw: 1.571
+
+    # Point 086 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.746, -0.672, 1.500]
+      yaw: 1.466
+
+    # Point 087 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.734, -0.594, 1.500]
+      yaw: 1.361
+
+    # Point 088 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.713, -0.518, 1.500]
+      yaw: 1.257
+
+    # Point 089 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.685, -0.445, 1.500]
+      yaw: 1.152
+
+    # Point 090 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.650, -0.375, 1.500]
+      yaw: 1.047
+
+    # Point 091 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.607, -0.309, 1.500]
+      yaw: 0.942
+
+    # Point 092 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.557, -0.248, 1.500]
+      yaw: 0.838
+
+    # Point 093 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.502, -0.193, 1.500]
+      yaw: 0.733
+
+    # Point 094 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.441, -0.143, 1.500]
+      yaw: 0.628
+
+    # Point 095 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.375, -0.100, 1.500]
+      yaw: 0.524
+
+    # Point 096 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.305, -0.065, 1.500]
+      yaw: 0.419
+
+    # Point 097 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.232, -0.037, 1.500]
+      yaw: 0.314
+
+    # Point 098 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.156, -0.016, 1.500]
+      yaw: 0.209
+
+    # Point 099 - lower semicircle
+    - type: "move"
+      frame: "world_body"
+      position: [-0.078, -0.004, 1.500]
+      yaw: 0.105
+
+    # Point 100 - A (closed)
+    - type: "move"
+      frame: "world_body"
+      position: [0.000, 0.000, 1.500]
+      yaw: 0.000
 
     - type: "hover"
       duration: 1.00
@@ -174,4 +614,36 @@ mission:
     - type: "land"
 
 system:
+  # Global move-action defaults.
+  tolerance: 0.10
+  yaw_tolerance_deg: 4.0
+  max_xy_speed_mps: 0.50
+  max_z_speed_mps: 0.30
+  max_yaw_rate_deg_s: 40.0
+
+  # Global visual-servo defaults.
+  target_id: ""
+  require_confirmed: true
+  image_x_axis: "y"
+  image_y_axis: "z"
+  image_x_sign: -1.0
+  image_y_sign: -1.0
+  kp_x: 0.35
+  ki_x: 0.0
+  kd_x: 0.02
+  kp_y: 0.35
+  ki_y: 0.0
+  kd_y: 0.02
+  integral_limit: 0.5
+  filter_alpha: 0.35
+  enter_tolerance_x: 0.04
+  enter_tolerance_y: 0.04
+  exit_tolerance_x: 0.07
+  exit_tolerance_y: 0.07
+  settle_time_s: 0.6
+  acquire_timeout_s: 5.0
+  lost_timeout_s: 1.0
+  overall_timeout_s: 20.0
+  max_body_speed_mps: 0.20
+  continue_on_timeout: true
   auto_start_mission: false

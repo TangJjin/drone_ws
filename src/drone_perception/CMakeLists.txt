@@ -72,11 +72,20 @@ target_include_directories(air_ground_servo_depth
 target_link_libraries(air_ground_servo_depth ${OpenCV_LIBS})
 ament_target_dependencies(air_ground_servo_depth sensor_msgs)
 
+add_library(air_ground_target_geometry STATIC src/air_ground_target_geometry.cpp)
+target_compile_features(air_ground_target_geometry PUBLIC cxx_std_17)
+target_include_directories(air_ground_target_geometry
+  PUBLIC include
+  PRIVATE ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(air_ground_target_geometry ${OpenCV_LIBS})
+
 if(cv_bridge_FOUND AND sensor_msgs_FOUND AND realsense2_camera_msgs_FOUND)
   add_executable(air_ground_servo_node src/air_ground_servo_node.cpp)
   target_compile_features(air_ground_servo_node PUBLIC cxx_std_17)
   target_include_directories(air_ground_servo_node PRIVATE include ${OpenCV_INCLUDE_DIRS})
-  target_link_libraries(air_ground_servo_node air_ground_servo_depth ${OpenCV_LIBS})
+  target_link_libraries(
+    air_ground_servo_node air_ground_servo_depth air_ground_target_geometry ${OpenCV_LIBS})
   ament_target_dependencies(
     air_ground_servo_node rclcpp cv_bridge sensor_msgs geometry_msgs realsense2_camera_msgs)
   install(TARGETS air_ground_servo_node DESTINATION lib/${PROJECT_NAME})
@@ -252,6 +261,14 @@ if(BUILD_TESTING)
       air_ground_servo_depth_test PRIVATE include ${OpenCV_INCLUDE_DIRS})
     target_link_libraries(
       air_ground_servo_depth_test air_ground_servo_depth ${OpenCV_LIBS})
+    ament_add_gtest(
+      air_ground_target_geometry_test
+      test/air_ground_target_geometry_test.cpp
+    )
+    target_include_directories(
+      air_ground_target_geometry_test PRIVATE include ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(
+      air_ground_target_geometry_test air_ground_target_geometry ${OpenCV_LIBS})
   else()
     message(WARNING "ament_cmake_gtest not found; RGBD depth tests are unavailable.")
   endif()

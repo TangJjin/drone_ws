@@ -1,11 +1,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <deque>
 #include <exception>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -46,18 +44,20 @@ public:
     log_throttle_ms_ = declare_parameter<int>("log_throttle_ms", 2000);
     point_topic_ = declare_parameter<std::string>(
       "point_topic", "/air_ground_servo/target_point");
+    geometry_config_.outer_diameter_m = declare_parameter<double>("outer_diameter_m", 0.50);
+    geometry_config_.inner_diameter_m = declare_parameter<double>("inner_diameter_m", 0.30);
+    geometry_config_.min_ellipse_area_px = declare_parameter<double>("min_ellipse_area_px", 800.0);
+    geometry_config_.max_ellipse_aspect_ratio = declare_parameter<double>("max_ellipse_aspect_ratio", 2.5);
+    geometry_config_.max_center_distance_ratio = declare_parameter<double>("max_center_distance_ratio", 0.12);
+    geometry_config_.max_diameter_ratio_error = declare_parameter<double>("max_diameter_ratio_error", 0.25);
+    geometry_config_.max_aspect_ratio_difference = declare_parameter<double>("max_aspect_ratio_difference", 0.20);
     geometry_config_.canny_low_threshold = declare_parameter<int>("canny_low_threshold", 50);
     geometry_config_.canny_high_threshold = declare_parameter<int>("canny_high_threshold", 150);
     geometry_config_.hough_threshold = declare_parameter<int>("hough_threshold", 35);
     geometry_config_.hough_min_line_length = declare_parameter<int>("hough_min_line_length", 45);
     geometry_config_.hough_max_line_gap = declare_parameter<int>("hough_max_line_gap", 12);
     geometry_config_.line_angle_tolerance_deg = declare_parameter<double>("line_angle_tolerance_deg", 20.0);
-    geometry_config_.min_cross_angle_deg = declare_parameter<double>("min_cross_angle_deg", 60.0);
-    geometry_config_.min_ring_radius_px = declare_parameter<int>("min_ring_radius_px", 20);
-    geometry_config_.max_ring_radius_px = declare_parameter<int>("max_ring_radius_px", 220);
-    geometry_config_.min_ring_separation_px = declare_parameter<int>("min_ring_separation_px", 15);
-    geometry_config_.min_ring_coverage_ratio = declare_parameter<double>("min_ring_coverage_ratio", 0.30);
-    trajectory_max_points_ = declare_parameter<int>("trajectory_max_points", 80);
+    geometry_config_.max_cross_distance_ratio = declare_parameter<double>("max_cross_distance_ratio", 0.18);
 
     validateParameters();
 
@@ -135,26 +135,19 @@ private:
     if (view_mode_ != "RGB" && view_mode_ != "GRAY" && view_mode_ != "BINARY") {
       throw std::invalid_argument("view_mode must be RGB, GRAY or BINARY");
     }
-    if (geometry_config_.canny_low_threshold <= 0 ||
+    if (geometry_config_.outer_diameter_m <= geometry_config_.inner_diameter_m ||
+      geometry_config_.min_ellipse_area_px <= 0.0 || geometry_config_.max_ellipse_aspect_ratio <= 1.0 ||
+      geometry_config_.max_center_distance_ratio <= 0.0 ||
+      geometry_config_.max_diameter_ratio_error <= 0.0 ||
+      geometry_config_.max_aspect_ratio_difference <= 0.0 ||
+      geometry_config_.canny_low_threshold <= 0 ||
       geometry_config_.canny_high_threshold <= geometry_config_.canny_low_threshold ||
       geometry_config_.hough_threshold <= 0 || geometry_config_.hough_min_line_length <= 0 ||
       geometry_config_.hough_max_line_gap < 0 || geometry_config_.line_angle_tolerance_deg <= 0.0 ||
       geometry_config_.line_angle_tolerance_deg >= 45.0 ||
-      geometry_config_.min_cross_angle_deg <= 0.0 || geometry_config_.min_cross_angle_deg > 90.0)
+      geometry_config_.max_cross_distance_ratio <= 0.0)
     {
       throw std::invalid_argument("target geometry parameters are invalid");
-    }
-    if (geometry_config_.min_ring_radius_px <= 0 ||
-      geometry_config_.max_ring_radius_px <= geometry_config_.min_ring_radius_px ||
-      geometry_config_.min_ring_separation_px <= 0 ||
-      geometry_config_.min_ring_coverage_ratio <= 0.0 ||
-      geometry_config_.min_ring_coverage_ratio > 1.0)
-    {
-      throw std::invalid_argument("dual-ring parameters are invalid");
-    }
-    if (trajectory_max_points_ < 2)
-    {
-      throw std::invalid_argument("trajectory_max_points must be at least 2");
     }
   }
 
@@ -170,23 +163,6 @@ private:
       }
     }
     last_frame_time_ = now;
-  }
-
-  bool acceptMeasurement(TargetGeometryResult *target, const cv::Size &image_size)
-  {
-    if (!target->valid) {
-      return false;
-    }
-    if (last_measured_center_) {
-      const double delta_x = std::abs(target->center.x - last_measured_center_->x);
-      const double delta_y = std::abs(target->center.y - last_measured_center_->y);
-      if (delta_x > image_size.width * 0.5 || delta_y > image_size.height * 0.5) {
-        target->valid = false;
-        return false;
-      }
-    }
-    last_measured_center_ = target->center;
-    return true;
   }
 
   void handleRgbd(const realsense2_camera_msgs::msg::RGBD::ConstSharedPtr message)
@@ -255,17 +231,9 @@ private:
         get_logger(), *get_clock(), log_throttle_ms_, "RGB CameraInfo frame_id is empty");
     }
 
-    TargetGeometryResult target = detectCrossTarget(color->image, geometry_config_);
-    const bool measurement_accepted = acceptMeasurement(&target, color->image.size());
-    if (measurement_accepted) {
-      measured_trajectory_.emplace_back(
-        static_cast<int>(std::lround(target.center.x)), static_cast<int>(std::lround(target.center.y)));
-      while (measured_trajectory_.size() > static_cast<std::size_t>(trajectory_max_points_)) {
-        measured_trajectory_.pop_front();
-      }
-    }
-    const int sample_x = measurement_accepted ? static_cast<int>(std::lround(target.center.x)) : -1;
-    const int sample_y = measurement_accepted ? static_cast<int>(std::lround(target.center.y)) : -1;
+    const TargetGeometryResult target = detectConcentricTarget(color->image, geometry_config_);
+    const int sample_x = target.valid ? static_cast<int>(std::lround(target.center.x)) : -1;
+    const int sample_y = target.valid ? static_cast<int>(std::lround(target.center.y)) : -1;
     const bool target_center_inside = sample_x >= 0 && sample_x < color->image.cols &&
       sample_y >= 0 && sample_y < color->image.rows;
 
@@ -361,9 +329,6 @@ private:
     const cv::Scalar status_color = sample.valid ? cv::Scalar(0, 220, 0) : cv::Scalar(0, 0, 255);
 
     const cv::Point image_center(display.cols / 2, display.rows / 2);
-    for (const cv::Point &trajectory_point : measured_trajectory_) {
-      cv::circle(display, trajectory_point, 2, cv::Scalar(255, 0, 255), cv::FILLED, cv::LINE_AA);
-    }
     cv::drawMarker(
       display, image_center, cv::Scalar(0, 255, 255), cv::MARKER_CROSS, 18, 2, cv::LINE_AA);
 
@@ -374,7 +339,9 @@ private:
       cv::line(
         display, image_center, cv::Point(target_x, target_y), cv::Scalar(0, 255, 255), 2,
         cv::LINE_AA);
-      if (target.valid) {
+      cv::ellipse(display, target.outer_ellipse, cv::Scalar(255, 0, 255), 2, cv::LINE_AA);
+      cv::ellipse(display, target.inner_ellipse, cv::Scalar(0, 255, 255), 2, cv::LINE_AA);
+      if (target.cross_valid) {
         cv::line(
           display, cv::Point(target.horizontal_line[0], target.horizontal_line[1]),
           cv::Point(target.horizontal_line[2], target.horizontal_line[3]), cv::Scalar(0, 165, 255),
@@ -403,7 +370,7 @@ private:
     }
 
     const int panel_right = std::min(display.cols - 1, 500);
-    const int panel_bottom = std::min(display.rows - 1, 410);
+    const int panel_bottom = std::min(display.rows - 1, 385);
     if (panel_right > 12 && panel_bottom > 12) {
       cv::Mat overlay = display.clone();
       cv::rectangle(
@@ -467,38 +434,29 @@ private:
       point.valid ? normal_text : warning_text, 1, cv::LINE_AA);
     cv::putText(
       display,
-      cv::format("Geometry: cross=%s rings=%s score=%.0f", target.lines.empty() ? "MISS" : "OK",
-        target.valid ? "OK" : "MISS", target.score),
+      target.valid ? cv::format("Geometry: %.0f%% ratio=%.3f cross=%s", target.score * 100.0,
+        target.diameter_ratio, target.cross_valid ? "OK" : "MISS") : "Geometry: invalid",
       cv::Point(24, 227), cv::FONT_HERSHEY_SIMPLEX, 0.45,
       target.valid ? normal_text : warning_text, 1, cv::LINE_AA);
-    cv::putText(
-      display, cv::format("Output: %s", target.valid ? "MEASURED" : "INVALID"), cv::Point(24, 250),
-      cv::FONT_HERSHEY_SIMPLEX, 0.45, target.valid ? normal_text : warning_text, 1, cv::LINE_AA);
-    cv::putText(
-      display,
-      cv::format("Canny: %d/%d  Hough: %d  Min angle: %.0f deg",
-        geometry_config_.canny_low_threshold, geometry_config_.canny_high_threshold,
-        geometry_config_.hough_threshold, geometry_config_.min_cross_angle_deg),
-      cv::Point(24, 273), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
     if (view_mode_ == "BINARY") {
       cv::putText(
-        display, cv::format("Otsu threshold: %.1f", binary_threshold), cv::Point(24, 296),
+        display, cv::format("Otsu threshold: %.1f", binary_threshold), cv::Point(24, 250),
         cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
       cv::putText(
         display,
-        cv::format("Contours: outer=%zu internal=%zu", contour_info.outer_count,
+        cv::format("Contours: outer=%zu inner=%zu", contour_info.outer_count,
           contour_info.inner_count),
-        cv::Point(24, 318), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
+        cv::Point(24, 272), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
       cv::putText(
         display, cv::format("Largest outer: %.0f px", contour_info.largest_area),
-        cv::Point(24, 340), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
+        cv::Point(24, 294), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
     }
     std::string frame_id = camera_info.header.frame_id;
     if (frame_id.size() > 48U) {
       frame_id = frame_id.substr(0, 45U) + "...";
     }
     cv::putText(
-      display, cv::format("Frame: %s", frame_id.c_str()), cv::Point(24, view_mode_ == "BINARY" ? 363 : 296),
+      display, cv::format("Frame: %s", frame_id.c_str()), cv::Point(24, view_mode_ == "BINARY" ? 316 : 250),
       cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
 
     cv::imshow(window_name_, display);
@@ -525,12 +483,9 @@ private:
   int log_throttle_ms_ = 2000;
   std::string point_topic_;
   TargetGeometryConfig geometry_config_;
-  int trajectory_max_points_ = 80;
   bool window_created_ = false;
   SteadyClock::time_point last_frame_time_{};
   double display_fps_ = 0.0;
-  std::optional<cv::Point2f> last_measured_center_;
-  std::deque<cv::Point> measured_trajectory_;
   rclcpp::Subscription<realsense2_camera_msgs::msg::RGBD>::SharedPtr rgbd_sub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr point_pub_;
 };

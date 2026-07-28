@@ -1,0 +1,64 @@
+[INFO] [launch]: All log files can be found below /home/orangepi/drone_ws/src/drone_perception/.runtime_logs/2026-07-28-06-51-00-838178-orangepi5ultra-38951
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: 🚀 Launching as Normal ROS Node
+[INFO] [realsense2_camera_node-1]: process started with pid [38952]
+[INFO] [taskset-2]: process started with pid [38954]
+[realsense2_camera_node-1] [0m[INFO] [1785192661.069586967] [camera.camera]: RealSense ROS v4.58.2[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.069732217] [camera.camera]: Built with LibRealSense v2.58.2[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.069753217] [camera.camera]: Running with LibRealSense v2.58.2[0m
+[taskset-2] [0m[INFO] [1785192661.121104056] [air_ground_servo_node]: Air-ground RGBD debug ready: topic=/camera/camera/rgbd expected=640x480@30.0 center=(320,240) window=10x10[0m
+[realsense2_camera_node-1]  28/07 06:51:01,215 WARNING [547970476256] (ds-motion-common.cpp:452) No HID info provided, IMU is disabled
+[realsense2_camera_node-1]  28/07 06:51:01,215 WARNING [547970476256] (d400-motion.cpp:199) Intel RealSense D435I #327122074056 - HID Motion Sensor Failure (continuing as partial device): bad optional access
+[realsense2_camera_node-1] [0m[INFO] [1785192661.216092607] [camera.camera]: Device with serial number 327122074056 was found.
+[realsense2_camera_node-1] [0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.216234649] [camera.camera]: Device with physical ID /sys/devices/platform/usbdrd3_0/fc000000.usb/xhci-hcd.11.auto/usb8/8-1/8-1:1.0/video4linux/video1 was found.[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.216285399] [camera.camera]: Device with name Intel RealSense D435I was found.[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.217488524] [camera.camera]: Device with port number 8-1 was found.[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.217559690] [camera.camera]: Device USB type: 3.2[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.217821607] [camera.camera]: getParameters...[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.220154066] [camera.camera]: JSON file is not provided[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.220206274] [camera.camera]: Device Name: Intel RealSense D435I[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.220232816] [camera.camera]: Device Serial No: 327122074056[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.220246232] [camera.camera]: Device physical port: /sys/devices/platform/usbdrd3_0/fc000000.usb/xhci-hcd.11.auto/usb8/8-1/8-1:1.0/video4linux/video1[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.220258191] [camera.camera]: Device FW version: 5.17.3.10[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.220269274] [camera.camera]: Device Product ID: 0x0B3A[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.220279191] [camera.camera]: Sync Mode: On[0m
+[realsense2_camera_node-1] [33m[WARN] [1785192661.307198783] [camera.camera]: re-enable the stream for the change to take effect.[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.308005241] [camera.camera]: Set ROS param depth_module.infra_profile to default: 848x480x30[0m
+[realsense2_camera_node-1] [33m[WARN] [1785192661.312815700] [camera.camera]: Could not set param: rgb_camera.power_line_frequency with 3 Range: [0, 2]: parameter 'rgb_camera.power_line_frequency' could not be set: Parameter {rgb_camera.power_line_frequency} doesn't comply with integer range.[0m
+[realsense2_camera_node-1]  28/07 06:51:01,313 WARNING [547970476256] (backend-v4l2.cpp:2407) Pixel format 36315752-1a66-a242-9065-d01814a likely requires patch for fourcc code RW16!
+[realsense2_camera_node-1] [33m[WARN] [1785192661.317904701] [camera.camera]: re-enable the stream for the change to take effect.[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.329476577] [camera.camera]: Stopping Sensor: Depth Module[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.329770577] [camera.camera]: Stopping Sensor: RGB Camera[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.350130954] [camera.camera]: Starting Sensor: Depth Module[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.352866204] [camera.camera]: Open profile: stream_type: Depth(0), Format: Z16, Width: 640, Height: 480, FPS: 30[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.378783707] [camera.camera]: Starting Sensor: RGB Camera[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.381162540] [camera.camera]: Open profile: stream_type: Color(0), Format: RGB8, Width: 640, Height: 480, FPS: 30[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192661.400698667] [camera.camera]: RealSense Node Is Up![0m
+[taskset-2] [0m[INFO] [1785192661.950744139] [air_ground_servo_node]: RGBD fps=0.00 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192664.091695521] [air_ground_servo_node]: RGBD fps=27.17 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192666.416110213] [air_ground_servo_node]: RGBD fps=42.06 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192668.417827206] [air_ground_servo_node]: RGBD fps=53.78 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192670.421946074] [air_ground_servo_node]: RGBD fps=29.91 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192672.454339986] [air_ground_servo_node]: RGBD fps=30.05 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192674.455201520] [air_ground_servo_node]: RGBD fps=30.06 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192676.490818642] [air_ground_servo_node]: RGBD fps=27.45 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192678.491998968] [air_ground_servo_node]: RGBD fps=30.10 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192680.492999044] [air_ground_servo_node]: RGBD fps=29.99 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192682.494107620] [air_ground_servo_node]: RGBD fps=30.00 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[taskset-2] [0m[INFO] [1785192684.496325404] [air_ground_servo_node]: RGBD fps=30.03 size=640x480 center=(320,240) depth=invalid XYZ=invalid valid=0/100[0m
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[taskset-2] [0m[INFO] [1785192685.481899837] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192685.481924628] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192685.482663712] [camera.camera]: Stop Sensor: Depth Module[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192685.482710962] [camera.camera]: Close Sensor. [0m
+[realsense2_camera_node-1] [0m[INFO] [1785192685.485800587] [camera.camera]: Close Sensor - Done. [0m
+[realsense2_camera_node-1] [0m[INFO] [1785192685.486312462] [camera.camera]: Stop Sensor: RGB Camera[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192685.486390921] [camera.camera]: Close Sensor. [0m
+[INFO] [taskset-2]: sending signal 'SIGINT' to process[taskset-2]
+[INFO] [realsense2_camera_node-1]: sending signal 'SIGINT' to process[realsense2_camera_node-1]
+[taskset-2] [0m[INFO] [1785192685.499372130] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[realsense2_camera_node-1] [0m[INFO] [1785192685.501021505] [rclcpp]: signal_handler(SIGINT/SIGTERM)[0m
+[INFO] [taskset-2]: process has finished cleanly [pid 38954]
+[realsense2_camera_node-1] [0m[INFO] [1785192685.840834789] [camera.camera]: Close Sensor - Done. [0m
+[INFO] [realsense2_camera_node-1]: process has finished cleanly [pid 38952]

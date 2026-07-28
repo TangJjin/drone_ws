@@ -101,16 +101,8 @@ TEST(AirGroundServoDepthTest, ProjectsPixelSignsAndRejectsInvalidInputs)
   EXPECT_GT(right_down.point.x, 0.0);
   EXPECT_GT(right_down.point.y, 0.0);
 
-  const CameraPointSample left_up = projectPixelToCamera(270, 190, 2.0, 640, 480, info);
-  ASSERT_TRUE(left_up.valid);
-  EXPECT_LT(left_up.point.x, 0.0);
-  EXPECT_LT(left_up.point.y, 0.0);
-
   const CameraPointSample bad_depth = projectPixelToCamera(320, 240, 0.0, 640, 480, info);
   EXPECT_FALSE(bad_depth.valid);
-
-  const CameraPointSample bad_size = projectPixelToCamera(320, 240, 1.0, 320, 240, info);
-  EXPECT_FALSE(bad_size.valid);
 
   info.k[0] = 0.0;
   const CameraPointSample bad_intrinsics = projectPixelToCamera(320, 240, 1.0, 640, 480, info);

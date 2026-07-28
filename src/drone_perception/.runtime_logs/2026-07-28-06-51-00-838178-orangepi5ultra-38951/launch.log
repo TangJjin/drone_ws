@@ -1,0 +1,10 @@
+1785192660.8401852 [INFO] [launch]: All log files can be found below /home/orangepi/drone_ws/src/drone_perception/.runtime_logs/2026-07-28-06-51-00-838178-orangepi5ultra-38951
+1785192660.8404868 [INFO] [launch]: Default logging verbosity is set to INFO
+1785192660.9067621 [INFO] [launch.user]: 🚀 Launching as Normal ROS Node
+1785192660.9266140 [INFO] [realsense2_camera_node-1]: process started with pid [38952]
+1785192660.9269407 [INFO] [taskset-2]: process started with pid [38954]
+1785192685.4840624 [WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+1785192685.4989085 [INFO] [taskset-2]: sending signal 'SIGINT' to process[taskset-2]
+1785192685.5006542 [INFO] [realsense2_camera_node-1]: sending signal 'SIGINT' to process[realsense2_camera_node-1]
+1785192685.6161568 [INFO] [taskset-2]: process has finished cleanly [pid 38954]
+1785192686.5801289 [INFO] [realsense2_camera_node-1]: process has finished cleanly [pid 38952]

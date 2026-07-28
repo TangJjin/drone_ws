@@ -1,0 +1,1027 @@
+[INFO] [1785190694.452021618] [camera.camera]: RealSense ROS v4.58.2
+[INFO] [1785190694.452179701] [camera.camera]: Built with LibRealSense v2.58.2
+[INFO] [1785190694.452220243] [camera.camera]: Running with LibRealSense v2.58.2
+[INFO] [1785190694.606333425] [camera.camera]: Device with serial number 327122074056 was found.
+
+[INFO] [1785190694.606476925] [camera.camera]: Device with physical ID /sys/devices/platform/usbdrd3_0/fc000000.usb/xhci-hcd.11.auto/usb8/8-1/8-1:1.0/video4linux/video1 was found.
+[INFO] [1785190694.606551008] [camera.camera]: Device with name Intel RealSense D435I was found.
+[INFO] [1785190694.607775133] [camera.camera]: Device with port number 8-1 was found.
+[INFO] [1785190694.607841925] [camera.camera]: Device USB type: 3.2
+[INFO] [1785190694.608075842] [camera.camera]: getParameters...
+[INFO] [1785190694.609857342] [camera.camera]: JSON file is not provided
+[INFO] [1785190694.609913342] [camera.camera]: Device Name: Intel RealSense D435I
+[INFO] [1785190694.609958259] [camera.camera]: Device Serial No: 327122074056
+[INFO] [1785190694.610001134] [camera.camera]: Device physical port: /sys/devices/platform/usbdrd3_0/fc000000.usb/xhci-hcd.11.auto/usb8/8-1/8-1:1.0/video4linux/video1
+[INFO] [1785190694.610045467] [camera.camera]: Device FW version: 5.17.3.10
+[INFO] [1785190694.610087467] [camera.camera]: Device Product ID: 0x0B3A
+[INFO] [1785190694.610128300] [camera.camera]: Sync Mode: On
+[WARN] [1785190694.709665394] [camera.camera]: re-enable the stream for the change to take effect.
+[INFO] [1785190694.712193852] [camera.camera]: Set ROS param depth_module.infra_profile to default: 848x480x30
+[WARN] [1785190694.717780436] [camera.camera]: Could not set param: rgb_camera.power_line_frequency with 3 Range: [0, 2]: parameter 'rgb_camera.power_line_frequency' could not be set: Parameter {rgb_camera.power_line_frequency} doesn't comply with integer range.
+[WARN] [1785190694.722859520] [camera.camera]: re-enable the stream for the change to take effect.
+[INFO] [1785190694.728890896] [camera.camera]: Stopping Sensor: Depth Module
+[INFO] [1785190694.729135312] [camera.camera]: Stopping Sensor: RGB Camera
+[INFO] [1785190695.045341677] [camera.camera]: Starting Sensor: Depth Module
+[INFO] [1785190695.052693136] [camera.camera]: Open profile: stream_type: Depth(0), Format: Z16, Width: 640, Height: 480, FPS: 30
+[INFO] [1785190697.329357032] [camera.camera]: Starting Sensor: RGB Camera
+[INFO] [1785190697.334533824] [camera.camera]: Open profile: stream_type: Color(0), Format: RGB8, Width: 640, Height: 480, FPS: 30
+[ERROR] [1785190707.399211835] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.399501460] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.431468422] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.431681047] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.465617050] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.465973467] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.498272637] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.498494887] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.531576890] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.531788349] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.565797269] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.566016019] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.598347272] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.598571564] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.632423275] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.632751109] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.665064279] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.665383070] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.698304949] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.698538282] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.732470202] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.732689244] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.765051705] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.765282705] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.799252542] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.799621209] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.831831712] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.832065045] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.865246799] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.865497924] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.899266511] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.899483219] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.931882722] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.932119264] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.965929851] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.966292101] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190707.998579021] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190707.998837729] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.031919149] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.032239691] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.066163444] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.066387152] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.098896322] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.099133739] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.132783909] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.133136826] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.165465454] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.165692954] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.198709041] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.198917291] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.232801669] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.233014877] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.265385797] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.265607172] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.299710592] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.300063509] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.332218304] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.332430637] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.365495432] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.365713016] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.399595352] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.399823436] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.432185022] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.432382481] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.466707859] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.467066026] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.499248237] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.499476613] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.532562407] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.532798074] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.566776953] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.566993661] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.599136206] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.599347664] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.633075126] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.633471501] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.666007796] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.666252796] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.699334216] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.699560258] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.733244261] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.733461844] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.765983848] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.766211056] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.799833226] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.800239809] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.832706979] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.832922521] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.866009483] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.866230566] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.900043778] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.900252319] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.932679531] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.932888073] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.966841868] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.967285201] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190708.999566288] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190708.999791163] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.032822999] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.033059541] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.066830461] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.067065253] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.099459506] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.099679714] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.133566135] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.133988468] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.166381263] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.166698013] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.199511391] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.199739183] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.233517103] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.233737603] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.266138565] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.266365481] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.300258610] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.300697568] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.333099113] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.333321071] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.366506325] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.366731200] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.400700161] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.400918328] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.433178998] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.433452581] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.467406960] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.467787876] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.499926338] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.500162880] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.533258300] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.533525466] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.567549845] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.567762470] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.599789223] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.600014973] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.633911310] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.634341518] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.666768730] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.667001188] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.699965650] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.700196066] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.734281987] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.734501028] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.766791448] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.767078448] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.800860452] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.801220660] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.833338997] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.833555997] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.866770417] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.866995583] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.900717212] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.900935378] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.933550715] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.933773257] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190709.967522010] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190709.967981093] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.000334513] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.000599347] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.033579850] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.033804433] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.067551728] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.067783020] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.100144315] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.100376190] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.134428568] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.134864027] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.167203738] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.167462738] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.200276408] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.200503033] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.234279787] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.234569120] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.267042415] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.267268165] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.301108502] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.301561169] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.333864422] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.334095130] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.367584009] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.367849717] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.400848012] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.401110512] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.428191181] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.428336723] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.461484935] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.461625518] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.495212688] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.495415396] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.527860108] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.527961900] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.561201695] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.561309611] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.594823865] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.594924490] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.627929785] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.628029243] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.661773621] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.662057705] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.694807208] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.694904041] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.727983128] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.728111461] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.761535006] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.761641756] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.794841010] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.794928510] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.828862180] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.828959305] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.861618683] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.861800683] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.894906603] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.894999353] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.928092148] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.928191898] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.961471652] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.961567027] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190710.995404447] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190710.995496030] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.028444450] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.028548867] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.061818120] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.062055537] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.095090290] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.095185082] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.128400960] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.128490502] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.162386255] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.162467922] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.195114758] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.195197008] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.228563970] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.228781845] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.267987099] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.268230349] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.302066311] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.302314519] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.337166648] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.337386856] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.368132317] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.368374109] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.402261112] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.402632988] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.434960449] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.435184741] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.468101077] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.468394786] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.501826206] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.502079956] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.534595834] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.534832084] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.568739213] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.569092129] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.601350466] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.601584091] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.634713928] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.634989261] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.668800139] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.669077223] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.701336434] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.701564226] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.735592104] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.736076854] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.767996566] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.768233983] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.801500903] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.801729278] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.835426114] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.835649239] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.868090451] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.868323201] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.902332996] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.902700496] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.934917416] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.935145208] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190711.968288753] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190711.968558836] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.002209006] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.002449048] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.034949759] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.035178426] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.069164888] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.069532096] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.101667641] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.101891933] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.135067269] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.135298269] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.168968565] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.169236315] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.201769401] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.202024026] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.235964113] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.236328696] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.268515283] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.268778950] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.301762661] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.302083203] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.335724915] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.336018331] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.368477335] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.368724668] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.402747588] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.403174296] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.435457133] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.435695716] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.468656678] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.468889720] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.502748723] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.502968640] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.535574060] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.535810893] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.569784230] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.570153772] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.602158941] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.602369233] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.635491195] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.635721028] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.669425448] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.669647990] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.702178451] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.702406826] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.736538830] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.736910122] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.768975375] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.769200250] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.802285753] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.802517045] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.836022548] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.836245673] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.868932177] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.869155010] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.903339805] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.903719847] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.935697308] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.935933558] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190712.969003895] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190712.969232270] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.002847440] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.003198607] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.035601902] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.035845152] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.070264447] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.070627863] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.102548450] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.102775367] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.135745370] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.135972287] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.169619248] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.169849665] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.202461793] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.202692502] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.236798255] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.237168964] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.269247633] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.269473675] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.302556262] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.302790178] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.336119515] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.336365390] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.369418810] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.369673435] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.403665439] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.404042564] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.436166150] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.436407067] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.469419654] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.469655904] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.503160532] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.503394740] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.536090577] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.536321869] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.570469330] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.570848789] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.602783667] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.603016417] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.636036295] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.636264087] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.669891799] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.670207382] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.702937927] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.703168344] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.737412930] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.737930931] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.769697809] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.769925600] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.802946937] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.803175020] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.836634149] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.836881482] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.869830777] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.870077235] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.904138364] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.904499447] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.936459117] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.936688659] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190713.969744120] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190713.969980954] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.003512124] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.003761207] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.036394919] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.036622127] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.071010214] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.071498756] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.103199426] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.103438592] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.136792137] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.137050262] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.170271099] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.170514932] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.203229727] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.203455186] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.237913272] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.238284272] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.270225567] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.270458317] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.303460696] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.303685862] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.337490616] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.337706449] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.370310994] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.370532077] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.404643373] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.405024581] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.436911917] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.437164792] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.470264587] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.470511337] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.503733632] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.503995841] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.536859677] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.537212594] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.571379889] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.571742139] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.603737976] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.603988518] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.636887938] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.637117479] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.670345024] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.670587691] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.703659194] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.703899236] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.737992448] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.738379489] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.770348784] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.770606618] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.803718663] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.803953163] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.837086499] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.837334124] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.870616794] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.870875503] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.904880631] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.905243173] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.937045926] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.937274009] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190714.970389263] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190714.970621429] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.004390308] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.004652808] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.037346019] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.037573519] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.071755981] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.072147398] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.104112026] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.104393484] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.137261404] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.137494154] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.170970491] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.171273825] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.203956536] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.204184620] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.238499498] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.238883915] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.270768043] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.270997876] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.304048963] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.304277046] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.337732966] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.337987591] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.370763928] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.370987053] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.405332556] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.405688973] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.437571935] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.437796810] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.470890771] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.471117396] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.504464525] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.504722650] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.537483236] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.537717153] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.571951531] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.572344990] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.598595284] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.598716326] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.631813204] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.631907121] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.665532791] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.665636041] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.698396627] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.698492003] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.732352756] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.732522506] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.765063468] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.765163218] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.798403013] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.798498388] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.832433516] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.832536766] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.865104269] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.865211603] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.899223439] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.899397856] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.931920734] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.932133943] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.965189404] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.965288571] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190715.999003783] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190715.999131533] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.031923619] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.032040578] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.066002248] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.066176956] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.098618751] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.098724043] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.131962088] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.132088088] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.165714341] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.165842674] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.198679094] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.198769803] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.232748390] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.232907348] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.265395809] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.265498768] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.298896063] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.299004855] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.332287525] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.332387275] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.365481820] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.365580111] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.399421906] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.399659906] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.432149535] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.432241701] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.465573955] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.465667288] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.505662375] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.505866250] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.538613712] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.538880879] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.574601007] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.574987757] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.605517385] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.605795052] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.638672014] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.638924597] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.672025267] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.672345809] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.705518812] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.705764979] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.740626441] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.740985774] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.772446985] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.772665444] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.805564864] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.805805197] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.838772575] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.839043242] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.872353329] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.872575287] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.907194374] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.907579666] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.938752710] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.939134502] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190716.972273672] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190716.972533839] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.005875426] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.006118676] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.038976679] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.039245012] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.073711849] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.074079057] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.105889686] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.106116602] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.139052772] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.139324897] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.172544859] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.172777609] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.205688987] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.205959071] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.240489491] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.240859324] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.272841744] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.273062536] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.306081539] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.306308456] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.339203209] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.339470667] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.372723879] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.372947587] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.407243216] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.407624424] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.439267052] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.439524594] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.472635472] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.473013181] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.505923684] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.506185309] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.539335854] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.539596021] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.574005983] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.574376108] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.606222903] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.606442236] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.639736573] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.640028531] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.673049576] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.673259868] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.706252038] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.706462913] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.740814833] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.741163083] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.773010461] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.773227461] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.806152548] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.806414464] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.839695093] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.839919676] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.872922638] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.873172596] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.907743849] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.908133225] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.939629144] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.939893978] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190717.972980939] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190717.973297689] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.006620609] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.006866193] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.040352738] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.040573238] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.075504991] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.075878616] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.106867036] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.107084036] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.139981998] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.140219998] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.173289168] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.173614085] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.206755880] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.206982505] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.241889175] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.242356133] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.273454220] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.273695720] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.306993265] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.307213181] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.340270685] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.340489726] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.373551021] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.373782605] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.408424150] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.408845900] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.440338903] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.440549778] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.473652490] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.473877365] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.506891118] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.507138743] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.540481205] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.540701996] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.575390792] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.575748375] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.607089420] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.607318086] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.640461923] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.640684465] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.673900926] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.674124635] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.707215096] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.707437347] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.742010350] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.742399725] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.774268395] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.774486270] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.807326482] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.807543190] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.840498318] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.840786485] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.873810447] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.874031238] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.908508867] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.908925075] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.940605620] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.940826412] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190718.973739540] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190718.974006415] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.007184085] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.007438418] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.040752297] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.040975713] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.075232258] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.075652258] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.107208553] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.107466970] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.140933098] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.141152432] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.174004602] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.174228018] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.207448563] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.207667313] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.243087900] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.243516067] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.274285153] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.274505945] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.307423740] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.307661448] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.340901827] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.341122619] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.374116830] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.374348122] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.410570792] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.410956084] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.441095170] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.441318879] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.474406132] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.474626924] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.507719427] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.507941969] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.541779097] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.542011847] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.576142684] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.576514559] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.607992979] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.608216104] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.641364899] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.641575482] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.674572610] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.674787569] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.707834280] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.708049822] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.742661326] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.743034951] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.774455620] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.774672912] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.807663624] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.807925249] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.841226877] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.841442127] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.874709630] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.874924589] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.909454426] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.909847301] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.941602512] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.941822137] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190719.974899766] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190719.975121724] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.007945894] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.008200811] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.042644314] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.042986439] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.076338234] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.076745984] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.108203987] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.108429446] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.141334991] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.141578532] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.174786827] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.175010244] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.208673831] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.208892289] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.242242917] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.242610126] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.274389254] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.274623754] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.307686799] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.307918091] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.341096927] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.341332011] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.374406139] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.374640931] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.409150642] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.409513476] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.441296687] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.441537604] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.474659857] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.474927316] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.507828194] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.508064152] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.541169489] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.541399322] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.575939659] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.576324659] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.607871912] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.608117204] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.641229249] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.641472499] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.674718419] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.674975669] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.707950923] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.708185423] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.742680551] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.743206134] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.774810846] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.775067804] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.808239933] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.808507391] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.836057060] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.836156810] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.869083647] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.869176105] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.903131650] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.903278067] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.935505487] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.935610487] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190720.969094990] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190720.969197074] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.002425202] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.002527577] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.035595580] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.035689497] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.072204709] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.072395459] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.102538920] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.102642754] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.135910549] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.136011757] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.169417219] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.169516386] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.202769889] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.202878097] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.236319142] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.236485976] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.269172771] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.269275437] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.302525149] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.302615857] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.335933527] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.336033277] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.369145614] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.369237197] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.403458159] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.403607492] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.435856204] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.435952746] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.469268666] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.469364041] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.503040461] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.503177836] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.536220756] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.536318464] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.570158509] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.570302009] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.602780554] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.602865429] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.636234141] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.636319891] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.669475394] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.669566394] [camera.camera]: Failed to fill rgb message inside RGBD message
+[INFO] [1785190721.689225604] [camera.camera]: RealSense Node Is Up!
+[ERROR] [1785190721.703077439] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.703173398] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.737157526] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.737316776] [camera.camera]: Failed to fill rgb message inside RGBD message
+[ERROR] [1785190721.770106238] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.770215029] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190721.803454241] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.803554866] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190721.836371161] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.836466244] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190721.869659373] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.869756498] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190721.904777501] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.904949876] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190721.936435004] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.936533296] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190721.969811883] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190721.969909883] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.003237469] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.003348303] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.036448681] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.036556598] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.070698226] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.070976476] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.103652479] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.103759813] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.136852316] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.137036066] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.169945111] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.170047486] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.203246739] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.203346781] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.237556660] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.237900243] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.270309663] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.270410288] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.303448249] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.303554708] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.336856336] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.336957836] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.370039840] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.370129965] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.405213385] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.405402385] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.436741096] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.436831221] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.470747975] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.470918308] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.503473561] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.503577686] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.536961565] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.537064523] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.571346151] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.571501610] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.603634821] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.603722905] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.640100158] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.640207783] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.676965079] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.677180912] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.710308707] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.710516374] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.745090544] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.745491294] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.776998005] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.777211797] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.810296425] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.810515175] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.843522804] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.843742137] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.877432265] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.877656849] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.912206519] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.912543102] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.944144606] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.944369189] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190722.978679401] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190722.978899026] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.010659196] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.010894279] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.044452282] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.044668699] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.079013327] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.079428077] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.110410372] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.110631747] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.144343751] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.144571542] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.177281962] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.177506254] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.212538632] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.212762633] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.245555011] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.245917553] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.277173722] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.277395389] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.310540976] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.310762642] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.344185604] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.344404646] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.378103524] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.378325774] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.413346194] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.413631736] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.444240989] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.444461197] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.477685826] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.477974867] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.510299996] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.510556371] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.543731124] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.543979041] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.578563711] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.578953961] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.610632172] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.610858798] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.643526051] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.643754426] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.677064804] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.677310388] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.711326308] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.711545349] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.745675019] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.746093853] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.777319981] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.777574314] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.810525359] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.810770943] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.843821446] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.844051571] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.877158949] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.877393741] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.912211744] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.912570786] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.943890248] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.944129998] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190723.977251959] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190723.977486168] [camera.camera]: Failed to fill depth message inside RGBD message
+[ERROR] [1785190724.010697963] [camera.camera]: cv::Mat is empty. Ignoring this frame.
+[ERROR] [1785190724.010969504] [camera.camera]: Failed to fill depth message inside RGBD message
+[INFO] [1785192573.419449160] [rclcpp]: signal_handler(SIGINT/SIGTERM)

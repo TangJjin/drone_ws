@@ -1,0 +1,5 @@
+1785190694.2220972 [INFO] [launch]: All log files can be found below /home/orangepi/drone_ws/src/drone_perception/.runtime_logs/2026-07-28-06-18-14-219985-orangepi5ultra-33621
+1785190694.2224681 [INFO] [launch]: Default logging verbosity is set to INFO
+1785190694.2933028 [INFO] [launch.user]: 🚀 Launching as Normal ROS Node
+1785190694.3138986 [INFO] [realsense2_camera_node-1]: process started with pid [33622]
+1785190694.3142343 [INFO] [taskset-2]: process started with pid [33624]

@@ -81,6 +81,27 @@ air_ground_servo_node:
     # 有效靶标圆心的相机系三维坐标输出话题；靶标、深度或内参无效时不发布伪坐标。
     point_topic: "/air_ground_servo/target_point"
 
+    # 外圆真实直径，单位米；与内圆直径共同限定椭圆配对的理论比例。
+    outer_diameter_m: 0.50
+
+    # 内圆真实直径，单位米；当前靶标为30 cm。
+    inner_diameter_m: 0.30
+
+    # 可参与fitEllipse的最小轮廓面积，单位像素平方；抑制小噪声轮廓。
+    min_ellipse_area_px: 800.0
+
+    # 允许椭圆的最大长短轴比；超过此值通常是透视过大或非圆形干扰。
+    max_ellipse_aspect_ratio: 2.5
+
+    # 内外椭圆中心允许的最大距离，占外椭圆长轴的比例。
+    max_center_distance_ratio: 0.12
+
+    # 外内长轴直径比相对理论50/30的最大相对误差。
+    max_diameter_ratio_error: 0.25
+
+    # 内外椭圆长短轴比允许的最大差值；同一圆平面投影后应相近。
+    max_aspect_ratio_difference: 0.20
+
     # Canny边缘检测低阈值；与高阈值共同用于椭圆和十字线候选。
     canny_low_threshold: 50
 
@@ -99,20 +120,5 @@ air_ground_servo_node:
     # 线段判为水平或垂直的最大夹角，单位度。
     line_angle_tolerance_deg: 20.0
 
-    # 水平线和竖直线组成十字时允许的最小夹角，单位度；过滤近似平行的伪交点。
-    min_cross_angle_deg: 60.0
-
-    # 内外环允许的最小半径，单位像素；排除十字中心附近的细小噪声。
-    min_ring_radius_px: 20
-
-    # 内外环允许的最大半径，单位像素；应覆盖当前高度下靶标外环。
-    max_ring_radius_px: 220
-
-    # 两条环带半径必须至少相差的像素数；防止同一条粗线的双边缘被误判为双环。
-    min_ring_separation_px: 15
-
-    # 每条环带至少需要覆盖的角度比例；0.30允许局部缺失，同时排除单条十字线。
-    min_ring_coverage_ratio: 0.30
-
-    # 调试窗口保留的有效双环十字圆心历史点数量；以洋红色点显示，不连接为折线。
-    trajectory_max_points: 80
+    # 十字线交点距椭圆中心的最大距离，占外椭圆长轴的比例；超过时不参与中心融合。
+    max_cross_distance_ratio: 0.18

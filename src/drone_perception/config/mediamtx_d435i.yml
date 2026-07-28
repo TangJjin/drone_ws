@@ -1,0 +1,7 @@
+logLevel: info
+rtspAddress: :8554
+rtspTransports: [udp, tcp]
+
+paths:
+  d435i:
+    source: publisher

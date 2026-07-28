@@ -16,6 +16,10 @@
   <depend>libopencv-dev</depend>
   <build_depend>libgstreamer1.0-dev</build_depend>
   <build_depend>libgstreamer-plugins-base1.0-dev</build_depend>
+  <build_depend>libavutil-dev</build_depend>
+  <build_depend>libavcodec-dev</build_depend>
+  <build_depend>libavformat-dev</build_depend>
+  <build_depend>libswscale-dev</build_depend>
   <build_depend>pkg-config</build_depend>
 
   <exec_depend>rclpy</exec_depend>
@@ -24,6 +28,7 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

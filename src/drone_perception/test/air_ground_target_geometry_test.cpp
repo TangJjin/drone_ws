@@ -34,6 +34,22 @@ TEST(AirGroundTargetGeometryTest, RejectsCrossWithoutDoubleRing)
   EXPECT_FALSE(detectCrossTarget(image, TargetGeometryConfig{}).valid);
 }
 
+TEST(AirGroundTargetGeometryTest, ClassifiesDoubleRingWithoutCrossAsHome)
+{
+  cv::Mat image(480, 640, CV_8UC3, cv::Scalar(255, 255, 255));
+  const cv::Point expected_center(370, 210);
+  cv::ellipse(image, expected_center, cv::Size(110, 92), 0.0, 0.0, 360.0, cv::Scalar(0, 0, 0), 4);
+  cv::ellipse(image, expected_center, cv::Size(66, 55), 0.0, 0.0, 360.0, cv::Scalar(0, 0, 0), 4);
+
+  const TargetGeometryResult result = detectCrossTarget(image, TargetGeometryConfig{});
+
+  EXPECT_TRUE(result.outer_ring_valid);
+  EXPECT_TRUE(result.inner_ring_valid);
+  EXPECT_FALSE(result.has_cross);
+  EXPECT_EQ(result.marker_type, "home");
+  EXPECT_FALSE(result.valid);
+}
+
 TEST(AirGroundTargetGeometryTest, RejectsParallelLines)
 {
   cv::Mat image(480, 640, CV_8UC3, cv::Scalar(255, 255, 255));

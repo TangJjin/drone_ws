@@ -62,25 +62,19 @@ def test_servo_node_publishes_single_frame_confirmed_vision_target():
     assert "output.confirmed = valid;" in node_source
 
 
-def test_servo_config_defines_cross_tracking_parameters():
+def test_servo_config_defines_ellipse_marker_parameters():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
-    assert servo["min_cross_angle_deg"] == 60.0
     assert servo["min_ring_radius_px"] < servo["max_ring_radius_px"]
-    assert servo["min_ring_coverage_ratio"] == 0.30
-    assert servo["canny_low_threshold"] < servo["canny_high_threshold"]
+    assert servo["inner_ring_ratio_min"] < servo["inner_ring_ratio_max"]
+    assert servo["min_inner_ring_score"] == 0.55
+    assert servo["gaussian_blur_kernel"] % 2 == 1
 
 
-def test_servo_config_uses_rgb_debug_view():
+def test_servo_config_uses_binary_debug_view():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
-    assert servo["view_mode"] == "RGB"
-
-
-def test_servo_config_limits_opencv_to_two_threads():
-    _, servo = MODULE._load_config(str(CONFIG_FILE))
-
-    assert servo["opencv_num_threads"] == 2
+    assert servo["view_mode"] == "BINARY"
 
 
 def test_servo_config_rejects_unknown_view_mode(tmp_path):

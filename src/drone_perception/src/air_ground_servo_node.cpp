@@ -44,25 +44,24 @@ public:
     window_name_ = declare_parameter<std::string>("window_name", "Air-Ground Servo RGBD");
     debug_view_ = declare_parameter<bool>("debug_view", true);
     view_mode_ = declare_parameter<std::string>("view_mode", "RGB");
-    opencv_num_threads_ = declare_parameter<int>("opencv_num_threads", 2);
     log_throttle_ms_ = declare_parameter<int>("log_throttle_ms", 2000);
     servo_topic_ = declare_parameter<std::string>("servo_topic", "/vision/servo/target");
-    geometry_config_.canny_low_threshold = declare_parameter<int>("canny_low_threshold", 50);
-    geometry_config_.canny_high_threshold = declare_parameter<int>("canny_high_threshold", 150);
-    geometry_config_.hough_threshold = declare_parameter<int>("hough_threshold", 35);
-    geometry_config_.hough_min_line_length = declare_parameter<int>("hough_min_line_length", 45);
-    geometry_config_.hough_max_line_gap = declare_parameter<int>("hough_max_line_gap", 12);
-    geometry_config_.line_angle_tolerance_deg = declare_parameter<double>("line_angle_tolerance_deg", 20.0);
-    geometry_config_.min_cross_angle_deg = declare_parameter<double>("min_cross_angle_deg", 60.0);
+    geometry_config_.gaussian_blur_kernel = declare_parameter<int>("gaussian_blur_kernel", 5);
+    geometry_config_.clahe_clip_limit = declare_parameter<double>("clahe_clip_limit", 2.0);
+    geometry_config_.clahe_tile_grid_size = declare_parameter<int>("clahe_tile_grid_size", 8);
+    geometry_config_.adaptive_threshold_block_size = declare_parameter<int>("adaptive_threshold_block_size", 61);
+    geometry_config_.adaptive_threshold_c = declare_parameter<double>("adaptive_threshold_c", 5.0);
     geometry_config_.min_ring_radius_px = declare_parameter<int>("min_ring_radius_px", 20);
     geometry_config_.max_ring_radius_px = declare_parameter<int>("max_ring_radius_px", 220);
-    geometry_config_.min_ring_separation_px = declare_parameter<int>("min_ring_separation_px", 15);
-    geometry_config_.min_ring_coverage_ratio = declare_parameter<double>("min_ring_coverage_ratio", 0.30);
+    geometry_config_.min_circularity = declare_parameter<double>("min_circularity", 0.70);
+    geometry_config_.min_axis_ratio = declare_parameter<double>("min_axis_ratio", 0.70);
+    geometry_config_.min_inner_ring_score = declare_parameter<double>("min_inner_ring_score", 0.55);
+    geometry_config_.min_cross_score = declare_parameter<double>("min_cross_score", 0.58);
+    geometry_config_.inner_ring_ratio_min = declare_parameter<double>("inner_ring_ratio_min", 0.48);
+    geometry_config_.inner_ring_ratio_max = declare_parameter<double>("inner_ring_ratio_max", 0.74);
     trajectory_max_points_ = declare_parameter<int>("trajectory_max_points", 80);
 
     validateParameters();
-    cv::setNumThreads(opencv_num_threads_);
-    actual_opencv_num_threads_ = cv::getNumThreads();
 
     if (debug_view_) {
       try {
@@ -82,10 +81,9 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Air-ground RGBD target debug ready: topic=%s expected=%dx%d@%.1f manual=(%d,%d) "
-      "window=%dx%d view=%s opencv_threads=%d servo_topic=%s",
+      "window=%dx%d view=%s servo_topic=%s",
       rgbd_topic_.c_str(), expected_width_, expected_height_, expected_fps_, center_x_, center_y_,
-      sample_window_size_, sample_window_size_, view_mode_.c_str(), actual_opencv_num_threads_,
-      servo_topic_.c_str());
+      sample_window_size_, sample_window_size_, view_mode_.c_str(), servo_topic_.c_str());
   }
 
   ~AirGroundServoNode() override
@@ -141,23 +139,22 @@ private:
     if (view_mode_ != "RGB" && view_mode_ != "GRAY" && view_mode_ != "BINARY") {
       throw std::invalid_argument("view_mode must be RGB, GRAY or BINARY");
     }
-    if (opencv_num_threads_ <= 0) {
-      throw std::invalid_argument("opencv_num_threads must be positive");
-    }
-    if (geometry_config_.canny_low_threshold <= 0 ||
-      geometry_config_.canny_high_threshold <= geometry_config_.canny_low_threshold ||
-      geometry_config_.hough_threshold <= 0 || geometry_config_.hough_min_line_length <= 0 ||
-      geometry_config_.hough_max_line_gap < 0 || geometry_config_.line_angle_tolerance_deg <= 0.0 ||
-      geometry_config_.line_angle_tolerance_deg >= 45.0 ||
-      geometry_config_.min_cross_angle_deg <= 0.0 || geometry_config_.min_cross_angle_deg > 90.0)
+    if (geometry_config_.gaussian_blur_kernel < 3 || geometry_config_.gaussian_blur_kernel % 2 == 0 ||
+      geometry_config_.clahe_clip_limit <= 0.0 || geometry_config_.clahe_tile_grid_size <= 0 ||
+      geometry_config_.adaptive_threshold_block_size < 3 ||
+      geometry_config_.adaptive_threshold_block_size % 2 == 0 ||
+      geometry_config_.min_circularity <= 0.0 || geometry_config_.min_circularity > 1.0 ||
+      geometry_config_.min_axis_ratio <= 0.0 || geometry_config_.min_axis_ratio > 1.0 ||
+      geometry_config_.min_inner_ring_score <= 0.0 || geometry_config_.min_inner_ring_score > 1.0 ||
+      geometry_config_.min_cross_score <= 0.0 || geometry_config_.min_cross_score > 1.0 ||
+      geometry_config_.inner_ring_ratio_min <= 0.0 ||
+      geometry_config_.inner_ring_ratio_max <= geometry_config_.inner_ring_ratio_min ||
+      geometry_config_.inner_ring_ratio_max >= 1.0)
     {
       throw std::invalid_argument("target geometry parameters are invalid");
     }
     if (geometry_config_.min_ring_radius_px <= 0 ||
-      geometry_config_.max_ring_radius_px <= geometry_config_.min_ring_radius_px ||
-      geometry_config_.min_ring_separation_px <= 0 ||
-      geometry_config_.min_ring_coverage_ratio <= 0.0 ||
-      geometry_config_.min_ring_coverage_ratio > 1.0)
+      geometry_config_.max_ring_radius_px <= geometry_config_.min_ring_radius_px)
     {
       throw std::invalid_argument("dual-ring parameters are invalid");
     }
@@ -303,29 +300,18 @@ private:
 
     if (debug_view_) {
       cv::Mat display_image = color->image;
-      double binary_threshold = -1.0;
       ContourDebugInfo contour_info;
       if (view_mode_ != "RGB") {
         cv::Mat gray_image;
         cv::cvtColor(color->image, gray_image, cv::COLOR_BGR2GRAY);
         cv::Mat processed_image = gray_image;
         if (view_mode_ == "BINARY") {
-          binary_threshold = cv::threshold(
-            gray_image, processed_image, 0.0, 255.0, cv::THRESH_BINARY | cv::THRESH_OTSU);
-          cv::Mat contour_input;
-          cv::bitwise_not(processed_image, contour_input);
-          cv::findContours(
-            contour_input, contour_info.contours, contour_info.hierarchy, cv::RETR_TREE,
-            cv::CHAIN_APPROX_SIMPLE);
+          processed_image = target.dark_mask;
+          contour_info.contours = target.contours;
           for (std::size_t index = 0; index < contour_info.contours.size(); ++index) {
-            const bool is_outer = contour_info.hierarchy[index][3] < 0;
-            if (is_outer) {
-              ++contour_info.outer_count;
-            } else {
-              ++contour_info.inner_count;
-            }
+            ++contour_info.outer_count;
             const double area = cv::contourArea(contour_info.contours[index]);
-            if (is_outer && area > contour_info.largest_area) {
+            if (area > contour_info.largest_area) {
               contour_info.largest_area = area;
               contour_info.largest_index = static_cast<int>(index);
             }
@@ -334,7 +320,7 @@ private:
         cv::cvtColor(processed_image, display_image, cv::COLOR_GRAY2BGR);
       }
       drawDebugView(display_image, sample, point, camera_info, matching_sizes, expected_size,
-        supported_depth, camera_info_size, binary_threshold, contour_info, target);
+        supported_depth, camera_info_size, contour_info, target);
     }
 
     const std::string log_depth = sample.valid ?
@@ -359,12 +345,11 @@ private:
     bool expected_size,
     bool supported_depth,
     bool camera_info_size,
-    double binary_threshold,
     const ContourDebugInfo &contour_info,
     const TargetGeometryResult &target)
   {
-    const int target_x = target.valid ? static_cast<int>(std::lround(target.center.x)) : -1;
-    const int target_y = target.valid ? static_cast<int>(std::lround(target.center.y)) : -1;
+    const int target_x = target.outer_ring_valid ? static_cast<int>(std::lround(target.center.x)) : -1;
+    const int target_y = target.outer_ring_valid ? static_cast<int>(std::lround(target.center.y)) : -1;
     const bool center_inside = target_x >= 0 && target_x < display.cols &&
       target_y >= 0 && target_y < display.rows;
     const cv::Scalar status_color = sample.valid ? cv::Scalar(0, 220, 0) : cv::Scalar(0, 0, 255);
@@ -383,15 +368,9 @@ private:
       cv::line(
         display, image_center, cv::Point(target_x, target_y), cv::Scalar(0, 255, 255), 2,
         cv::LINE_AA);
-      if (target.valid) {
-        cv::line(
-          display, cv::Point(target.horizontal_line[0], target.horizontal_line[1]),
-          cv::Point(target.horizontal_line[2], target.horizontal_line[3]), cv::Scalar(0, 165, 255),
-          2, cv::LINE_AA);
-        cv::line(
-          display, cv::Point(target.vertical_line[0], target.vertical_line[1]),
-          cv::Point(target.vertical_line[2], target.vertical_line[3]), cv::Scalar(0, 165, 255),
-          2, cv::LINE_AA);
+      if (target.outer_ring_valid) {
+        cv::ellipse(display, target.center, target.outer_axes * 0.5F, target.ellipse_angle_deg,
+          0.0, 360.0, cv::Scalar(0, 165, 255), 2, cv::LINE_AA);
       }
     }
     if (sample.roi.area() > 0) {
@@ -399,8 +378,7 @@ private:
     }
     if (view_mode_ == "BINARY") {
       for (std::size_t index = 0; index < contour_info.contours.size(); ++index) {
-        const cv::Scalar color = contour_info.hierarchy[index][3] < 0 ?
-          cv::Scalar(255, 0, 0) : cv::Scalar(0, 255, 0);
+        const cv::Scalar color(255, 0, 0);
         cv::drawContours(
           display, contour_info.contours, static_cast<int>(index), color, 1, cv::LINE_AA);
       }
@@ -436,7 +414,7 @@ private:
       matching_sizes && expected_size ? normal_text : warning_text, 1, cv::LINE_AA);
     cv::putText(
       display,
-      target.valid ? cv::format("Target: (%d,%d)  ROI: %dx%d", target_x, target_y,
+      target.outer_ring_valid ? cv::format("Target: %s (%d,%d)  ROI: %dx%d", target.marker_type.c_str(), target_x, target_y,
         sample_window_size_, sample_window_size_) : cv::format("Target: invalid  ROI: %dx%d",
         sample_window_size_, sample_window_size_),
       cv::Point(24, 86), cv::FONT_HERSHEY_SIMPLEX, 0.55, normal_text, 1, cv::LINE_AA);
@@ -476,8 +454,8 @@ private:
       point.valid ? normal_text : warning_text, 1, cv::LINE_AA);
     cv::putText(
       display,
-      cv::format("Geometry: cross=%s rings=%s score=%.0f", target.lines.empty() ? "MISS" : "OK",
-        target.valid ? "OK" : "MISS", target.score),
+      cv::format("Geometry: type=%s rings=%s ring=%.2f cross=%.2f", target.marker_type.c_str(),
+        target.inner_ring_valid ? "OK" : "MISS", target.ring_score, target.cross_score),
       cv::Point(24, 227), cv::FONT_HERSHEY_SIMPLEX, 0.45,
       target.valid ? normal_text : warning_text, 1, cv::LINE_AA);
     cv::putText(
@@ -485,13 +463,12 @@ private:
       cv::FONT_HERSHEY_SIMPLEX, 0.45, target.valid ? normal_text : warning_text, 1, cv::LINE_AA);
     cv::putText(
       display,
-      cv::format("Canny: %d/%d  Hough: %d  Min angle: %.0f deg",
-        geometry_config_.canny_low_threshold, geometry_config_.canny_high_threshold,
-        geometry_config_.hough_threshold, geometry_config_.min_cross_angle_deg),
+      cv::format("Blur: %d  CLAHE: %.1f  Adaptive: %d", geometry_config_.gaussian_blur_kernel,
+        geometry_config_.clahe_clip_limit, geometry_config_.adaptive_threshold_block_size),
       cv::Point(24, 273), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
     if (view_mode_ == "BINARY") {
       cv::putText(
-        display, cv::format("Otsu threshold: %.1f", binary_threshold), cv::Point(24, 296),
+        display, cv::format("Ring ratio: %.2f  Cross: %.2f", target.inner_outer_ratio, target.cross_score), cv::Point(24, 296),
         cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
       cv::putText(
         display,
@@ -506,11 +483,7 @@ private:
     if (frame_id.size() > 48U) {
       frame_id = frame_id.substr(0, 45U) + "...";
     }
-    const int threads_y = view_mode_ == "BINARY" ? 363 : 296;
-    const int frame_y = view_mode_ == "BINARY" ? 385 : 319;
-    cv::putText(
-      display, cv::format("OpenCV threads: %d", actual_opencv_num_threads_),
-      cv::Point(24, threads_y), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
+    const int frame_y = view_mode_ == "BINARY" ? 363 : 296;
     cv::putText(
       display, cv::format("Frame: %s", frame_id.c_str()), cv::Point(24, frame_y),
       cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
@@ -536,8 +509,6 @@ private:
   std::string window_name_;
   bool debug_view_ = true;
   std::string view_mode_ = "RGB";
-  int opencv_num_threads_ = 2;
-  int actual_opencv_num_threads_ = 0;
   int log_throttle_ms_ = 2000;
   std::string servo_topic_;
   TargetGeometryConfig geometry_config_;

@@ -29,10 +29,21 @@ Install a verified ARM64 MediaMTX binary at
 `/home/sunrise/mediamtx/mediamtx`, then run:
 
 ```bash
-DEVICE=/dev/d435i_color \
-BITRATE_KBPS=5000 \
-GOP=15 \
+STREAM_CONFIG=/path/to/install/drone_perception/share/drone_perception/config/rdk_d435i_stream.yaml \
+MEDIAMTX_BIN=/home/sunrise/mediamtx/mediamtx \
 ros2 run drone_perception rdk_d435i_mediamtx_sender.sh
+```
+
+The sender config controls camera resolution, frame rate, encoder bitrate and
+GOP, and the RTSP port, path, and transports. Changes take effect after the
+sender is restarted and do not require rebuilding. The default config captures
+and encodes D435i RGB directly at 320x240@30 without an intermediate resize.
+
+For the standard RDK deployment at `/home/sunrise/drone_ws`, the equivalent
+one-command launcher is:
+
+```bash
+/home/sunrise/drone_ws/install/drone_perception/lib/drone_perception/start_rdk_d435i_sender.sh
 ```
 
 The stream URL is:

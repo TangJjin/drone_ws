@@ -1,0 +1,14 @@
+camera:
+  device: /dev/d435i_color
+  width: 320
+  height: 240
+  fps: 30
+
+encoder:
+  bitrate_kbps: 5000
+  gop: 15
+
+rtsp:
+  port: 8554
+  path: d435i
+  transports: [udp, tcp]

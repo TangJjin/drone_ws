@@ -48,6 +48,7 @@ install(PROGRAMS
   scripts/rdk_mjpeg_rtp_display.sh
   scripts/rdk_mjpeg_rtp_cv_display.py
   scripts/rdk_d435i_mediamtx_sender.sh
+  scripts/start_rdk_d435i_sender.sh
   scripts/camera_param_tuner.py
   DESTINATION lib/${PROJECT_NAME}
 )

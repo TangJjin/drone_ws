@@ -11,8 +11,11 @@ MEDIAMTX_BIN=${MEDIAMTX_BIN:-/home/sunrise/mediamtx/mediamtx}
   exit 1
 }
 
+# ROS 2 setup scripts may read optional variables before defining them.
+set +u
 source "$ROS_SETUP"
 source "$DRONE_WS/install/setup.bash"
+set -u
 
 package_prefix=$(ros2 pkg prefix drone_perception)
 STREAM_CONFIG=${STREAM_CONFIG:-$package_prefix/share/drone_perception/config/rdk_d435i_stream.yaml}

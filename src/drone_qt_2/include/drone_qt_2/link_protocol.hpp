@@ -6,7 +6,7 @@ namespace drone_msgs::link_protocol
 {
     constexpr uint8_t kSof1 = 0xAA;//帧头1，固定值0xAA，表示一帧数据的开始
     constexpr uint8_t kSof2 = 0x55;//帧头2，固定值0x55，与kSof1一起用于帧同步，确保接收端能够正确识别帧的起始位置
-    constexpr uint8_t kVersion = 0x03;//V3使用结构化移动和视觉伺服任务参数
+    constexpr uint8_t kVersion = 0x04;//V4在结构化视觉伺服参数中增加 enabled 开关
     constexpr uint8_t kFlagNeedAck = 0x01;//标志位，表示发送的请求需要对方回复确认帧
     constexpr uint8_t kFlagAck = 0x02;//标志位，表示为一个确认帧
 

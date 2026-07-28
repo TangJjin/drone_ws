@@ -1,3 +1,6 @@
+# Whether visual-servo actions are inserted into the generated mission.
+bool enabled
+
 # Target identifier. An empty value locks the first eligible target.
 string target_id
 

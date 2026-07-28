@@ -31,15 +31,19 @@ struct Options
 {
   std::string input;
   std::string transport{"udp"};
+  int display_width{0};
+  int display_height{0};
 };
 
 void printUsage(const char * program)
 {
   std::fprintf(
     stderr,
-    "Usage: %s --input RTSP_URL [--transport udp|tcp]\n"
+    "Usage: %s --input RTSP_URL [--transport udp|tcp] [--display-width N --display-height N]\n"
     "  --input URL       MediaMTX H.264 stream URL\n"
     "  --transport TYPE  RTP transport (default: udp)\n"
+    "  --display-width N  Override the HDMI output width\n"
+    "  --display-height N Override the HDMI output height\n"
     "  --help            Show this message\n",
     program);
 }
@@ -50,18 +54,22 @@ Options parseOptions(int argc, char ** argv)
   const option long_options[] = {
     {"input", required_argument, nullptr, 'i'},
     {"transport", required_argument, nullptr, 't'},
+    {"display-width", required_argument, nullptr, 'w'},
+    {"display-height", required_argument, nullptr, 'H'},
     {"help", no_argument, nullptr, 'h'},
     {nullptr, 0, nullptr, 0},
   };
 
   while (true) {
-    const int key = getopt_long(argc, argv, "i:t:h", long_options, nullptr);
+    const int key = getopt_long(argc, argv, "i:t:w:H:h", long_options, nullptr);
     if (key == -1) {
       break;
     }
     switch (key) {
       case 'i': options.input = optarg; break;
       case 't': options.transport = optarg; break;
+      case 'w': options.display_width = std::atoi(optarg); break;
+      case 'H': options.display_height = std::atoi(optarg); break;
       case 'h':
         printUsage(argv[0]);
         std::exit(0);
@@ -76,6 +84,12 @@ Options parseOptions(int argc, char ** argv)
   }
   if (options.transport != "udp" && options.transport != "tcp") {
     throw std::invalid_argument("--transport must be udp or tcp");
+  }
+  if ((options.display_width == 0) != (options.display_height == 0) ||
+    options.display_width < 0 || options.display_height < 0)
+  {
+    throw std::invalid_argument(
+            "--display-width and --display-height must be specified together as positive values");
   }
   return options;
 }
@@ -92,7 +106,8 @@ class RdkDisplayPipeline
 public:
   RdkDisplayPipeline(
     int stream_width, int stream_height,
-    const uint8_t * decoder_extradata, int decoder_extradata_size)
+    const uint8_t * decoder_extradata, int decoder_extradata_size,
+    int requested_display_width, int requested_display_height)
   {
     try {
       decoder_ = sp_init_decoder_module();
@@ -102,7 +117,12 @@ public:
         throw std::runtime_error("failed to initialize an RDK media module");
       }
 
-      sp_get_display_resolution(&display_width_, &display_height_);
+      if (requested_display_width > 0) {
+        display_width_ = requested_display_width;
+        display_height_ = requested_display_height;
+      } else {
+        sp_get_display_resolution(&display_width_, &display_height_);
+      }
       if (display_width_ <= 0 || display_height_ <= 0) {
         throw std::runtime_error(
                 "no active HDMI display mode is available");
@@ -279,7 +299,8 @@ int main(int argc, char ** argv)
       stderr, "Receiving %s over RTP/%s, H.264 %dx%d\n",
       options.input.c_str(), options.transport.c_str(), codec->width, codec->height);
     RdkDisplayPipeline pipeline(
-      codec->width, codec->height, codec->extradata, codec->extradata_size);
+      codec->width, codec->height, codec->extradata, codec->extradata_size,
+      options.display_width, options.display_height);
 
     packet = av_packet_alloc();
     if (packet == nullptr) {

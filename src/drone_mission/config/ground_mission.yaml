@@ -11,140 +11,127 @@ mission:
     # Point 01 - fly directly from the takeoff origin to the A-B midpoint
     - type: "move"
       frame: "world_body"
-      position: [2.000, -0.750, 1.500]
+      position: [1.620, -0.340, 1.500]
       yaw: 0.000
     - type: "visual_servo"
 
     # Point 02 - A-B straight
     - type: "move"
       frame: "world_body"
-      position: [2.406, -0.750, 1.500]
+      position: [2.376, -0.340, 1.500]
       yaw: 0.000
     - type: "visual_servo"
 
     # Point 03 - enter the upper arc
     - type: "move"
       frame: "world_body"
-      position: [2.812, -0.753, 1.500]
-      yaw: -0.082
+      position: [2.912, -0.553, 1.500]
+      yaw: -0.882
     - type: "visual_servo"
 
     # Point 04 - upper arc
     - type: "move"
       frame: "world_body"
-      position: [3.188, -0.891, 1.500]
-      yaw: -0.624
+      position: [3.188, -1.091, 1.500]
+      yaw: -1.706
     - type: "visual_servo"
 
     # Point 05 - upper arc
     - type: "move"
       frame: "world_body"
-      position: [3.439, -1.204, 1.500]
-      yaw: -1.165
+      position: [2.909, -1.624, 1.500]
+      yaw: -2.325
     - type: "visual_servo"
+
+    - type: "move"
+      frame: "world_body"
+      position: [2.323, -1.841, 1.500]
+      yaw: -3.142
+    - type: "visual_servo"
+
+
+
+
+
+
+
+
+
 
     # Point 06 - upper arc
     - type: "move"
       frame: "world_body"
-      position: [3.493, -1.601, 1.500]
-      yaw: -1.706
+      position: [1.920, -1.841, 1.500]
+      yaw: -3.142
     - type: "visual_servo"
 
     # Point 07 - upper arc
     - type: "move"
       frame: "world_body"
-      position: [3.335, -1.970, 1.500]
-      yaw: -2.247
+      position: [1.600, -1.841, 1.500]
+      yaw: -3.142
     - type: "visual_servo"
 
     # Point 08 - leave the upper arc
     - type: "move"
       frame: "world_body"
-      position: [3.009, -2.204, 1.500]
-      yaw: -2.789
+      position: [1.300, -1.841, 1.500]
+      yaw: -3.142
     - type: "visual_servo"
 
     # Point 09 - C-D straight
     - type: "move"
       frame: "world_body"
-      position: [2.609, -2.250, 1.500]
+      position: [0.870, -1.841, 1.500]
       yaw: -3.142
     - type: "visual_servo"
+
+
+
+
+
+
+
+
+
+
+
 
     # Point 10 - C-D straight
     - type: "move"
       frame: "world_body"
-      position: [2.203, -2.250, 1.500]
-      yaw: -3.142
+      position: [0.490, -1.620, 1.500]
+      yaw: 2.400
     - type: "visual_servo"
 
     # Point 11 - C-D straight
     - type: "move"
       frame: "world_body"
-      position: [1.797, -2.250, 1.500]
-      yaw: -3.142
+      position: [0.120, -1.150, 1.500]
+      yaw: 1.550
     - type: "visual_servo"
 
     # Point 12 - C-D straight
     - type: "move"
       frame: "world_body"
-      position: [1.391, -2.250, 1.500]
-      yaw: -3.142
+      position: [0.490, -0.550, 1.500]
+      yaw: 0.775
     - type: "visual_servo"
 
     # Point 13 - enter the lower arc
     - type: "move"
       frame: "world_body"
-      position: [0.991, -2.204, 1.500]
-      yaw: 2.789
-    - type: "visual_servo"
-
-    # Point 14 - lower arc
-    - type: "move"
-      frame: "world_body"
-      position: [0.665, -1.970, 1.500]
-      yaw: 2.247
-    - type: "visual_servo"
-
-    # Point 15 - lower arc
-    - type: "move"
-      frame: "world_body"
-      position: [0.507, -1.601, 1.500]
-      yaw: 1.706
-    - type: "visual_servo"
-
-    # Point 16 - lower arc
-    - type: "move"
-      frame: "world_body"
-      position: [0.561, -1.204, 1.500]
-      yaw: 1.165
-    - type: "visual_servo"
-
-    # Point 17 - lower arc
-    - type: "move"
-      frame: "world_body"
-      position: [0.812, -0.891, 1.500]
-      yaw: 0.624
-    - type: "visual_servo"
-
-    # Point 18 - leave the lower arc
-    - type: "move"
-      frame: "world_body"
-      position: [1.188, -0.753, 1.500]
-      yaw: 0.082
-    - type: "visual_servo"
-
-    # Point 19 - A-B straight
-    - type: "move"
-      frame: "world_body"
-      position: [1.594, -0.750, 1.500]
+      position: [0.870, -0.340, 1.500]
       yaw: 0.000
     - type: "visual_servo"
+
+
+
 
     # Point 20 - close the oval at the A-B midpoint
     - type: "move"
       frame: "world_body"
-      position: [2.000, -0.750, 1.500]
+      position: [0.000, 0.000, 1.500]
       yaw: 0.000
     - type: "visual_servo"
 
@@ -156,7 +143,7 @@ mission:
 system:
   tolerance: 0.10
   yaw_tolerance_deg: 4.0
-  max_xy_speed_mps: 0.50
+  max_xy_speed_mps: 0.10
   max_z_speed_mps: 0.30
   max_yaw_rate_deg_s: 40.0
 
@@ -179,9 +166,9 @@ system:
   exit_tolerance_x: 0.07
   exit_tolerance_y: 0.07
   settle_time_s: 0.6
-  acquire_timeout_s: 5.0
+  acquire_timeout_s: 7.0
   lost_timeout_s: 1.0
-  overall_timeout_s: 20.0
+  overall_timeout_s: 10.0
   max_body_speed_mps: 0.20
   continue_on_timeout: true
   auto_start_mission: false

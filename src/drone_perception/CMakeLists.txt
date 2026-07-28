@@ -47,6 +47,7 @@ install(PROGRAMS
   scripts/orangepi_realsense_h264_sender.sh
   scripts/rdk_mjpeg_rtp_display.sh
   scripts/rdk_mjpeg_rtp_cv_display.py
+  scripts/rdk_d435i_mediamtx_sender.sh
   scripts/camera_param_tuner.py
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -61,6 +62,46 @@ pkg_check_modules(GSTREAMER QUIET
   gstreamer-video-1.0
 )
 pkg_check_modules(RGA QUIET IMPORTED_TARGET librga)
+
+# RDK X5 standalone D435i H.264 sender. Keep this conditional so non-RDK
+# workstations and the RK3588 target can still build the package.
+find_path(RDK_MEDIA_CODEC_INCLUDE_DIR NAMES hb_media_codec.h PATHS /usr/include)
+find_library(RDK_MULTIMEDIA_LIBRARY NAMES multimedia PATHS /usr/hobot/lib /usr/lib)
+pkg_check_modules(RDK_FFMPEG QUIET IMPORTED_TARGET libswscale libavutil)
+find_path(RDK_SP_INCLUDE_DIR NAMES sp_codec.h sp_display.h PATHS /usr/include)
+find_library(RDK_SPCDEV_LIBRARY NAMES spcdev PATHS /lib /usr/lib)
+pkg_check_modules(RDK_AVFORMAT QUIET IMPORTED_TARGET libavformat libavcodec libavutil)
+
+if(RDK_MEDIA_CODEC_INCLUDE_DIR AND RDK_MULTIMEDIA_LIBRARY AND RDK_FFMPEG_FOUND)
+  add_executable(rdk_d435i_h264_sender src/rdk_d435i_h264_sender.cpp)
+  target_compile_features(rdk_d435i_h264_sender PUBLIC cxx_std_17)
+  target_include_directories(rdk_d435i_h264_sender PRIVATE
+    ${RDK_MEDIA_CODEC_INCLUDE_DIR}
+  )
+  target_link_libraries(rdk_d435i_h264_sender
+    ${RDK_MULTIMEDIA_LIBRARY}
+    PkgConfig::RDK_FFMPEG
+  )
+  install(TARGETS rdk_d435i_h264_sender DESTINATION lib/${PROJECT_NAME})
+else()
+  message(STATUS
+    "Skipping rdk_d435i_h264_sender: need RDK hb_media_codec/libmultimedia "
+    "and libswscale/libavutil development files.")
+endif()
+
+if(RDK_SP_INCLUDE_DIR AND RDK_SPCDEV_LIBRARY AND RDK_AVFORMAT_FOUND)
+  add_executable(rdk_rtsp_display_receiver src/rdk_rtsp_display_receiver.cpp)
+  target_compile_features(rdk_rtsp_display_receiver PUBLIC cxx_std_17)
+  target_include_directories(rdk_rtsp_display_receiver PRIVATE ${RDK_SP_INCLUDE_DIR})
+  target_link_libraries(rdk_rtsp_display_receiver
+    ${RDK_SPCDEV_LIBRARY}
+    PkgConfig::RDK_AVFORMAT
+  )
+  install(TARGETS rdk_rtsp_display_receiver DESTINATION lib/${PROJECT_NAME})
+else()
+  message(STATUS
+    "Skipping rdk_rtsp_display_receiver: need RDK spcdev and FFmpeg development files.")
+endif()
 
 if(RKNN_INCLUDE AND RKNN_LIB AND EXISTS "${RKNN_RUNTIME_SO}" AND GSTREAMER_FOUND)
   add_library(rknn_yolo_detector STATIC src/rknn_yolo_detector.cpp)

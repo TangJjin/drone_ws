@@ -614,12 +614,12 @@ void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const Q
 
     quint16 point_count = 0;
     stream >> point_count;
-    // V3 fixed fields: 12 mission doubles, 5 mission bools, 19 visual doubles,
-    // 2 visual bools, and four uint16 string-length prefixes.
-    constexpr int kFixedSummarySize = 12 * 8 + 5 + 19 * 8 + 2 + 4 * 2;
+    // V4 fixed fields: 12 mission doubles, 5 mission bools, 19 visual doubles,
+    // 3 visual bools, and four uint16 string-length prefixes.
+    constexpr int kFixedSummarySize = 12 * 8 + 5 + 19 * 8 + 3 + 4 * 2;
     if (stream.status() != QDataStream::Ok ||
         payload.size() < 2 + static_cast<int>(point_count) * 16 + kFixedSummarySize) {
-        const QByteArray msg = QByteArray("invalid V3 UploadMissionSummaryReq payload");
+        const QByteArray msg = QByteArray("invalid V4 UploadMissionSummaryReq payload");
         cacheAndSendResponse(
             lp::kTypeUploadMissionSummaryResp,
             seq,
@@ -682,21 +682,23 @@ void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const Q
     QByteArray target_id_bytes;
     QByteArray image_x_axis_bytes;
     QByteArray image_y_axis_bytes;
+    quint8 enabled = 0;
     quint8 require_confirmed = 0;
     auto &visual = summary.visual_servo;
     if (!readSizedBytes(stream, frame_bytes) ||
         !readSizedBytes(stream, target_id_bytes)) {
-        const QByteArray msg = QByteArray("invalid V3 mission strings");
+        const QByteArray msg = QByteArray("invalid V4 mission strings");
         cacheAndSendResponse(
             lp::kTypeUploadMissionSummaryResp,
             seq,
             encodeUploadResponsePayload(false, msg, QByteArray(), 0));
         return;
     }
+    stream >> enabled;
     stream >> require_confirmed;
     if (!readSizedBytes(stream, image_x_axis_bytes) ||
         !readSizedBytes(stream, image_y_axis_bytes)) {
-        const QByteArray msg = QByteArray("invalid V3 visual-servo axis strings");
+        const QByteArray msg = QByteArray("invalid V4 visual-servo axis strings");
         cacheAndSendResponse(
             lp::kTypeUploadMissionSummaryResp,
             seq,
@@ -706,6 +708,7 @@ void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const Q
 
     summary.frame = frame_bytes.toStdString();
     visual.target_id = target_id_bytes.toStdString();
+    visual.enabled = (enabled != 0);
     visual.require_confirmed = (require_confirmed != 0);
     visual.image_x_axis = image_x_axis_bytes.toStdString();
     visual.image_y_axis = image_y_axis_bytes.toStdString();
@@ -733,7 +736,7 @@ void AirborneLinkBridge::handleUploadMissionSummaryRequest(uint16_t seq, const Q
     stream >> continue_on_timeout;
     visual.continue_on_timeout = (continue_on_timeout != 0);
     if (!streamFullyConsumed(stream)) {
-        const QByteArray msg = QByteArray("invalid trailing V3 mission data");
+        const QByteArray msg = QByteArray("invalid trailing V4 mission data");
         cacheAndSendResponse(
             lp::kTypeUploadMissionSummaryResp,
             seq,

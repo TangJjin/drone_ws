@@ -102,15 +102,10 @@ public:
         throw std::runtime_error("failed to initialize an RDK media module");
       }
 
-      int display_widths[20]{};
-      int display_heights[20]{};
-      sp_get_display_resolution(display_widths, display_heights);
-      selectDisplayResolution(
-        stream_width, stream_height, display_widths, display_heights,
-        display_width_, display_height_);
+      sp_get_display_resolution(&display_width_, &display_height_);
       if (display_width_ <= 0 || display_height_ <= 0) {
         throw std::runtime_error(
-                "no HDMI mode is compatible with the RTSP stream resolution");
+                "no active HDMI display mode is available");
       }
 
       int result = sp_start_decode(
@@ -184,22 +179,6 @@ public:
   }
 
 private:
-  static void selectDisplayResolution(
-    int stream_width, int stream_height,
-    const int * widths, const int * heights,
-    int & selected_width, int & selected_height)
-  {
-    selected_width = 0;
-    selected_height = 0;
-    for (int index = 0; index < 20 && widths[index] > 0; ++index) {
-      if (stream_width >= widths[index] && stream_height >= heights[index]) {
-        selected_width = widths[index];
-        selected_height = heights[index];
-        break;
-      }
-    }
-  }
-
   [[noreturn]] static void throwRdkError(const char * operation, int result)
   {
     throw std::runtime_error(

@@ -19,7 +19,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(hbm_img_msgs QUIET)
-find_path(HBM_IMG_MSGS_INCLUDE_DIR NAMES hbm_img_msgs/msg/hbm_msg1080p.hpp
+find_path(HBM_IMG_MSGS_INCLUDE_DIR NAMES hbm_img_msgs/msg/hbm_msg1080_p.hpp
   PATHS /opt/tros/humble/include/hbm_img_msgs /opt/ros/humble/include/hbm_img_msgs)
 
 add_executable(line_vision_node

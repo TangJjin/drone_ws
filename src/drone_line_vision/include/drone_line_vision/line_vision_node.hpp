@@ -10,7 +10,7 @@
 #include <chrono>
 #include <mutex>
 #ifdef DRONE_LINE_VISION_HAS_HBM
-#include <hbm_img_msgs/msg/hbm_msg1080p.hpp>
+#include <hbm_img_msgs/msg/hbm_msg1080_p.hpp>
 #endif
 
 namespace drone_line_vision

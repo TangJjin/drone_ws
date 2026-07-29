@@ -1,0 +1,54 @@
+line_vision_node:
+  ros__parameters:
+    config_file: ""
+    camera:
+      device: /dev/v4l/by-id/usb-12MP_U3_Camera_12MP_U3_Camera_2601230002-video-index0
+      width: 1280
+      height: 720
+      fps: 60
+      input_format: MJPG
+      decoder: mppjpegdec
+      decoder_output: NV12
+      queue_size: 1
+    roi:
+      enabled: false
+      x: 0
+      y: 0
+      width: 0
+      height: 0
+    threshold:
+      mode: fixed
+      gray_threshold: 70
+      invert: false
+      min_candidate_pixels: 100
+      max_candidate_pixels: 100000
+    morphology:
+      enabled: true
+      kernel_size: 3
+      open_iterations: 1
+      close_iterations: 1
+    line_fit:
+      min_component_area: 80
+      max_fit_residual_px: 15.0
+      min_line_length_px: 80.0
+      near_scan_ratio: 0.75
+      far_scan_ratio: 0.25
+    display:
+      enabled: true
+      window_width: 1600
+      window_height: 900
+      display_fps_limit: 30
+      show_debug_text: true
+      show_binary_mask: true
+      show_data_panel: true
+    logging:
+      enabled: true
+      output_directory: /tmp/line_vision
+      csv_enabled: true
+      json_enabled: true
+      save_images_on_invalid: false
+    runtime:
+      reload_key: r
+      save_key: s
+      pause_key: p
+      quit_key: q

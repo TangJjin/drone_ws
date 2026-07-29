@@ -23,7 +23,7 @@ private:
   bool loadConfig(const std::string & path, LineVisionConfig & out, std::string & error) const;
   void processFrame(const cv::Mat & y_plane, const rclcpp::Time & stamp, uint64_t frame_id);
   void display(const cv::Mat & y, const cv::Mat & mask, const LineResult & result,
-    double processing_us, bool decode_ok);
+    const drone_msgs::msg::LinePixelObservation & observation);
   void saveCurrent(const cv::Mat & y, const cv::Mat & mask, const cv::Mat & debug,
     const LineResult & result, double processing_us);
   LineVisionConfig config_; mutable std::mutex config_mutex_;

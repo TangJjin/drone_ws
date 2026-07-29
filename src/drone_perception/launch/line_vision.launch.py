@@ -18,9 +18,13 @@ def generate_launch_description():
         get_package_share_directory("hobot_codec"), "launch", "hobot_codec_decode.launch.py")
     return LaunchDescription([
         DeclareLaunchArgument("config_file", default_value=config),
-        DeclareLaunchArgument("usb_video_device", default_value="/dev/video0"),
-        DeclareLaunchArgument("usb_image_width", default_value="1280"),
-        DeclareLaunchArgument("usb_image_height", default_value="720"),
+        DeclareLaunchArgument(
+            "usb_video_device",
+            default_value=(
+                "/dev/v4l/by-id/usb-12MP_U3_Camera_12MP_U3_Camera_2601230002-video-index0"),
+        ),
+        DeclareLaunchArgument("usb_image_width", default_value="640"),
+        DeclareLaunchArgument("usb_image_height", default_value="360"),
         DeclareLaunchArgument("usb_framerate", default_value="60"),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(usb_cam_launch),

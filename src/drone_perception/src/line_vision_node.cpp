@@ -40,6 +40,24 @@ std::string finiteText(double value)
 {
   return std::isfinite(value) ? std::to_string(value) : "NaN";
 }
+
+std::string displayNumber(double value, int precision = 3)
+{
+  if (!std::isfinite(value)) {return "NaN";}
+  std::ostringstream stream;
+  stream << std::fixed << std::setprecision(precision) << value;
+  return stream.str();
+}
+
+std::string shapeText(TrackShape shape)
+{
+  switch (shape) {
+    case TrackShape::Line: return "LINE";
+    case TrackShape::ArcLeft: return "ARC_LEFT";
+    case TrackShape::ArcRight: return "ARC_RIGHT";
+    default: return "INVALID";
+  }
+}
 }
 
 LineVisionNode::LineVisionNode()
@@ -97,6 +115,9 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     c.threshold.mode = value<std::string>(threshold, "mode", c.threshold.mode);
     c.threshold.gray_threshold = value<int>(threshold, "gray_threshold", c.threshold.gray_threshold);
     c.threshold.invert = value<bool>(threshold, "invert", c.threshold.invert);
+    c.threshold.adaptive_block_size = value<int>(threshold, "adaptive_block_size",
+      c.threshold.adaptive_block_size);
+    c.threshold.adaptive_c = value<double>(threshold, "adaptive_c", c.threshold.adaptive_c);
     c.threshold.min_candidate_pixels = value<int>(threshold, "min_candidate_pixels", c.threshold.min_candidate_pixels);
     c.threshold.max_candidate_pixels = value<int>(threshold, "max_candidate_pixels", c.threshold.max_candidate_pixels);
     const auto morphology = p["morphology"];
@@ -110,6 +131,34 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     c.line_fit.min_line_length_px = value<double>(fit, "min_line_length_px", c.line_fit.min_line_length_px);
     c.line_fit.near_scan_ratio = value<double>(fit, "near_scan_ratio", c.line_fit.near_scan_ratio);
     c.line_fit.far_scan_ratio = value<double>(fit, "far_scan_ratio", c.line_fit.far_scan_ratio);
+    const auto curve = p["curve"];
+    c.curve.min_fit_points = value<int>(curve, "min_fit_points", c.curve.min_fit_points);
+    c.curve.max_fit_residual_px = value<double>(curve, "max_fit_residual_px", c.curve.max_fit_residual_px);
+    c.curve.straight_curvature_threshold_px_inv = value<double>(curve,
+      "straight_curvature_threshold_px_inv", c.curve.straight_curvature_threshold_px_inv);
+    c.curve.reference_row_ratio = value<double>(curve, "reference_row_ratio", c.curve.reference_row_ratio);
+    c.curve.direction_sign = value<int>(curve, "direction_sign", c.curve.direction_sign);
+    const auto shape_gate = p["shape_gate"];
+    c.shape_gate.enabled = value<bool>(shape_gate, "enabled", c.shape_gate.enabled);
+    c.shape_gate.max_line_residual_px = value<double>(shape_gate,
+      "max_line_residual_px", c.shape_gate.max_line_residual_px);
+    c.shape_gate.max_circle_residual_px = value<double>(shape_gate,
+      "max_circle_residual_px", c.shape_gate.max_circle_residual_px);
+    c.shape_gate.min_circle_radius_px = value<double>(shape_gate,
+      "min_circle_radius_px", c.shape_gate.min_circle_radius_px);
+    c.shape_gate.max_circle_radius_px = value<double>(shape_gate,
+      "max_circle_radius_px", c.shape_gate.max_circle_radius_px);
+    c.shape_gate.min_arc_span_rad = value<double>(shape_gate,
+      "min_arc_span_rad", c.shape_gate.min_arc_span_rad);
+    const auto centerline = p["centerline"];
+    c.centerline.row_step_px = value<int>(centerline, "row_step_px", c.centerline.row_step_px);
+    c.centerline.min_valid_rows = value<int>(centerline, "min_valid_rows", c.centerline.min_valid_rows);
+    c.centerline.min_band_width_px = value<int>(centerline, "min_band_width_px", c.centerline.min_band_width_px);
+    c.centerline.max_band_width_px = value<int>(centerline, "max_band_width_px", c.centerline.max_band_width_px);
+    c.centerline.max_center_jump_px = value<int>(centerline, "max_center_jump_px", c.centerline.max_center_jump_px);
+    c.centerline.max_gap_rows = value<int>(centerline, "max_gap_rows", c.centerline.max_gap_rows);
+    c.centerline.bottom_search_ratio = value<double>(centerline,
+      "bottom_search_ratio", c.centerline.bottom_search_ratio);
     const auto display_cfg = p["display"];
     c.display.enabled = value<bool>(display_cfg, "enabled", c.display.enabled);
     c.display.window_width = value<int>(display_cfg, "window_width", c.display.window_width);
@@ -132,12 +181,33 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     if (c.camera.width <= 0 || c.camera.height <= 0 || c.camera.fps <= 0) {
       throw std::runtime_error("camera dimensions and fps must be positive");
     }
+    if ((c.threshold.mode != "fixed" && c.threshold.mode != "otsu" && c.threshold.mode != "adaptive") ||
+      c.threshold.adaptive_block_size < 3 || (c.threshold.adaptive_block_size % 2) == 0) {
+      throw std::runtime_error("threshold parameters are invalid");
+    }
     if (c.camera.source_topic.empty() || c.camera.source_encoding != "nv12") {
       throw std::runtime_error("source_topic must be set and source_encoding must be nv12");
     }
     if (c.roi.enabled && (c.roi.x < 0 || c.roi.y < 0 || c.roi.width <= 0 || c.roi.height <= 0 ||
       c.roi.x + c.roi.width > c.camera.width || c.roi.y + c.roi.height > c.camera.height)) {
       throw std::runtime_error("ROI is outside the configured image bounds");
+    }
+    if (c.curve.min_fit_points < 3 || c.curve.max_fit_residual_px <= 0.0 ||
+      c.curve.straight_curvature_threshold_px_inv < 0.0 || c.curve.reference_row_ratio < 0.0 ||
+      c.curve.reference_row_ratio > 1.0 || (c.curve.direction_sign != -1 && c.curve.direction_sign != 1)) {
+      throw std::runtime_error("curve parameters are invalid");
+    }
+    if (c.shape_gate.max_line_residual_px <= 0.0 || c.shape_gate.max_circle_residual_px <= 0.0 ||
+      c.shape_gate.min_circle_radius_px <= 0.0 ||
+      c.shape_gate.max_circle_radius_px < c.shape_gate.min_circle_radius_px ||
+      c.shape_gate.min_arc_span_rad <= 0.0 || c.shape_gate.min_arc_span_rad > 2.0 * CV_PI) {
+      throw std::runtime_error("shape gate parameters are invalid");
+    }
+    if (c.centerline.row_step_px < 1 || c.centerline.min_valid_rows < 3 ||
+      c.centerline.min_band_width_px < 1 || c.centerline.max_band_width_px < c.centerline.min_band_width_px ||
+      c.centerline.max_center_jump_px < 1 || c.centerline.max_gap_rows < 0 ||
+      c.centerline.bottom_search_ratio < 0.0 || c.centerline.bottom_search_ratio > 1.0) {
+      throw std::runtime_error("centerline parameters are invalid");
     }
     out = c;
     return true;
@@ -186,35 +256,46 @@ void LineVisionNode::processFrame(const cv::Mat & y, const rclcpp::Time & stamp,
   previous_observation = observation_now;
   stats_.addObservation(processing_us, observation_interval);
   if (!result.valid) {lost_frames_.fetch_add(1);} else {lost_frames_.store(0);}
-  if (result.valid) {result.center_u += 0.0;}
-  display(y, result.mask, result, processing_us, true);
   drone_msgs::msg::LinePixelObservation message;
   message.header.stamp = stamp; message.header.frame_id = "camera";
-  message.valid = result.valid; message.line_center_u_px = result.valid ? static_cast<float>(result.center_u) : NAN;
+  message.valid = result.valid;
+  message.decode_ok = true;
+  message.roi_valid = !config_.roi.enabled || result.roi.area() > 0;
+  message.curve_valid = result.valid && result.curve_valid;
+  message.image_width_px = static_cast<uint32_t>(y.cols);
+  message.image_height_px = static_cast<uint32_t>(y.rows);
+  message.line_center_u_px = result.valid ? static_cast<float>(result.center_u) : NAN;
   message.line_center_v_px = result.valid ? static_cast<float>(result.center_v) : NAN;
   message.image_center_u_px = static_cast<float>(y.cols / 2.0);
   message.error_u_px = result.valid ? static_cast<float>(result.center_u - y.cols / 2.0) : NAN;
+  message.heading_error_rad = message.curve_valid ? static_cast<float>(result.heading_error_rad) : NAN;
   message.line_angle_rad = result.valid ? static_cast<float>(result.angle_rad) : NAN;
+  message.curvature_px_inv = message.curve_valid ? static_cast<float>(result.curvature_px_inv) : NAN;
+  message.curve_direction = message.curve_valid ? static_cast<int8_t>(result.curve_direction) : 0;
   message.confidence = static_cast<float>(result.valid ? result.confidence : 0.0);
   message.candidate_pixel_count = static_cast<uint32_t>(std::max(0, result.candidate_pixels));
   message.lost_frame_count = lost_frames_.load(); message.processing_time_us = static_cast<uint32_t>(processing_us);
   message.capture_fps = static_cast<float>(stats_.captureFps()); message.observation_fps = static_cast<float>(stats_.observationFps());
-  message.decode_ok = true; message.roi_valid = !config_.roi.enabled || result.roi.area() > 0;
+  display(y, result.mask, result, message);
   publisher_->publish(message);
   if (config_.logging.enabled && config_.logging.csv_enabled) {
     std::filesystem::create_directories(config_.logging.output_directory);
     const auto path = std::filesystem::path(config_.logging.output_directory) / "observations.csv";
     const bool exists = std::filesystem::exists(path);
     std::ofstream csv(path, std::ios::app);
-    if (!exists) {csv << "frame_id,valid,line_center_u_px,line_center_v_px,error_u_px,line_angle_rad,confidence,candidate_pixel_count,processing_time_us\n";}
-    csv << frame_id << ',' << (result.valid ? 1 : 0) << ',' << finiteText(result.center_u) << ',' << finiteText(result.center_v) << ','
-      << finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN) << ',' << finiteText(result.angle_rad) << ','
+    if (!exists) {csv << "frame_id,valid,curve_valid,line_center_u_px,line_center_v_px,error_u_px,heading_error_rad,curvature_px_inv,curve_direction,line_angle_rad,confidence,candidate_pixel_count,processing_time_us\n";}
+    csv << frame_id << ',' << (result.valid ? 1 : 0) << ',' << (result.curve_valid ? 1 : 0) << ','
+      << finiteText(result.center_u) << ',' << finiteText(result.center_v) << ','
+      << finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN) << ','
+      << finiteText(result.curve_valid ? result.heading_error_rad : NAN) << ','
+      << finiteText(result.curve_valid ? result.curvature_px_inv : NAN) << ',' << result.curve_direction << ','
+      << finiteText(result.angle_rad) << ','
       << result.confidence << ',' << result.candidate_pixels << ',' << processing_us << '\n';
   }
 }
 
 void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const LineResult & result,
-  double processing_us, bool decode_ok)
+  const drone_msgs::msg::LinePixelObservation & observation)
 {
   if (!config_.display.enabled) {return;}
   const auto now = std::chrono::steady_clock::now();
@@ -228,35 +309,45 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   last_display_time_ = now;
   cv::Mat debug = mask.empty() ? cv::Mat::zeros(y.size(), CV_8UC1) : mask.clone();
   cv::line(debug, cv::Point(debug.cols / 2, 0), cv::Point(debug.cols / 2, debug.rows), cv::Scalar(128), 1);
-  if (result.valid) {
-    cv::circle(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)), 7, cv::Scalar(190), -1);
-    cv::line(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)),
-      cv::Point(static_cast<int>(result.center_u + 100 * std::cos(result.angle_rad)), static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(96), 2);
+  cv::Mat combined;
+  cv::cvtColor(debug, combined, cv::COLOR_GRAY2BGR);
+  if (result.component.size() >= 2U) {
+    const cv::Scalar route_color = result.valid ? cv::Scalar(0, 0, 255) : cv::Scalar(110, 110, 110);
+    cv::polylines(combined, result.component, false, route_color, 4, cv::LINE_AA);
   }
-  cv::Mat combined = debug;
+  if (result.valid) {
+    const cv::Point center(static_cast<int>(result.center_u), static_cast<int>(result.center_v));
+    cv::circle(combined, center, 7, cv::Scalar(0, 255, 255), -1);
+    cv::line(combined, center,
+      cv::Point(static_cast<int>(result.center_u + 100 * std::cos(result.angle_rad)),
+      static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(255, 180, 0), 2);
+  }
   if (config_.display.show_data_panel) {
-    const int panel_width = std::min(520, combined.cols - 20);
-    const int panel_height = std::min(360, combined.rows - 20);
+    const int panel_width = std::min(500, combined.cols - 20);
+    const int panel_height = std::min(260, combined.rows - 20);
     cv::Rect panel_rect(10, 10, panel_width, panel_height);
     cv::Mat panel = combined(panel_rect).clone();
     panel.setTo(cv::Scalar(25));
     auto text = [&](const std::string & value_text, int row) {
-      cv::putText(panel, value_text, cv::Point(12, row), cv::FONT_HERSHEY_SIMPLEX, 0.48,
-        cv::Scalar(235), 1, cv::LINE_AA);
+      cv::putText(panel, value_text, cv::Point(12, row), cv::FONT_HERSHEY_SIMPLEX, 0.55,
+        cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
     };
-    text("BINARY MASK | FULL_IMAGE", 24);
-    text("size: " + std::to_string(y.cols) + "x" + std::to_string(y.rows) + "  decode: " + std::to_string(decode_ok), 48);
-    text("valid: " + std::to_string(result.valid) + "  confidence: " + std::to_string(result.confidence), 72);
-    text("center: " + finiteText(result.valid ? result.center_u : NAN) + ", " + finiteText(result.valid ? result.center_v : NAN), 96);
-    text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 120);
-    text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 144);
-    text("candidates: " + std::to_string(result.candidate_pixels) + "  lost: " + std::to_string(lost_frames_.load()), 168);
-    text("capture/input_fps: " + std::to_string(stats_.captureFps()), 192);
-    text("observation/output_fps: " + std::to_string(stats_.observationFps()), 216);
-    text("processing_us: " + std::to_string(processing_us), 240);
-    text("p50/p95_us: " + std::to_string(stats_.p50Us()) + "/" + std::to_string(stats_.p95Us()), 264);
-    text("threshold: " + std::to_string(config_.threshold.gray_threshold), 288);
-    text("topic: " + config_.camera.source_topic, 312);
+    text("BINARY MASK | OTSU | SHAPE GATE", 26);
+    text("shape=" + shapeText(result.shape) + " valid=" + std::to_string(observation.valid) +
+      " decode_ok=" + std::to_string(observation.decode_ok), 52);
+    text("error_u_px=" + displayNumber(observation.error_u_px), 78);
+    text("heading_error_rad=" + displayNumber(observation.heading_error_rad) +
+      " curvature_px_inv=" + displayNumber(observation.curvature_px_inv), 104);
+    text("curve_direction=" + std::to_string(observation.curve_direction) +
+      " confidence=" + displayNumber(observation.confidence), 130);
+    text("candidate_pixels=" + std::to_string(observation.candidate_pixel_count) +
+      " lost_frames=" + std::to_string(observation.lost_frame_count), 156);
+    text("capture_fps=" + displayNumber(observation.capture_fps) +
+      " observation_fps=" + displayNumber(observation.observation_fps), 182);
+    text("processing_us=" + std::to_string(observation.processing_time_us) +
+      " p95_us=" + displayNumber(stats_.p95Us()), 208);
+    text("threshold_mode=" + config_.threshold.mode + " invert=" +
+      std::to_string(config_.threshold.invert), 234);
     cv::addWeighted(combined(panel_rect), 0.35, panel, 0.65, 0.0, combined(panel_rect));
   }
   static bool window_created = false;
@@ -281,7 +372,7 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
       RCLCPP_ERROR(get_logger(), "YAML reload failed: %s", error.c_str());
     }
   } else if (key == config_.runtime.save_key) {
-    saveCurrent(y, mask, debug, result, processing_us);
+    saveCurrent(y, mask, debug, result, static_cast<double>(observation.processing_time_us));
   }
 }
 
@@ -303,6 +394,10 @@ void LineVisionNode::saveCurrent(const cv::Mat & y, const cv::Mat & mask, const 
        << "  \"line_center_v_px\": " << finiteText(result.valid ? result.center_v : NAN) << ",\n"
        << "  \"error_u_px\": " << finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN) << ",\n"
        << "  \"line_angle_rad\": " << finiteText(result.valid ? result.angle_rad : NAN) << ",\n"
+       << "  \"curve_valid\": " << (result.curve_valid ? "true" : "false") << ",\n"
+       << "  \"heading_error_rad\": " << finiteText(result.curve_valid ? result.heading_error_rad : NAN) << ",\n"
+       << "  \"curvature_px_inv\": " << finiteText(result.curve_valid ? result.curvature_px_inv : NAN) << ",\n"
+       << "  \"curve_direction\": " << result.curve_direction << ",\n"
        << "  \"confidence\": " << result.confidence << ",\n"
        << "  \"candidate_pixel_count\": " << result.candidate_pixels << ",\n"
        << "  \"processing_time_us\": " << processing_us << "\n}\n";

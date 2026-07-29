@@ -4,8 +4,8 @@ line_vision_node:
     camera:
       source_topic: /line_vision/nv12
       device: /dev/v4l/by-id/usb-12MP_U3_Camera_12MP_U3_Camera_2601230002-video-index0
-      width: 1280
-      height: 720
+      width: 640
+      height: 360
       fps: 60
       pixel_format: mjpeg
       io_method: mmap
@@ -18,15 +18,17 @@ line_vision_node:
       width: 0
       height: 0
     threshold:
-      mode: fixed
+      mode: adaptive
       gray_threshold: 70
       invert: false
+      adaptive_block_size: 31
+      adaptive_c: 5.0
       min_candidate_pixels: 100
       max_candidate_pixels: 100000
     morphology:
       enabled: true
       kernel_size: 3
-      open_iterations: 0
+      open_iterations: 1
       close_iterations: 1
     line_fit:
       min_component_area: 80
@@ -34,11 +36,32 @@ line_vision_node:
       min_line_length_px: 80.0
       near_scan_ratio: 0.75
       far_scan_ratio: 0.25
+    curve:
+      min_fit_points: 40
+      max_fit_residual_px: 15.0
+      straight_curvature_threshold_px_inv: 0.0005
+      reference_row_ratio: 0.75
+      direction_sign: 1
+    shape_gate:
+      enabled: true
+      max_line_residual_px: 8.0
+      max_circle_residual_px: 12.0
+      min_circle_radius_px: 80.0
+      max_circle_radius_px: 3000.0
+      min_arc_span_rad: 0.08
+    centerline:
+      row_step_px: 4
+      min_valid_rows: 40
+      min_band_width_px: 4
+      max_band_width_px: 500
+      max_center_jump_px: 80
+      max_gap_rows: 16
+      bottom_search_ratio: 0.75
     display:
       enabled: true
       window_width: 1600
       window_height: 900
-      display_fps_limit: 30
+      display_fps_limit: 60
       show_debug_text: true
       show_binary_mask: true
       show_data_panel: true

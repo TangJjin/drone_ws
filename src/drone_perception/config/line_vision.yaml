@@ -18,7 +18,7 @@ line_vision_node:
       width: 0
       height: 0
     threshold:
-      mode: fixed
+      mode: otsu
       gray_threshold: 70
       invert: false
       min_candidate_pixels: 100

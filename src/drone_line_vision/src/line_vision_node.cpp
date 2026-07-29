@@ -61,7 +61,7 @@ LineVisionNode::LineVisionNode()
   image_subscription_ = create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
     config_.camera.source_topic, rclcpp::QoS(1).best_effort(),
     std::bind(&LineVisionNode::imageCallback, this, std::placeholders::_1));
-  RCLCPP_INFO(get_logger(), "line vision ready: subscribing to %s (hobot_usb_cam HBM NV12)",
+  RCLCPP_INFO(get_logger(), "line vision ready: subscribing to %s (hobot_codec HBM NV12)",
     config_.camera.source_topic.c_str());
 #else
   throw std::runtime_error("hbm_img_msgs is unavailable; build against the RDK TROS environment");

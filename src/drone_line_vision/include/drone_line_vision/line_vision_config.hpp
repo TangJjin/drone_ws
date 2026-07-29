@@ -5,7 +5,7 @@
 namespace drone_line_vision
 {
 struct CameraConfig {
-  std::string source_topic{"/hbmem_img"};
+  std::string source_topic{"/line_vision/nv12"};
   std::string device;
   int width{1280};
   int height{720};

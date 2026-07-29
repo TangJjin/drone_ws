@@ -12,6 +12,7 @@
   <depend>ament_index_cpp</depend>
   <depend>libopencv-dev</depend>
   <exec_depend>hobot_usb_cam</exec_depend>
+  <exec_depend>hobot_codec</exec_depend>
   <build_depend>hbm_img_msgs</build_depend>
   <exec_depend>hbm_img_msgs</exec_depend>
   <build_depend>yaml-cpp</build_depend>

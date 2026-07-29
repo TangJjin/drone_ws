@@ -2,7 +2,7 @@ line_vision_node:
   ros__parameters:
     config_file: ""
     camera:
-      source_topic: /hbmem_img
+      source_topic: /line_vision/nv12
       device: /dev/v4l/by-id/usb-12MP_U3_Camera_12MP_U3_Camera_2601230002-video-index0
       width: 1280
       height: 720

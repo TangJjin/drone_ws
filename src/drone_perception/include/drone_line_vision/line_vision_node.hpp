@@ -31,6 +31,7 @@ private:
   std::atomic<uint64_t> frame_id_{0}; std::atomic<uint32_t> lost_frames_{0};
   FrameStatistics stats_; std::mutex display_mutex_;
   std::chrono::steady_clock::time_point last_frame_time_{};
+  std::chrono::steady_clock::time_point last_display_time_{};
   cv::Mat last_y_, last_mask_, last_debug_; LineResult last_result_; double last_processing_us_{0.0};
   rclcpp::Publisher<drone_msgs::msg::LinePixelObservation>::SharedPtr publisher_;
 #ifdef DRONE_LINE_VISION_HAS_HBM

@@ -217,6 +217,15 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   double processing_us, bool decode_ok)
 {
   if (!config_.display.enabled) {return;}
+  const auto now = std::chrono::steady_clock::now();
+  const double min_period = 1.0 / std::max(1, config_.display.display_fps_limit);
+  if (last_display_time_.time_since_epoch().count() != 0 &&
+    std::chrono::duration<double>(now - last_display_time_).count() < min_period) {
+    const int key = cv::waitKey(1) & 0xff;
+    if (key == config_.runtime.quit_key || key == 27) {running_.store(false); rclcpp::shutdown();}
+    return;
+  }
+  last_display_time_ = now;
   cv::Mat debug = y.clone();
   cv::line(debug, cv::Point(debug.cols / 2, 0), cv::Point(debug.cols / 2, debug.rows), cv::Scalar(220), 1);
   if (result.valid) {
@@ -224,34 +233,39 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
     cv::line(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)),
       cv::Point(static_cast<int>(result.center_u + 100 * std::cos(result.angle_rad)), static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(150), 2);
   }
-  const int panel_width = 430;
-  cv::Mat panel(y.rows, panel_width, CV_8UC1, cv::Scalar(20));
-  auto text = [&](const std::string & value_text, int row) {cv::putText(panel, value_text, cv::Point(10, row), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(230), 1, cv::LINE_AA);};
+  cv::Mat combined = debug;
   if (config_.display.show_data_panel) {
-  text("Y Plane / FULL_IMAGE", 25); text("device: " + config_.camera.device, 52);
-  text("requested: " + std::to_string(config_.camera.width) + "x" + std::to_string(config_.camera.height), 79);
-  text("actual: " + std::to_string(y.cols) + "x" + std::to_string(y.rows), 106);
-  text("topic: " + config_.camera.source_topic, 133); text("source: hobot_usb_cam", 160);
-  text("output: NV12  input: Y_PLANE", 187);
-  text("decode_ok: " + std::to_string(decode_ok), 214);
-  text("valid: " + std::to_string(result.valid), 241); text("center_u_px: " + finiteText(result.valid ? result.center_u : NAN), 268);
-  text("center_v_px: " + finiteText(result.valid ? result.center_v : NAN), 295); text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 322);
-  text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 349); text("confidence: " + std::to_string(result.confidence), 376);
-  text("candidate_pixels: " + std::to_string(result.candidate_pixels), 403); text("lost_frames: " + std::to_string(lost_frames_.load()), 430);
-  text("capture_fps: " + std::to_string(stats_.captureFps()), 457); text("observation_fps: " + std::to_string(stats_.observationFps()), 484);
-  text("processing_us: " + std::to_string(processing_us), 511); text("p50_us: " + std::to_string(stats_.p50Us()), 538);
-  text("p95_us: " + std::to_string(stats_.p95Us()), 565); text("config: " + config_.config_file, 592);
-  text("threshold: " + std::to_string(config_.threshold.gray_threshold), 619);
+    const int panel_width = std::min(520, combined.cols - 20);
+    const int panel_height = std::min(360, combined.rows - 20);
+    cv::Rect panel_rect(10, 10, panel_width, panel_height);
+    cv::Mat panel = combined(panel_rect).clone();
+    panel.setTo(cv::Scalar(25));
+    auto text = [&](const std::string & value_text, int row) {
+      cv::putText(panel, value_text, cv::Point(12, row), cv::FONT_HERSHEY_SIMPLEX, 0.48,
+        cv::Scalar(235), 1, cv::LINE_AA);
+    };
+    text("Y Plane | FULL_IMAGE | NV12", 24);
+    text("size: " + std::to_string(y.cols) + "x" + std::to_string(y.rows) + "  decode: " + std::to_string(decode_ok), 48);
+    text("valid: " + std::to_string(result.valid) + "  confidence: " + std::to_string(result.confidence), 72);
+    text("center: " + finiteText(result.valid ? result.center_u : NAN) + ", " + finiteText(result.valid ? result.center_v : NAN), 96);
+    text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 120);
+    text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 144);
+    text("candidates: " + std::to_string(result.candidate_pixels) + "  lost: " + std::to_string(lost_frames_.load()), 168);
+    text("capture_fps: " + std::to_string(stats_.captureFps()), 192);
+    text("observation_fps: " + std::to_string(stats_.observationFps()), 216);
+    text("processing_us: " + std::to_string(processing_us), 240);
+    text("p50/p95_us: " + std::to_string(stats_.p50Us()) + "/" + std::to_string(stats_.p95Us()), 264);
+    text("threshold: " + std::to_string(config_.threshold.gray_threshold), 288);
+    text("topic: " + config_.camera.source_topic, 312);
+    cv::addWeighted(combined(panel_rect), 0.35, panel, 0.65, 0.0, combined(panel_rect));
   }
-  cv::Mat left; cv::resize(debug, left, cv::Size(640, 360)); cv::Mat right;
-  if (config_.display.show_binary_mask) {cv::resize(mask, right, cv::Size(320, 360));}
-  else {right = cv::Mat::zeros(360, 320, CV_8UC1);}
-  cv::Mat combined;
-  if (config_.display.show_data_panel) {
-    cv::Mat panel_small; cv::resize(panel, panel_small, cv::Size(430, 360));
-    cv::hconcat(std::vector<cv::Mat>{left, right, panel_small}, combined);
-  } else {
-    cv::hconcat(left, right, combined);
+  if (config_.display.show_binary_mask && !mask.empty()) {
+    const int inset_width = std::max(160, combined.cols / 5);
+    const int inset_height = std::max(90, combined.rows / 5);
+    cv::Mat inset;
+    cv::resize(mask, inset, cv::Size(inset_width, inset_height));
+    cv::Rect inset_rect(combined.cols - inset.cols - 12, combined.rows - inset.rows - 12, inset.cols, inset.rows);
+    cv::addWeighted(combined(inset_rect), 0.35, inset, 0.65, 0.0, combined(inset_rect));
   }
   static bool window_created = false;
   if (!window_created) {
@@ -260,8 +274,7 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
     window_created = true;
   }
   cv::imshow("Line Vision Y Plane", combined);
-  const int delay_ms = std::max(1, 1000 / std::max(1, config_.display.display_fps_limit));
-  const int key = cv::waitKey(delay_ms) & 0xff;
+  const int key = cv::waitKey(1) & 0xff;
   if (key == config_.runtime.quit_key || key == 27) {running_.store(false); rclcpp::shutdown();}
   else if (key == config_.runtime.pause_key) {cv::waitKey(0);}
   else if (key == config_.runtime.reload_key) {

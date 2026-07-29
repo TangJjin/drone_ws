@@ -52,6 +52,7 @@ def generate_launch_description():
             name="line_vision_node",
             output="screen",
             emulate_tty=True,
+            arguments=["--ros-args", "--log-level", "warn"],
             parameters=[{"config_file": LaunchConfiguration("config_file")}],
         ),
     ])

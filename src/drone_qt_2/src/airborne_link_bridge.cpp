@@ -532,14 +532,6 @@ void AirborneLinkBridge::publishLocalPosition(const geometry_msgs::msg::PoseStam
     serial_.write(frame);
 }
 
-
-
-
-
-
-
-
-
 /******************* 数据处理层(接收层) ********************/
 
 // 收到地面的上传任务请求后：先还原路线和任务参数，再调用机载本地 ROS 服务，

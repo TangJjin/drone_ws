@@ -42,6 +42,11 @@ void AirborneNode::setupInterfaces()
     local_position_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
         "/drone/local_position", position_pub_qos);
 
+    auto car_position_pub_qos = rclcpp::QoS(rclcpp::KeepLast(10)).best_effort();
+    //创建一个发布者，发布无人机本地位置话题，消息类型为geometry_msgs::msg::PoseStamped
+    car_local_position_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
+        "/car/local_position", car_position_pub_qos);
+
     auto drone_control_status_qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
     //创建一个发布者，发布无人机控制状态话题，消息类型为自定义消息
     return_status_pub_ = this->create_publisher<drone_msgs::msg::TaskStatus>(
@@ -127,6 +132,21 @@ void AirborneNode::setupInterfaces()
             position_qy = msg->pose.orientation.y;
             position_qz = msg->pose.orientation.z;
             position_qw = msg->pose.orientation.w;
+        });
+
+    auto car_position_qos = rclcpp::QoS(rclcpp::KeepLast(5)).best_effort();
+    //创建一个订阅者，订阅无人车本地位置，消息类型为geometry_msgs::PoseStamped
+    car_local_position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/car/local_position/pose", car_position_qos,
+        [this](const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+            car_position_x = msg->pose.position.x;
+            car_position_y = msg->pose.position.y;
+            car_position_z = msg->pose.position.z;
+
+            car_position_qx = msg->pose.orientation.x;
+            car_position_qy = msg->pose.orientation.y;
+            car_position_qz = msg->pose.orientation.z;
+            car_position_qw = msg->pose.orientation.w;
         });
 
     auto control_status_qos =
@@ -245,6 +265,16 @@ void AirborneNode::publishStatus()
     position_msg.pose.orientation.z = position_qz;
     position_msg.pose.orientation.w = position_qw;
     local_position_pub_->publish(position_msg);
+
+    geometry_msgs::msg::PoseStamped car_position_msg;
+    car_position_msg.pose.position.x = car_position_x;
+    car_position_msg.pose.position.y = car_position_y;
+    car_position_msg.pose.position.z = car_position_z;
+    car_position_msg.pose.orientation.x = car_position_qx;
+    car_position_msg.pose.orientation.y = car_position_qy;
+    car_position_msg.pose.orientation.z = car_position_qz;
+    car_position_msg.pose.orientation.w = car_position_qw;
+    car_local_position_pub_->publish(car_position_msg);
 
     if (armed == true) {
         if (unlock_flag_ == false) {

@@ -19,6 +19,7 @@ struct CameraConfig {
 struct RoiConfig { bool enabled{false}; int x{0}; int y{0}; int width{0}; int height{0}; };
 struct ThresholdConfig {
   std::string mode{"fixed"}; int gray_threshold{70}; bool invert{false};
+  int adaptive_block_size{31}; double adaptive_c{5.0};
   int min_candidate_pixels{100}; int max_candidate_pixels{100000};
 };
 struct MorphologyConfig {

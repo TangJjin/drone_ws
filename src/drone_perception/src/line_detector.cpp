@@ -141,7 +141,7 @@ LineResult detectLine(const cv::Mat & y_plane, const LineVisionConfig & config)
     cv::threshold(gray, mask, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
   } else if (config.threshold.mode == "adaptive") {
     cv::adaptiveThreshold(gray, mask, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-      cv::THRESH_BINARY_INV, 11, 4);
+      cv::THRESH_BINARY_INV, config.threshold.adaptive_block_size, config.threshold.adaptive_c);
   } else {
     int type = config.threshold.invert ? cv::THRESH_BINARY : cv::THRESH_BINARY_INV;
     cv::threshold(gray, mask, config.threshold.gray_threshold, 255, type);

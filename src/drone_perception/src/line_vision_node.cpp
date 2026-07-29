@@ -40,6 +40,14 @@ std::string finiteText(double value)
 {
   return std::isfinite(value) ? std::to_string(value) : "NaN";
 }
+
+std::string displayNumber(double value, int precision = 3)
+{
+  if (!std::isfinite(value)) {return "NaN";}
+  std::ostringstream stream;
+  stream << std::fixed << std::setprecision(precision) << value;
+  return stream.str();
+}
 }
 
 LineVisionNode::LineVisionNode()
@@ -97,6 +105,9 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     c.threshold.mode = value<std::string>(threshold, "mode", c.threshold.mode);
     c.threshold.gray_threshold = value<int>(threshold, "gray_threshold", c.threshold.gray_threshold);
     c.threshold.invert = value<bool>(threshold, "invert", c.threshold.invert);
+    c.threshold.adaptive_block_size = value<int>(threshold, "adaptive_block_size",
+      c.threshold.adaptive_block_size);
+    c.threshold.adaptive_c = value<double>(threshold, "adaptive_c", c.threshold.adaptive_c);
     c.threshold.min_candidate_pixels = value<int>(threshold, "min_candidate_pixels", c.threshold.min_candidate_pixels);
     c.threshold.max_candidate_pixels = value<int>(threshold, "max_candidate_pixels", c.threshold.max_candidate_pixels);
     const auto morphology = p["morphology"];
@@ -147,6 +158,10 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     c.runtime.quit_key = keyChar(runtime, "quit_key", c.runtime.quit_key);
     if (c.camera.width <= 0 || c.camera.height <= 0 || c.camera.fps <= 0) {
       throw std::runtime_error("camera dimensions and fps must be positive");
+    }
+    if ((c.threshold.mode != "fixed" && c.threshold.mode != "otsu" && c.threshold.mode != "adaptive") ||
+      c.threshold.adaptive_block_size < 3 || (c.threshold.adaptive_block_size % 2) == 0) {
+      throw std::runtime_error("threshold parameters are invalid");
     }
     if (c.camera.source_topic.empty() || c.camera.source_encoding != "nv12") {
       throw std::runtime_error("source_topic must be set and source_encoding must be nv12");
@@ -213,8 +228,6 @@ void LineVisionNode::processFrame(const cv::Mat & y, const rclcpp::Time & stamp,
   previous_observation = observation_now;
   stats_.addObservation(processing_us, observation_interval);
   if (!result.valid) {lost_frames_.fetch_add(1);} else {lost_frames_.store(0);}
-  if (result.valid) {result.center_u += 0.0;}
-  display(y, result.mask, result, processing_us, true);
   drone_msgs::msg::LinePixelObservation message;
   message.header.stamp = stamp; message.header.frame_id = "camera";
   message.valid = result.valid;
@@ -235,6 +248,7 @@ void LineVisionNode::processFrame(const cv::Mat & y, const rclcpp::Time & stamp,
   message.candidate_pixel_count = static_cast<uint32_t>(std::max(0, result.candidate_pixels));
   message.lost_frame_count = lost_frames_.load(); message.processing_time_us = static_cast<uint32_t>(processing_us);
   message.capture_fps = static_cast<float>(stats_.captureFps()); message.observation_fps = static_cast<float>(stats_.observationFps());
+  display(y, result.mask, result, message);
   publisher_->publish(message);
   if (config_.logging.enabled && config_.logging.csv_enabled) {
     std::filesystem::create_directories(config_.logging.output_directory);
@@ -253,7 +267,7 @@ void LineVisionNode::processFrame(const cv::Mat & y, const rclcpp::Time & stamp,
 }
 
 void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const LineResult & result,
-  double processing_us, bool decode_ok)
+  const drone_msgs::msg::LinePixelObservation & observation)
 {
   if (!config_.display.enabled) {return;}
   const auto now = std::chrono::steady_clock::now();
@@ -277,8 +291,8 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   }
   cv::Mat combined = debug;
   if (config_.display.show_data_panel) {
-    const int panel_width = std::min(520, combined.cols - 20);
-    const int panel_height = std::min(360, combined.rows - 20);
+    const int panel_width = std::min(620, combined.cols - 20);
+    const int panel_height = std::min(490, combined.rows - 20);
     cv::Rect panel_rect(10, 10, panel_width, panel_height);
     cv::Mat panel = combined(panel_rect).clone();
     panel.setTo(cv::Scalar(25));
@@ -286,20 +300,41 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
       cv::putText(panel, value_text, cv::Point(12, row), cv::FONT_HERSHEY_SIMPLEX, 0.48,
         cv::Scalar(235), 1, cv::LINE_AA);
     };
-    text("BINARY MASK | FULL_IMAGE", 24);
-    text("size: " + std::to_string(y.cols) + "x" + std::to_string(y.rows) + "  decode: " + std::to_string(decode_ok), 48);
-    text("valid: " + std::to_string(result.valid) + "  confidence: " + std::to_string(result.confidence), 72);
-    text("center: " + finiteText(result.valid ? result.center_u : NAN) + ", " + finiteText(result.valid ? result.center_v : NAN), 96);
-    text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 120);
-    text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 144);
-    text("heading_rad: " + finiteText(result.curve_valid ? result.heading_error_rad : NAN), 168);
-    text("curvature: " + finiteText(result.curve_valid ? result.curvature_px_inv : NAN) + "  dir: " + std::to_string(result.curve_direction), 192);
-    text("candidates: " + std::to_string(result.candidate_pixels) + "  lost: " + std::to_string(lost_frames_.load()), 216);
-    text("capture/input_fps: " + std::to_string(stats_.captureFps()), 240);
-    text("observation/output_fps: " + std::to_string(stats_.observationFps()), 264);
-    text("processing_us: " + std::to_string(processing_us), 288);
-    text("p50/p95_us: " + std::to_string(stats_.p50Us()) + "/" + std::to_string(stats_.p95Us()), 312);
-    text("threshold: " + std::to_string(config_.threshold.gray_threshold), 336);
+    text("BINARY MASK | FULL_IMAGE | TOPIC: /line_vision/pixel_observation", 24);
+    text("valid=" + std::to_string(observation.valid) + " decode_ok=" + std::to_string(observation.decode_ok) +
+      " roi_valid=" + std::to_string(observation.roi_valid) + " curve_valid=" + std::to_string(observation.curve_valid), 48);
+    text("image_width_px=" + std::to_string(observation.image_width_px) +
+      " image_height_px=" + std::to_string(observation.image_height_px), 72);
+    text("line_center_u_px=" + displayNumber(observation.line_center_u_px) +
+      " line_center_v_px=" + displayNumber(observation.line_center_v_px), 96);
+    text("image_center_u_px=" + displayNumber(observation.image_center_u_px) +
+      " error_u_px=" + displayNumber(observation.error_u_px), 120);
+    text("heading_error_rad=" + displayNumber(observation.heading_error_rad) +
+      " line_angle_rad=" + displayNumber(observation.line_angle_rad), 144);
+    text("curvature_px_inv=" + displayNumber(observation.curvature_px_inv) +
+      " curve_direction=" + std::to_string(observation.curve_direction), 168);
+    text("confidence=" + displayNumber(observation.confidence) +
+      " candidate_pixel_count=" + std::to_string(observation.candidate_pixel_count), 192);
+    text("lost_frame_count=" + std::to_string(observation.lost_frame_count) +
+      " processing_time_us=" + std::to_string(observation.processing_time_us), 216);
+    text("capture_fps=" + displayNumber(observation.capture_fps) +
+      " observation_fps=" + displayNumber(observation.observation_fps), 240);
+    text("p50_us=" + displayNumber(stats_.p50Us()) + " p95_us=" + displayNumber(stats_.p95Us()), 264);
+    text("threshold_mode=" + config_.threshold.mode + " invert=" + std::to_string(config_.threshold.invert), 288);
+    if (config_.threshold.mode == "adaptive") {
+      text("adaptive_block_size=" + std::to_string(config_.threshold.adaptive_block_size) +
+        " adaptive_c=" + displayNumber(config_.threshold.adaptive_c), 312);
+    } else {
+      text("gray_threshold=" + std::to_string(config_.threshold.gray_threshold), 312);
+    }
+    text("morphology=" + std::to_string(config_.morphology.enabled) +
+      " kernel_size=" + std::to_string(config_.morphology.kernel_size), 336);
+    text("centerline_points=" + std::to_string(result.component.size()) +
+      " selected_component_pixels=" + std::to_string(result.selected_component_pixels), 360);
+    text("keys: r=reload  s=save  p=pause  q/ESC=quit", 384);
+    text("header.frame_id=" + observation.header.frame_id + " stamp=" +
+      std::to_string(observation.header.stamp.sec) + "." +
+      std::to_string(observation.header.stamp.nanosec), 408);
     cv::addWeighted(combined(panel_rect), 0.35, panel, 0.65, 0.0, combined(panel_rect));
   }
   static bool window_created = false;
@@ -324,7 +359,7 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
       RCLCPP_ERROR(get_logger(), "YAML reload failed: %s", error.c_str());
     }
   } else if (key == config_.runtime.save_key) {
-    saveCurrent(y, mask, debug, result, processing_us);
+    saveCurrent(y, mask, debug, result, static_cast<double>(observation.processing_time_us));
   }
 }
 

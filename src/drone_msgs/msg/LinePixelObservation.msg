@@ -1,0 +1,15 @@
+std_msgs/Header header
+bool valid
+float32 line_center_u_px
+float32 line_center_v_px
+float32 image_center_u_px
+float32 error_u_px
+float32 line_angle_rad
+float32 confidence
+uint32 candidate_pixel_count
+uint32 lost_frame_count
+uint32 processing_time_us
+float32 capture_fps
+float32 observation_fps
+bool decode_ok
+bool roi_valid

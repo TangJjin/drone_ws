@@ -5,14 +5,15 @@
 namespace drone_line_vision
 {
 struct CameraConfig {
+  std::string source_topic{"/line_vision/nv12"};
   std::string device;
   int width{1280};
   int height{720};
   int fps{60};
-  std::string input_format{"MJPG"};
-  std::string decoder{"mppjpegdec"};
-  std::string decoder_output{"NV12"};
-  int queue_size{1};
+  std::string pixel_format{"mjpeg"};
+  std::string io_method{"mmap"};
+  bool zero_copy{true};
+  std::string source_encoding{"nv12"};
 };
 
 struct RoiConfig { bool enabled{false}; int x{0}; int y{0}; int width{0}; int height{0}; };
@@ -21,7 +22,7 @@ struct ThresholdConfig {
   int min_candidate_pixels{100}; int max_candidate_pixels{100000};
 };
 struct MorphologyConfig {
-  bool enabled{true}; int kernel_size{3}; int open_iterations{1}; int close_iterations{1};
+  bool enabled{true}; int kernel_size{3}; int open_iterations{0}; int close_iterations{1};
 };
 struct LineFitConfig {
   int min_component_area{80}; double max_fit_residual_px{15.0};

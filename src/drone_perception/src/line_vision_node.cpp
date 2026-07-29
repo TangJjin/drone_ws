@@ -291,8 +291,8 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   }
   cv::Mat combined = debug;
   if (config_.display.show_data_panel) {
-    const int panel_width = std::min(620, combined.cols - 20);
-    const int panel_height = std::min(490, combined.rows - 20);
+    const int panel_width = std::min(480, combined.cols - 20);
+    const int panel_height = std::min(260, combined.rows - 20);
     cv::Rect panel_rect(10, 10, panel_width, panel_height);
     cv::Mat panel = combined(panel_rect).clone();
     panel.setTo(cv::Scalar(25));
@@ -300,41 +300,22 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
       cv::putText(panel, value_text, cv::Point(12, row), cv::FONT_HERSHEY_SIMPLEX, 0.48,
         cv::Scalar(235), 1, cv::LINE_AA);
     };
-    text("BINARY MASK | FULL_IMAGE | TOPIC: /line_vision/pixel_observation", 24);
-    text("valid=" + std::to_string(observation.valid) + " decode_ok=" + std::to_string(observation.decode_ok) +
-      " roi_valid=" + std::to_string(observation.roi_valid) + " curve_valid=" + std::to_string(observation.curve_valid), 48);
-    text("image_width_px=" + std::to_string(observation.image_width_px) +
-      " image_height_px=" + std::to_string(observation.image_height_px), 72);
-    text("line_center_u_px=" + displayNumber(observation.line_center_u_px) +
-      " line_center_v_px=" + displayNumber(observation.line_center_v_px), 96);
-    text("image_center_u_px=" + displayNumber(observation.image_center_u_px) +
-      " error_u_px=" + displayNumber(observation.error_u_px), 120);
+    text("BINARY MASK | OTSU", 24);
+    text("valid=" + std::to_string(observation.valid) + " decode_ok=" +
+      std::to_string(observation.decode_ok) + " curve_valid=" + std::to_string(observation.curve_valid), 48);
+    text("error_u_px=" + displayNumber(observation.error_u_px), 72);
     text("heading_error_rad=" + displayNumber(observation.heading_error_rad) +
-      " line_angle_rad=" + displayNumber(observation.line_angle_rad), 144);
-    text("curvature_px_inv=" + displayNumber(observation.curvature_px_inv) +
-      " curve_direction=" + std::to_string(observation.curve_direction), 168);
-    text("confidence=" + displayNumber(observation.confidence) +
-      " candidate_pixel_count=" + std::to_string(observation.candidate_pixel_count), 192);
-    text("lost_frame_count=" + std::to_string(observation.lost_frame_count) +
-      " processing_time_us=" + std::to_string(observation.processing_time_us), 216);
+      " curvature_px_inv=" + displayNumber(observation.curvature_px_inv), 96);
+    text("curve_direction=" + std::to_string(observation.curve_direction) +
+      " confidence=" + displayNumber(observation.confidence), 120);
+    text("candidate_pixels=" + std::to_string(observation.candidate_pixel_count) +
+      " lost_frames=" + std::to_string(observation.lost_frame_count), 144);
     text("capture_fps=" + displayNumber(observation.capture_fps) +
-      " observation_fps=" + displayNumber(observation.observation_fps), 240);
-    text("p50_us=" + displayNumber(stats_.p50Us()) + " p95_us=" + displayNumber(stats_.p95Us()), 264);
-    text("threshold_mode=" + config_.threshold.mode + " invert=" + std::to_string(config_.threshold.invert), 288);
-    if (config_.threshold.mode == "adaptive") {
-      text("adaptive_block_size=" + std::to_string(config_.threshold.adaptive_block_size) +
-        " adaptive_c=" + displayNumber(config_.threshold.adaptive_c), 312);
-    } else {
-      text("gray_threshold=" + std::to_string(config_.threshold.gray_threshold), 312);
-    }
-    text("morphology=" + std::to_string(config_.morphology.enabled) +
-      " kernel_size=" + std::to_string(config_.morphology.kernel_size), 336);
-    text("centerline_points=" + std::to_string(result.component.size()) +
-      " selected_component_pixels=" + std::to_string(result.selected_component_pixels), 360);
-    text("keys: r=reload  s=save  p=pause  q/ESC=quit", 384);
-    text("header.frame_id=" + observation.header.frame_id + " stamp=" +
-      std::to_string(observation.header.stamp.sec) + "." +
-      std::to_string(observation.header.stamp.nanosec), 408);
+      " observation_fps=" + displayNumber(observation.observation_fps), 168);
+    text("processing_us=" + std::to_string(observation.processing_time_us) +
+      " p95_us=" + displayNumber(stats_.p95Us()), 192);
+    text("threshold_mode=" + config_.threshold.mode + " invert=" +
+      std::to_string(config_.threshold.invert), 216);
     cv::addWeighted(combined(panel_rect), 0.35, panel, 0.65, 0.0, combined(panel_rect));
   }
   static bool window_created = false;

@@ -6,10 +6,13 @@
 
 namespace drone_line_vision
 {
+enum class TrackShape {Invalid, Line, ArcLeft, ArcRight};
+
 struct LineResult {
   bool valid{false}; double center_u{0.0}; double center_v{0.0}; double angle_rad{0.0};
   bool curve_valid{false}; double heading_error_rad{0.0}; double curvature_px_inv{0.0};
   int curve_direction{0};
+  TrackShape shape{TrackShape::Invalid};
   double confidence{0.0}; int candidate_pixels{0}; int selected_component_pixels{0}; cv::Rect roi;
   cv::Mat mask; std::vector<cv::Point> component;
 };

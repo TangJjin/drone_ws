@@ -8,37 +8,60 @@ namespace drone_line_vision
 {
 namespace
 {
-bool fitQuadratic(const std::vector<cv::Point> & points, double & a, double & b, double & c,
-  double & reference_v, double & residual)
+bool fitCircle(const std::vector<cv::Point> & points, double & center_u, double & center_v,
+  double & radius, double & residual, double & arc_span)
 {
   if (points.size() < 3U) {return false;}
-  reference_v = 0.0;
-  for (const auto & point : points) {reference_v += point.y;}
-  reference_v /= static_cast<double>(points.size());
-
   cv::Mat design(static_cast<int>(points.size()), 3, CV_64F);
   cv::Mat values(static_cast<int>(points.size()), 1, CV_64F);
   for (size_t i = 0; i < points.size(); ++i) {
-    const double t = static_cast<double>(points[i].y) - reference_v;
-    design.at<double>(static_cast<int>(i), 0) = t * t;
-    design.at<double>(static_cast<int>(i), 1) = t;
+    const double x = static_cast<double>(points[i].x);
+    const double y = static_cast<double>(points[i].y);
+    design.at<double>(static_cast<int>(i), 0) = x;
+    design.at<double>(static_cast<int>(i), 1) = y;
     design.at<double>(static_cast<int>(i), 2) = 1.0;
-    values.at<double>(static_cast<int>(i), 0) = points[i].x;
+    values.at<double>(static_cast<int>(i), 0) = -(x * x + y * y);
   }
   cv::Mat coefficients;
   if (!cv::solve(design, values, coefficients, cv::DECOMP_SVD)) {return false;}
-  a = coefficients.at<double>(0, 0);
-  b = coefficients.at<double>(1, 0);
-  c = coefficients.at<double>(2, 0);
+  center_u = -0.5 * coefficients.at<double>(0, 0);
+  center_v = -0.5 * coefficients.at<double>(1, 0);
+  const double radius_squared = center_u * center_u + center_v * center_v -
+    coefficients.at<double>(2, 0);
+  if (radius_squared <= 0.0) {return false;}
+  radius = std::sqrt(radius_squared);
 
   double squared_error = 0.0;
-  for (const auto & point : points) {
-    const double t = static_cast<double>(point.y) - reference_v;
-    const double error = static_cast<double>(point.x) - (a * t * t + b * t + c);
+  double previous_angle = 0.0;
+  double unwrapped_angle = 0.0;
+  double min_angle = 0.0;
+  double max_angle = 0.0;
+  for (size_t i = 0; i < points.size(); ++i) {
+    const auto & point = points[i];
+    const double dx = static_cast<double>(point.x) - center_u;
+    const double dy = static_cast<double>(point.y) - center_v;
+    const double error = std::hypot(dx, dy) - radius;
     squared_error += error * error;
+    const double angle = std::atan2(dy, dx);
+    if (i == 0U) {
+      previous_angle = angle;
+      unwrapped_angle = angle;
+      min_angle = angle;
+      max_angle = angle;
+    } else {
+      double delta = angle - previous_angle;
+      if (delta > CV_PI) {delta -= 2.0 * CV_PI;}
+      if (delta < -CV_PI) {delta += 2.0 * CV_PI;}
+      unwrapped_angle += delta;
+      previous_angle = angle;
+      min_angle = std::min(min_angle, unwrapped_angle);
+      max_angle = std::max(max_angle, unwrapped_angle);
+    }
   }
   residual = std::sqrt(squared_error / static_cast<double>(points.size()));
-  return std::isfinite(a) && std::isfinite(b) && std::isfinite(c) && std::isfinite(residual);
+  arc_span = max_angle - min_angle;
+  return std::isfinite(center_u) && std::isfinite(center_v) && std::isfinite(radius) &&
+    std::isfinite(residual) && std::isfinite(arc_span);
 }
 
 int findTargetLabel(const cv::Mat & labels, const cv::Mat & stats, const LineVisionConfig & config)
@@ -191,31 +214,60 @@ LineResult detectLine(const cv::Mat & y_plane, const LineVisionConfig & config)
   result.center_v = moments.m00 > 0.0 ? moments.m01 / moments.m00 : origin.y;
   result.angle_rad = std::atan2(static_cast<double>(direction.y), static_cast<double>(direction.x));
   double fit_residual = residual;
-  if (static_cast<int>(result.component.size()) >= config.curve.min_fit_points) {
-    double a = 0.0, b = 0.0, c = 0.0, reference_v = 0.0, quadratic_residual = 0.0;
-    if (fitQuadratic(result.component, a, b, c, reference_v, quadratic_residual) &&
-      quadratic_residual <= config.curve.max_fit_residual_px) {
+  double accepted_residual_limit = config.line_fit.max_fit_residual_px;
+  const double line_residual_limit = config.shape_gate.enabled ?
+    config.shape_gate.max_line_residual_px : config.line_fit.max_fit_residual_px;
+  if (residual <= line_residual_limit) {
+    result.shape = TrackShape::Line;
+    accepted_residual_limit = line_residual_limit;
+  } else if (config.shape_gate.enabled &&
+    static_cast<int>(result.component.size()) >= config.curve.min_fit_points) {
+    double circle_u = 0.0;
+    double circle_v = 0.0;
+    double circle_radius = 0.0;
+    double circle_residual = 0.0;
+    double arc_span = 0.0;
+    if (fitCircle(result.component, circle_u, circle_v, circle_radius, circle_residual, arc_span) &&
+      circle_residual <= config.shape_gate.max_circle_residual_px &&
+      circle_radius >= config.shape_gate.min_circle_radius_px &&
+      circle_radius <= config.shape_gate.max_circle_radius_px &&
+      arc_span >= config.shape_gate.min_arc_span_rad) {
       const double row = static_cast<double>(roi.y) +
         config.curve.reference_row_ratio * static_cast<double>(std::max(0, roi.height - 1));
-      const double t = row - reference_v;
-      const double slope = 2.0 * a * t + b;
-      const double signed_curvature = 2.0 * a / std::pow(1.0 + slope * slope, 1.5);
-      result.center_u = a * t * t + b * t + c;
-      result.center_v = row;
-      result.heading_error_rad = -std::atan(slope);
-      result.curvature_px_inv = std::abs(signed_curvature);
-      result.curve_direction = result.curvature_px_inv < config.curve.straight_curvature_threshold_px_inv ?
-        0 : (signed_curvature > 0.0 ? config.curve.direction_sign : -config.curve.direction_sign);
-      result.curve_valid = true;
-      fit_residual = quadratic_residual;
+      const auto nearest = std::min_element(result.component.begin(), result.component.end(),
+        [row](const cv::Point & lhs, const cv::Point & rhs) {
+          return std::abs(static_cast<double>(lhs.y) - row) < std::abs(static_cast<double>(rhs.y) - row);
+        });
+      const double delta_y = row - circle_v;
+      const double delta_x_squared = circle_radius * circle_radius - delta_y * delta_y;
+      if (nearest != result.component.end() && delta_x_squared > 1e-6) {
+        const double delta_x = std::sqrt(delta_x_squared);
+        const double candidate_a = circle_u - delta_x;
+        const double candidate_b = circle_u + delta_x;
+        result.center_u = std::abs(candidate_a - nearest->x) < std::abs(candidate_b - nearest->x) ?
+          candidate_a : candidate_b;
+        result.center_v = row;
+        const double local_x = result.center_u - circle_u;
+        const double slope = -delta_y / local_x;
+        const double signed_curvature = (-circle_radius * circle_radius / (local_x * local_x * local_x)) /
+          std::pow(1.0 + slope * slope, 1.5);
+        result.heading_error_rad = -std::atan(slope);
+        result.curvature_px_inv = std::abs(signed_curvature);
+        result.curve_direction = signed_curvature > 0.0 ? config.curve.direction_sign :
+          -config.curve.direction_sign;
+        result.curve_valid = true;
+        result.shape = result.curve_direction < 0 ? TrackShape::ArcLeft : TrackShape::ArcRight;
+        fit_residual = circle_residual;
+        accepted_residual_limit = config.shape_gate.max_circle_residual_px;
+      }
     }
   }
-  if (!result.curve_valid && residual > config.line_fit.max_fit_residual_px) {return result;}
+  if (result.shape == TrackShape::Invalid) {return result;}
   const double expected_rows = std::max(1.0, static_cast<double>(roi.height) /
     static_cast<double>(config.centerline.row_step_px));
   const double coverage = std::min(1.0, static_cast<double>(result.component.size()) / expected_rows);
   result.confidence = std::clamp(coverage *
-    (1.0 - fit_residual / std::max(1.0, config.curve.max_fit_residual_px)), 0.0, 1.0);
+    (1.0 - fit_residual / std::max(1.0, accepted_residual_limit)), 0.0, 1.0);
   result.valid = true;
   return result;
 }

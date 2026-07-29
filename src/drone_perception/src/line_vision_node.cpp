@@ -48,6 +48,16 @@ std::string displayNumber(double value, int precision = 3)
   stream << std::fixed << std::setprecision(precision) << value;
   return stream.str();
 }
+
+std::string shapeText(TrackShape shape)
+{
+  switch (shape) {
+    case TrackShape::Line: return "LINE";
+    case TrackShape::ArcLeft: return "ARC_LEFT";
+    case TrackShape::ArcRight: return "ARC_RIGHT";
+    default: return "INVALID";
+  }
+}
 }
 
 LineVisionNode::LineVisionNode()
@@ -128,6 +138,18 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
       "straight_curvature_threshold_px_inv", c.curve.straight_curvature_threshold_px_inv);
     c.curve.reference_row_ratio = value<double>(curve, "reference_row_ratio", c.curve.reference_row_ratio);
     c.curve.direction_sign = value<int>(curve, "direction_sign", c.curve.direction_sign);
+    const auto shape_gate = p["shape_gate"];
+    c.shape_gate.enabled = value<bool>(shape_gate, "enabled", c.shape_gate.enabled);
+    c.shape_gate.max_line_residual_px = value<double>(shape_gate,
+      "max_line_residual_px", c.shape_gate.max_line_residual_px);
+    c.shape_gate.max_circle_residual_px = value<double>(shape_gate,
+      "max_circle_residual_px", c.shape_gate.max_circle_residual_px);
+    c.shape_gate.min_circle_radius_px = value<double>(shape_gate,
+      "min_circle_radius_px", c.shape_gate.min_circle_radius_px);
+    c.shape_gate.max_circle_radius_px = value<double>(shape_gate,
+      "max_circle_radius_px", c.shape_gate.max_circle_radius_px);
+    c.shape_gate.min_arc_span_rad = value<double>(shape_gate,
+      "min_arc_span_rad", c.shape_gate.min_arc_span_rad);
     const auto centerline = p["centerline"];
     c.centerline.row_step_px = value<int>(centerline, "row_step_px", c.centerline.row_step_px);
     c.centerline.min_valid_rows = value<int>(centerline, "min_valid_rows", c.centerline.min_valid_rows);
@@ -174,6 +196,12 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
       c.curve.straight_curvature_threshold_px_inv < 0.0 || c.curve.reference_row_ratio < 0.0 ||
       c.curve.reference_row_ratio > 1.0 || (c.curve.direction_sign != -1 && c.curve.direction_sign != 1)) {
       throw std::runtime_error("curve parameters are invalid");
+    }
+    if (c.shape_gate.max_line_residual_px <= 0.0 || c.shape_gate.max_circle_residual_px <= 0.0 ||
+      c.shape_gate.min_circle_radius_px <= 0.0 ||
+      c.shape_gate.max_circle_radius_px < c.shape_gate.min_circle_radius_px ||
+      c.shape_gate.min_arc_span_rad <= 0.0 || c.shape_gate.min_arc_span_rad > 2.0 * CV_PI) {
+      throw std::runtime_error("shape gate parameters are invalid");
     }
     if (c.centerline.row_step_px < 1 || c.centerline.min_valid_rows < 3 ||
       c.centerline.min_band_width_px < 1 || c.centerline.max_band_width_px < c.centerline.min_band_width_px ||
@@ -284,7 +312,8 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   cv::Mat combined;
   cv::cvtColor(debug, combined, cv::COLOR_GRAY2BGR);
   if (result.component.size() >= 2U) {
-    cv::polylines(combined, result.component, false, cv::Scalar(0, 0, 255), 4, cv::LINE_AA);
+    const cv::Scalar route_color = result.valid ? cv::Scalar(0, 0, 255) : cv::Scalar(110, 110, 110);
+    cv::polylines(combined, result.component, false, route_color, 4, cv::LINE_AA);
   }
   if (result.valid) {
     const cv::Point center(static_cast<int>(result.center_u), static_cast<int>(result.center_v));
@@ -294,31 +323,31 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
       static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(255, 180, 0), 2);
   }
   if (config_.display.show_data_panel) {
-    const int panel_width = std::min(480, combined.cols - 20);
-    const int panel_height = std::min(260, combined.rows - 20);
+    const int panel_width = std::min(800, combined.cols - 20);
+    const int panel_height = std::min(340, combined.rows - 20);
     cv::Rect panel_rect(10, 10, panel_width, panel_height);
     cv::Mat panel = combined(panel_rect).clone();
     panel.setTo(cv::Scalar(25));
     auto text = [&](const std::string & value_text, int row) {
-      cv::putText(panel, value_text, cv::Point(12, row), cv::FONT_HERSHEY_SIMPLEX, 0.48,
-        cv::Scalar(235), 1, cv::LINE_AA);
+      cv::putText(panel, value_text, cv::Point(18, row), cv::FONT_HERSHEY_SIMPLEX, 0.82,
+        cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
     };
-    text("BINARY MASK | OTSU", 24);
-    text("valid=" + std::to_string(observation.valid) + " decode_ok=" +
-      std::to_string(observation.decode_ok) + " curve_valid=" + std::to_string(observation.curve_valid), 48);
-    text("error_u_px=" + displayNumber(observation.error_u_px), 72);
+    text("BINARY MASK | OTSU | SHAPE GATE", 34);
+    text("shape=" + shapeText(result.shape) + " valid=" + std::to_string(observation.valid) +
+      " decode_ok=" + std::to_string(observation.decode_ok), 68);
+    text("error_u_px=" + displayNumber(observation.error_u_px), 102);
     text("heading_error_rad=" + displayNumber(observation.heading_error_rad) +
-      " curvature_px_inv=" + displayNumber(observation.curvature_px_inv), 96);
+      " curvature_px_inv=" + displayNumber(observation.curvature_px_inv), 136);
     text("curve_direction=" + std::to_string(observation.curve_direction) +
-      " confidence=" + displayNumber(observation.confidence), 120);
+      " confidence=" + displayNumber(observation.confidence), 170);
     text("candidate_pixels=" + std::to_string(observation.candidate_pixel_count) +
-      " lost_frames=" + std::to_string(observation.lost_frame_count), 144);
+      " lost_frames=" + std::to_string(observation.lost_frame_count), 204);
     text("capture_fps=" + displayNumber(observation.capture_fps) +
-      " observation_fps=" + displayNumber(observation.observation_fps), 168);
+      " observation_fps=" + displayNumber(observation.observation_fps), 238);
     text("processing_us=" + std::to_string(observation.processing_time_us) +
-      " p95_us=" + displayNumber(stats_.p95Us()), 192);
+      " p95_us=" + displayNumber(stats_.p95Us()), 272);
     text("threshold_mode=" + config_.threshold.mode + " invert=" +
-      std::to_string(config_.threshold.invert), 216);
+      std::to_string(config_.threshold.invert), 306);
     cv::addWeighted(combined(panel_rect), 0.35, panel, 0.65, 0.0, combined(panel_rect));
   }
   static bool window_created = false;

@@ -35,6 +35,14 @@ struct CurveConfig {
   double reference_row_ratio{0.75};
   int direction_sign{1};
 };
+struct ShapeGateConfig {
+  bool enabled{true};
+  double max_line_residual_px{8.0};
+  double max_circle_residual_px{12.0};
+  double min_circle_radius_px{80.0};
+  double max_circle_radius_px{3000.0};
+  double min_arc_span_rad{0.08};
+};
 struct CenterlineConfig {
   int row_step_px{4}; int min_valid_rows{40}; int min_band_width_px{4};
   int max_band_width_px{500}; int max_center_jump_px{80}; int max_gap_rows{16};
@@ -51,7 +59,7 @@ struct LoggingConfig {
 struct RuntimeConfig { char reload_key{'r'}; char save_key{'s'}; char pause_key{'p'}; char quit_key{'q'}; };
 struct LineVisionConfig {
   CameraConfig camera; RoiConfig roi; ThresholdConfig threshold; MorphologyConfig morphology;
-  LineFitConfig line_fit; CurveConfig curve; CenterlineConfig centerline;
+  LineFitConfig line_fit; CurveConfig curve; ShapeGateConfig shape_gate; CenterlineConfig centerline;
   DisplayConfig display; LoggingConfig logging; RuntimeConfig runtime;
   std::string config_file;
 };

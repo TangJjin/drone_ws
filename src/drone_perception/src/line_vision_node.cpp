@@ -110,6 +110,13 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     c.line_fit.min_line_length_px = value<double>(fit, "min_line_length_px", c.line_fit.min_line_length_px);
     c.line_fit.near_scan_ratio = value<double>(fit, "near_scan_ratio", c.line_fit.near_scan_ratio);
     c.line_fit.far_scan_ratio = value<double>(fit, "far_scan_ratio", c.line_fit.far_scan_ratio);
+    const auto curve = p["curve"];
+    c.curve.min_fit_points = value<int>(curve, "min_fit_points", c.curve.min_fit_points);
+    c.curve.max_fit_residual_px = value<double>(curve, "max_fit_residual_px", c.curve.max_fit_residual_px);
+    c.curve.straight_curvature_threshold_px_inv = value<double>(curve,
+      "straight_curvature_threshold_px_inv", c.curve.straight_curvature_threshold_px_inv);
+    c.curve.reference_row_ratio = value<double>(curve, "reference_row_ratio", c.curve.reference_row_ratio);
+    c.curve.direction_sign = value<int>(curve, "direction_sign", c.curve.direction_sign);
     const auto display_cfg = p["display"];
     c.display.enabled = value<bool>(display_cfg, "enabled", c.display.enabled);
     c.display.window_width = value<int>(display_cfg, "window_width", c.display.window_width);
@@ -138,6 +145,11 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     if (c.roi.enabled && (c.roi.x < 0 || c.roi.y < 0 || c.roi.width <= 0 || c.roi.height <= 0 ||
       c.roi.x + c.roi.width > c.camera.width || c.roi.y + c.roi.height > c.camera.height)) {
       throw std::runtime_error("ROI is outside the configured image bounds");
+    }
+    if (c.curve.min_fit_points < 3 || c.curve.max_fit_residual_px <= 0.0 ||
+      c.curve.straight_curvature_threshold_px_inv < 0.0 || c.curve.reference_row_ratio < 0.0 ||
+      c.curve.reference_row_ratio > 1.0 || (c.curve.direction_sign != -1 && c.curve.direction_sign != 1)) {
+      throw std::runtime_error("curve parameters are invalid");
     }
     out = c;
     return true;
@@ -190,25 +202,37 @@ void LineVisionNode::processFrame(const cv::Mat & y, const rclcpp::Time & stamp,
   display(y, result.mask, result, processing_us, true);
   drone_msgs::msg::LinePixelObservation message;
   message.header.stamp = stamp; message.header.frame_id = "camera";
-  message.valid = result.valid; message.line_center_u_px = result.valid ? static_cast<float>(result.center_u) : NAN;
+  message.valid = result.valid;
+  message.decode_ok = true;
+  message.roi_valid = !config_.roi.enabled || result.roi.area() > 0;
+  message.curve_valid = result.valid && result.curve_valid;
+  message.image_width_px = static_cast<uint32_t>(y.cols);
+  message.image_height_px = static_cast<uint32_t>(y.rows);
+  message.line_center_u_px = result.valid ? static_cast<float>(result.center_u) : NAN;
   message.line_center_v_px = result.valid ? static_cast<float>(result.center_v) : NAN;
   message.image_center_u_px = static_cast<float>(y.cols / 2.0);
   message.error_u_px = result.valid ? static_cast<float>(result.center_u - y.cols / 2.0) : NAN;
+  message.heading_error_rad = message.curve_valid ? static_cast<float>(result.heading_error_rad) : NAN;
   message.line_angle_rad = result.valid ? static_cast<float>(result.angle_rad) : NAN;
+  message.curvature_px_inv = message.curve_valid ? static_cast<float>(result.curvature_px_inv) : NAN;
+  message.curve_direction = message.curve_valid ? static_cast<int8_t>(result.curve_direction) : 0;
   message.confidence = static_cast<float>(result.valid ? result.confidence : 0.0);
   message.candidate_pixel_count = static_cast<uint32_t>(std::max(0, result.candidate_pixels));
   message.lost_frame_count = lost_frames_.load(); message.processing_time_us = static_cast<uint32_t>(processing_us);
   message.capture_fps = static_cast<float>(stats_.captureFps()); message.observation_fps = static_cast<float>(stats_.observationFps());
-  message.decode_ok = true; message.roi_valid = !config_.roi.enabled || result.roi.area() > 0;
   publisher_->publish(message);
   if (config_.logging.enabled && config_.logging.csv_enabled) {
     std::filesystem::create_directories(config_.logging.output_directory);
     const auto path = std::filesystem::path(config_.logging.output_directory) / "observations.csv";
     const bool exists = std::filesystem::exists(path);
     std::ofstream csv(path, std::ios::app);
-    if (!exists) {csv << "frame_id,valid,line_center_u_px,line_center_v_px,error_u_px,line_angle_rad,confidence,candidate_pixel_count,processing_time_us\n";}
-    csv << frame_id << ',' << (result.valid ? 1 : 0) << ',' << finiteText(result.center_u) << ',' << finiteText(result.center_v) << ','
-      << finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN) << ',' << finiteText(result.angle_rad) << ','
+    if (!exists) {csv << "frame_id,valid,curve_valid,line_center_u_px,line_center_v_px,error_u_px,heading_error_rad,curvature_px_inv,curve_direction,line_angle_rad,confidence,candidate_pixel_count,processing_time_us\n";}
+    csv << frame_id << ',' << (result.valid ? 1 : 0) << ',' << (result.curve_valid ? 1 : 0) << ','
+      << finiteText(result.center_u) << ',' << finiteText(result.center_v) << ','
+      << finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN) << ','
+      << finiteText(result.curve_valid ? result.heading_error_rad : NAN) << ','
+      << finiteText(result.curve_valid ? result.curvature_px_inv : NAN) << ',' << result.curve_direction << ','
+      << finiteText(result.angle_rad) << ','
       << result.confidence << ',' << result.candidate_pixels << ',' << processing_us << '\n';
   }
 }
@@ -250,13 +274,14 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
     text("center: " + finiteText(result.valid ? result.center_u : NAN) + ", " + finiteText(result.valid ? result.center_v : NAN), 96);
     text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 120);
     text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 144);
-    text("candidates: " + std::to_string(result.candidate_pixels) + "  lost: " + std::to_string(lost_frames_.load()), 168);
-    text("capture/input_fps: " + std::to_string(stats_.captureFps()), 192);
-    text("observation/output_fps: " + std::to_string(stats_.observationFps()), 216);
-    text("processing_us: " + std::to_string(processing_us), 240);
-    text("p50/p95_us: " + std::to_string(stats_.p50Us()) + "/" + std::to_string(stats_.p95Us()), 264);
-    text("threshold: " + std::to_string(config_.threshold.gray_threshold), 288);
-    text("topic: " + config_.camera.source_topic, 312);
+    text("heading_rad: " + finiteText(result.curve_valid ? result.heading_error_rad : NAN), 168);
+    text("curvature: " + finiteText(result.curve_valid ? result.curvature_px_inv : NAN) + "  dir: " + std::to_string(result.curve_direction), 192);
+    text("candidates: " + std::to_string(result.candidate_pixels) + "  lost: " + std::to_string(lost_frames_.load()), 216);
+    text("capture/input_fps: " + std::to_string(stats_.captureFps()), 240);
+    text("observation/output_fps: " + std::to_string(stats_.observationFps()), 264);
+    text("processing_us: " + std::to_string(processing_us), 288);
+    text("p50/p95_us: " + std::to_string(stats_.p50Us()) + "/" + std::to_string(stats_.p95Us()), 312);
+    text("threshold: " + std::to_string(config_.threshold.gray_threshold), 336);
     cv::addWeighted(combined(panel_rect), 0.35, panel, 0.65, 0.0, combined(panel_rect));
   }
   static bool window_created = false;
@@ -303,6 +328,10 @@ void LineVisionNode::saveCurrent(const cv::Mat & y, const cv::Mat & mask, const 
        << "  \"line_center_v_px\": " << finiteText(result.valid ? result.center_v : NAN) << ",\n"
        << "  \"error_u_px\": " << finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN) << ",\n"
        << "  \"line_angle_rad\": " << finiteText(result.valid ? result.angle_rad : NAN) << ",\n"
+       << "  \"curve_valid\": " << (result.curve_valid ? "true" : "false") << ",\n"
+       << "  \"heading_error_rad\": " << finiteText(result.curve_valid ? result.heading_error_rad : NAN) << ",\n"
+       << "  \"curvature_px_inv\": " << finiteText(result.curve_valid ? result.curvature_px_inv : NAN) << ",\n"
+       << "  \"curve_direction\": " << result.curve_direction << ",\n"
        << "  \"confidence\": " << result.confidence << ",\n"
        << "  \"candidate_pixel_count\": " << result.candidate_pixels << ",\n"
        << "  \"processing_time_us\": " << processing_us << "\n}\n";

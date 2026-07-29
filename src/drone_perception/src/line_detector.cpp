@@ -5,6 +5,42 @@
 
 namespace drone_line_vision
 {
+namespace
+{
+bool fitQuadratic(const std::vector<cv::Point> & points, double & a, double & b, double & c,
+  double & reference_v, double & residual)
+{
+  if (points.size() < 3U) {return false;}
+  reference_v = 0.0;
+  for (const auto & point : points) {reference_v += point.y;}
+  reference_v /= static_cast<double>(points.size());
+
+  cv::Mat design(static_cast<int>(points.size()), 3, CV_64F);
+  cv::Mat values(static_cast<int>(points.size()), 1, CV_64F);
+  for (size_t i = 0; i < points.size(); ++i) {
+    const double t = static_cast<double>(points[i].y) - reference_v;
+    design.at<double>(static_cast<int>(i), 0) = t * t;
+    design.at<double>(static_cast<int>(i), 1) = t;
+    design.at<double>(static_cast<int>(i), 2) = 1.0;
+    values.at<double>(static_cast<int>(i), 0) = points[i].x;
+  }
+  cv::Mat coefficients;
+  if (!cv::solve(design, values, coefficients, cv::DECOMP_SVD)) {return false;}
+  a = coefficients.at<double>(0, 0);
+  b = coefficients.at<double>(1, 0);
+  c = coefficients.at<double>(2, 0);
+
+  double squared_error = 0.0;
+  for (const auto & point : points) {
+    const double t = static_cast<double>(point.y) - reference_v;
+    const double error = static_cast<double>(point.x) - (a * t * t + b * t + c);
+    squared_error += error * error;
+  }
+  residual = std::sqrt(squared_error / static_cast<double>(points.size()));
+  return std::isfinite(a) && std::isfinite(b) && std::isfinite(c) && std::isfinite(residual);
+}
+}
+
 LineResult detectLine(const cv::Mat & y_plane, const LineVisionConfig & config)
 {
   LineResult result;
@@ -74,13 +110,32 @@ LineResult detectLine(const cv::Mat & y_plane, const LineVisionConfig & config)
   }
   const double residual = std::sqrt(residual_sum / static_cast<double>(result.component.size()));
   const double length = max_proj - min_proj;
-  if (residual > config.line_fit.max_fit_residual_px || length < config.line_fit.min_line_length_px) {return result;}
+  if (length < config.line_fit.min_line_length_px) {return result;}
   const cv::Moments moments = cv::moments(result.component, false);
   result.center_u = moments.m00 > 0.0 ? moments.m10 / moments.m00 : origin.x;
   result.center_v = moments.m00 > 0.0 ? moments.m01 / moments.m00 : origin.y;
   result.angle_rad = std::atan2(static_cast<double>(direction.y), static_cast<double>(direction.x));
+  double fit_residual = residual;
+  if (static_cast<int>(result.component.size()) >= config.curve.min_fit_points) {
+    double a = 0.0, b = 0.0, c = 0.0, reference_v = 0.0, quadratic_residual = 0.0;
+    if (fitQuadratic(result.component, a, b, c, reference_v, quadratic_residual) &&
+      quadratic_residual <= config.curve.max_fit_residual_px) {
+      const double row = static_cast<double>(roi.y) +
+        config.curve.reference_row_ratio * static_cast<double>(std::max(0, roi.height - 1));
+      const double t = row - reference_v;
+      const double slope = 2.0 * a * t + b;
+      const double signed_curvature = 2.0 * a / std::pow(1.0 + slope * slope, 1.5);
+      result.heading_error_rad = -std::atan(slope);
+      result.curvature_px_inv = std::abs(signed_curvature);
+      result.curve_direction = result.curvature_px_inv < config.curve.straight_curvature_threshold_px_inv ?
+        0 : (signed_curvature > 0.0 ? config.curve.direction_sign : -config.curve.direction_sign);
+      result.curve_valid = true;
+      fit_residual = quadratic_residual;
+    }
+  }
+  if (!result.curve_valid && residual > config.line_fit.max_fit_residual_px) {return result;}
   result.confidence = std::clamp((static_cast<double>(best_area) / 10000.0) *
-    (1.0 - residual / std::max(1.0, config.line_fit.max_fit_residual_px)), 0.0, 1.0);
+    (1.0 - fit_residual / std::max(1.0, config.curve.max_fit_residual_px)), 0.0, 1.0);
   result.valid = true;
   return result;
 }

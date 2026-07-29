@@ -28,6 +28,12 @@ struct LineFitConfig {
   int min_component_area{80}; double max_fit_residual_px{15.0};
   double min_line_length_px{80.0}; double near_scan_ratio{0.75}; double far_scan_ratio{0.25};
 };
+struct CurveConfig {
+  int min_fit_points{80}; double max_fit_residual_px{15.0};
+  double straight_curvature_threshold_px_inv{0.0005};
+  double reference_row_ratio{0.75};
+  int direction_sign{1};
+};
 struct DisplayConfig {
   bool enabled{true}; int window_width{1600}; int window_height{900}; int display_fps_limit{60};
   bool show_debug_text{true}; bool show_binary_mask{true}; bool show_data_panel{true};
@@ -39,7 +45,7 @@ struct LoggingConfig {
 struct RuntimeConfig { char reload_key{'r'}; char save_key{'s'}; char pause_key{'p'}; char quit_key{'q'}; };
 struct LineVisionConfig {
   CameraConfig camera; RoiConfig roi; ThresholdConfig threshold; MorphologyConfig morphology;
-  LineFitConfig line_fit; DisplayConfig display; LoggingConfig logging; RuntimeConfig runtime;
+  LineFitConfig line_fit; CurveConfig curve; DisplayConfig display; LoggingConfig logging; RuntimeConfig runtime;
   std::string config_file;
 };
 }

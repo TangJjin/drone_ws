@@ -281,15 +281,18 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   last_display_time_ = now;
   cv::Mat debug = mask.empty() ? cv::Mat::zeros(y.size(), CV_8UC1) : mask.clone();
   cv::line(debug, cv::Point(debug.cols / 2, 0), cv::Point(debug.cols / 2, debug.rows), cv::Scalar(128), 1);
-  for (const auto & point : result.component) {
-    debug.at<uint8_t>(point.y, point.x) = 128;
+  cv::Mat combined;
+  cv::cvtColor(debug, combined, cv::COLOR_GRAY2BGR);
+  if (result.component.size() >= 2U) {
+    cv::polylines(combined, result.component, false, cv::Scalar(0, 0, 255), 4, cv::LINE_AA);
   }
   if (result.valid) {
-    cv::circle(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)), 7, cv::Scalar(190), -1);
-    cv::line(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)),
-      cv::Point(static_cast<int>(result.center_u + 100 * std::cos(result.angle_rad)), static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(96), 2);
+    const cv::Point center(static_cast<int>(result.center_u), static_cast<int>(result.center_v));
+    cv::circle(combined, center, 7, cv::Scalar(0, 255, 255), -1);
+    cv::line(combined, center,
+      cv::Point(static_cast<int>(result.center_u + 100 * std::cos(result.angle_rad)),
+      static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(255, 180, 0), 2);
   }
-  cv::Mat combined = debug;
   if (config_.display.show_data_panel) {
     const int panel_width = std::min(480, combined.cols - 20);
     const int panel_height = std::min(260, combined.rows - 20);

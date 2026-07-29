@@ -29,7 +29,7 @@ struct LineFitConfig {
   double min_line_length_px{80.0}; double near_scan_ratio{0.75}; double far_scan_ratio{0.25};
 };
 struct DisplayConfig {
-  bool enabled{true}; int window_width{1600}; int window_height{900}; int display_fps_limit{30};
+  bool enabled{true}; int window_width{1600}; int window_height{900}; int display_fps_limit{60};
   bool show_debug_text{true}; bool show_binary_mask{true}; bool show_data_panel{true};
 };
 struct LoggingConfig {

@@ -38,7 +38,7 @@ line_vision_node:
       enabled: true
       window_width: 1600
       window_height: 900
-      display_fps_limit: 30
+      display_fps_limit: 60
       show_debug_text: true
       show_binary_mask: true
       show_data_panel: true

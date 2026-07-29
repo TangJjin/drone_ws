@@ -2,14 +2,15 @@ line_vision_node:
   ros__parameters:
     config_file: ""
     camera:
+      source_topic: /hbmem_img
       device: /dev/v4l/by-id/usb-12MP_U3_Camera_12MP_U3_Camera_2601230002-video-index0
       width: 1280
       height: 720
       fps: 60
-      input_format: MJPG
-      decoder: mppjpegdec
-      decoder_output: NV12
-      queue_size: 1
+      pixel_format: mjpeg
+      io_method: mmap
+      zero_copy: true
+      source_encoding: nv12
     roi:
       enabled: false
       x: 0

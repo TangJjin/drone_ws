@@ -5,14 +5,15 @@
 namespace drone_line_vision
 {
 struct CameraConfig {
+  std::string source_topic{"/hbmem_img"};
   std::string device;
   int width{1280};
   int height{720};
   int fps{60};
-  std::string input_format{"MJPG"};
-  std::string decoder{"mppjpegdec"};
-  std::string decoder_output{"NV12"};
-  int queue_size{1};
+  std::string pixel_format{"mjpeg"};
+  std::string io_method{"mmap"};
+  bool zero_copy{true};
+  std::string source_encoding{"nv12"};
 };
 
 struct RoiConfig { bool enabled{false}; int x{0}; int y{0}; int width{0}; int height{0}; };

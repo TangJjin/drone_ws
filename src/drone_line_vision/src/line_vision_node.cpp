@@ -10,7 +10,6 @@
 #include <fstream>
 #include <iomanip>
 #include <cmath>
-#include <sstream>
 #include <stdexcept>
 
 namespace drone_line_vision
@@ -58,17 +57,20 @@ LineVisionNode::LineVisionNode()
     throw std::runtime_error("Unable to load line vision config: " + error);
   }
   config_.config_file = path;
-  startPipeline();
-  running_.store(true);
-  capture_thread_ = std::thread(&LineVisionNode::captureLoop, this);
-  RCLCPP_INFO(get_logger(), "line vision ready: %s", path.c_str());
+#ifdef DRONE_LINE_VISION_HAS_HBM
+  image_subscription_ = create_subscription<hbm_img_msgs::msg::HbmMsg1080P>(
+    config_.camera.source_topic, rclcpp::QoS(1).best_effort(),
+    std::bind(&LineVisionNode::imageCallback, this, std::placeholders::_1));
+  RCLCPP_INFO(get_logger(), "line vision ready: subscribing to %s (hobot_usb_cam HBM NV12)",
+    config_.camera.source_topic.c_str());
+#else
+  throw std::runtime_error("hbm_img_msgs is unavailable; build against the RDK TROS environment");
+#endif
 }
 
 LineVisionNode::~LineVisionNode()
 {
   running_.store(false);
-  stopPipeline();
-  if (capture_thread_.joinable()) {capture_thread_.join();}
   if (config_.display.enabled) {cv::destroyAllWindows();}
 }
 
@@ -78,14 +80,15 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     const YAML::Node p = parametersNode(YAML::LoadFile(path));
     LineVisionConfig c;
     const auto camera = p["camera"];
+    c.camera.source_topic = value<std::string>(camera, "source_topic", c.camera.source_topic);
     c.camera.device = value<std::string>(camera, "device", c.camera.device);
     c.camera.width = value<int>(camera, "width", c.camera.width);
     c.camera.height = value<int>(camera, "height", c.camera.height);
     c.camera.fps = value<int>(camera, "fps", c.camera.fps);
-    c.camera.input_format = value<std::string>(camera, "input_format", c.camera.input_format);
-    c.camera.decoder = value<std::string>(camera, "decoder", c.camera.decoder);
-    c.camera.decoder_output = value<std::string>(camera, "decoder_output", c.camera.decoder_output);
-    c.camera.queue_size = value<int>(camera, "queue_size", c.camera.queue_size);
+    c.camera.pixel_format = value<std::string>(camera, "pixel_format", c.camera.pixel_format);
+    c.camera.io_method = value<std::string>(camera, "io_method", c.camera.io_method);
+    c.camera.zero_copy = value<bool>(camera, "zero_copy", c.camera.zero_copy);
+    c.camera.source_encoding = value<std::string>(camera, "source_encoding", c.camera.source_encoding);
     const auto roi = p["roi"];
     c.roi.enabled = value<bool>(roi, "enabled", c.roi.enabled);
     c.roi.x = value<int>(roi, "x", c.roi.x); c.roi.y = value<int>(roi, "y", c.roi.y);
@@ -126,11 +129,15 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
     c.runtime.save_key = keyChar(runtime, "save_key", c.runtime.save_key);
     c.runtime.pause_key = keyChar(runtime, "pause_key", c.runtime.pause_key);
     c.runtime.quit_key = keyChar(runtime, "quit_key", c.runtime.quit_key);
-    if (c.camera.width <= 0 || c.camera.height <= 0 || c.camera.fps <= 0 || c.camera.queue_size <= 0) {
-      throw std::runtime_error("camera dimensions, fps and queue_size must be positive");
+    if (c.camera.width <= 0 || c.camera.height <= 0 || c.camera.fps <= 0) {
+      throw std::runtime_error("camera dimensions and fps must be positive");
     }
-    if (c.camera.input_format != "MJPG" || c.camera.decoder != "mppjpegdec" || c.camera.decoder_output != "NV12") {
-      throw std::runtime_error("only MJPG -> mppjpegdec -> NV12 is supported");
+    if (c.camera.source_topic.empty() || c.camera.source_encoding != "nv12") {
+      throw std::runtime_error("source_topic must be set and source_encoding must be nv12");
+    }
+    if (c.roi.enabled && (c.roi.x < 0 || c.roi.y < 0 || c.roi.width <= 0 || c.roi.height <= 0 ||
+      c.roi.x + c.roi.width > c.camera.width || c.roi.y + c.roi.height > c.camera.height)) {
+      throw std::runtime_error("ROI is outside the configured image bounds");
     }
     out = c;
     return true;
@@ -140,79 +147,36 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
   }
 }
 
-void LineVisionNode::startPipeline()
+#ifdef DRONE_LINE_VISION_HAS_HBM
+void LineVisionNode::imageCallback(const hbm_img_msgs::msg::HbmMsg1080P::SharedPtr message)
 {
-  gst_init(nullptr, nullptr);
-  if (gst_element_factory_find("mppjpegdec") == nullptr) {
-    throw std::runtime_error("mppjpegdec GStreamer plugin is unavailable; refusing software decode");
-  }
-  std::ostringstream pipeline;
-  pipeline << "v4l2src device=" << config_.camera.device << " io-mode=2 do-timestamp=true ! "
-           << "image/jpeg,width=" << config_.camera.width << ",height=" << config_.camera.height
-           << ",framerate=" << config_.camera.fps << "/1 ! queue max-size-buffers="
-           << config_.camera.queue_size << " max-size-bytes=0 max-size-time=0 leaky=downstream ! "
-           << "jpegparse ! mppjpegdec format=NV12 dma-feature=false ! video/x-raw,format=NV12 ! "
-           << "appsink name=line_sink emit-signals=false sync=false max-buffers=1 drop=true";
-  pipeline_description_ = pipeline.str();
-  GError * error = nullptr;
-  pipeline_ = gst_parse_launch(pipeline_description_.c_str(), &error);
-  if (pipeline_ == nullptr || error != nullptr) {
-    const std::string message = error == nullptr ? "unknown" : error->message;
-    if (error != nullptr) {g_error_free(error);}
-    throw std::runtime_error("GStreamer pipeline parse failed: " + message);
-  }
-  app_sink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "line_sink");
-  if (app_sink_ == nullptr || !GST_IS_APP_SINK(app_sink_)) {throw std::runtime_error("appsink unavailable");}
-  if (gst_element_set_state(pipeline_, GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
-    throw std::runtime_error("GStreamer pipeline failed to enter PLAYING");
-  }
-  GstSample * first = gst_app_sink_try_pull_sample(GST_APP_SINK(app_sink_), 2 * GST_SECOND);
-  if (first == nullptr) {throw std::runtime_error("no first camera sample");}
-  GstVideoInfo info;
-  const bool valid = sampleInfo(first, info);
-  gst_sample_unref(first);
-  if (!valid) {throw std::runtime_error("first sample is not NV12 with expected dimensions");}
-  RCLCPP_INFO(get_logger(), "MPP pipeline ready: %s", pipeline_description_.c_str());
-}
-
-bool LineVisionNode::sampleInfo(GstSample * sample, GstVideoInfo & info) const
-{
-  GstCaps * caps = gst_sample_get_caps(sample);
-  if (caps == nullptr || !gst_video_info_from_caps(&info, caps)) {return false;}
-  return GST_VIDEO_INFO_FORMAT(&info) == GST_VIDEO_FORMAT_NV12 &&
-    static_cast<int>(GST_VIDEO_INFO_WIDTH(&info)) == config_.camera.width &&
-    static_cast<int>(GST_VIDEO_INFO_HEIGHT(&info)) == config_.camera.height &&
-    GST_VIDEO_INFO_N_PLANES(&info) >= 2;
-}
-
-void LineVisionNode::captureLoop()
-{
-  auto previous = std::chrono::steady_clock::now();
-  while (running_.load() && rclcpp::ok()) {
-    GstSample * sample = gst_app_sink_try_pull_sample(GST_APP_SINK(app_sink_), 100 * GST_MSECOND);
-    if (sample == nullptr) {lost_frames_.fetch_add(1); continue;}
-    GstVideoInfo info;
-    if (!sampleInfo(sample, info)) {gst_sample_unref(sample); lost_frames_.fetch_add(1); continue;}
-    const auto now = std::chrono::steady_clock::now();
-    const double dt = std::chrono::duration<double>(now - previous).count(); previous = now;
-    if (dt > 0.0) {stats_.addCapture(1.0 / dt);}
-    processSample(sample, info, frame_id_.fetch_add(1));
-    gst_sample_unref(sample);
-  }
-}
-
-void LineVisionNode::processSample(GstSample * sample, const GstVideoInfo & info, uint64_t frame_id)
-{
-  GstBuffer * buffer = gst_sample_get_buffer(sample);
-  GstVideoFrame frame;
-  if (buffer == nullptr || !gst_video_frame_map(&frame, &info, buffer, GST_MAP_READ)) {
+  if (!message || message->width == 0 || message->height == 0 ||
+    static_cast<int>(message->width) != config_.camera.width ||
+    static_cast<int>(message->height) != config_.camera.height || message->step < message->width ||
+    message->data_size < message->step * message->height || message->data.size() < message->data_size) {
     lost_frames_.fetch_add(1); return;
   }
+  const std::string encoding(reinterpret_cast<const char *>(message->encoding.data()), message->encoding.size());
+  if (encoding.find("nv12") == std::string::npos && encoding.find("NV12") == std::string::npos) {
+    RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 2000, "Unsupported HBM encoding: %s", encoding.c_str());
+    lost_frames_.fetch_add(1); return;
+  }
+  const auto previous = last_frame_time_;
+  const auto current = std::chrono::steady_clock::now();
+  if (previous.time_since_epoch().count() != 0) {
+    const double dt = std::chrono::duration<double>(current - previous).count();
+    if (dt > 0.0) {stats_.addCapture(1.0 / dt);}
+  }
+  last_frame_time_ = current;
+  cv::Mat y(static_cast<int>(message->height), static_cast<int>(message->width), CV_8UC1,
+    message->data.data(), static_cast<size_t>(message->step));
+  processFrame(y, rclcpp::Time(message->time_stamp), frame_id_.fetch_add(1));
+}
+#endif
+
+void LineVisionNode::processFrame(const cv::Mat & y, const rclcpp::Time & stamp, uint64_t frame_id)
+{
   const auto start = std::chrono::steady_clock::now();
-  auto * data = GST_VIDEO_FRAME_PLANE_DATA(&frame, 0);
-  const auto stride = GST_VIDEO_FRAME_PLANE_STRIDE(&frame, 0);
-  cv::Mat y(static_cast<int>(GST_VIDEO_INFO_HEIGHT(&info)), static_cast<int>(GST_VIDEO_INFO_WIDTH(&info)),
-    CV_8UC1, data, static_cast<size_t>(stride));
   LineResult result = detectLine(y, config_);
   const double processing_us = std::chrono::duration<double, std::micro>(
     std::chrono::steady_clock::now() - start).count();
@@ -225,7 +189,7 @@ void LineVisionNode::processSample(GstSample * sample, const GstVideoInfo & info
   if (result.valid) {result.center_u += 0.0;}
   display(y, result.mask, result, processing_us, true);
   drone_msgs::msg::LinePixelObservation message;
-  message.header.stamp = now(); message.header.frame_id = "camera";
+  message.header.stamp = stamp; message.header.frame_id = "camera";
   message.valid = result.valid; message.line_center_u_px = result.valid ? static_cast<float>(result.center_u) : NAN;
   message.line_center_v_px = result.valid ? static_cast<float>(result.center_v) : NAN;
   message.image_center_u_px = static_cast<float>(y.cols / 2.0);
@@ -247,7 +211,6 @@ void LineVisionNode::processSample(GstSample * sample, const GstVideoInfo & info
       << finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN) << ',' << finiteText(result.angle_rad) << ','
       << result.confidence << ',' << result.candidate_pixels << ',' << processing_us << '\n';
   }
-  gst_video_frame_unmap(&frame);
 }
 
 void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const LineResult & result,
@@ -268,17 +231,17 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   text("Y Plane / FULL_IMAGE", 25); text("device: " + config_.camera.device, 52);
   text("requested: " + std::to_string(config_.camera.width) + "x" + std::to_string(config_.camera.height), 79);
   text("actual: " + std::to_string(y.cols) + "x" + std::to_string(y.rows), 106);
-  text("input: MJPG  decoder: mppjpegdec", 133); text("output: NV12  input: Y_PLANE", 160);
-  text("decode_ok: " + std::to_string(decode_ok), 187);
-  text("valid: " + std::to_string(result.valid), 214); text("center_u_px: " + finiteText(result.valid ? result.center_u : NAN), 241);
-  text("center_v_px: " + finiteText(result.valid ? result.center_v : NAN), 268); text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 295);
-  text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 322); text("confidence: " + std::to_string(result.confidence), 349);
-  text("candidate_pixels: " + std::to_string(result.candidate_pixels), 376); text("lost_frames: " + std::to_string(lost_frames_.load()), 403);
-  text("capture_fps: " + std::to_string(stats_.captureFps()), 430); text("observation_fps: " + std::to_string(stats_.observationFps()), 457);
-  text("processing_us: " + std::to_string(processing_us), 484); text("p50_us: " + std::to_string(stats_.p50Us()), 511);
-  text("p95_us: " + std::to_string(stats_.p95Us()), 538); text("config: " + config_.config_file, 565);
-  text("threshold: " + std::to_string(config_.threshold.gray_threshold), 592);
-  text("roi_valid: " + std::to_string(!config_.roi.enabled || result.roi.area() > 0), 619);
+  text("topic: " + config_.camera.source_topic, 133); text("source: hobot_usb_cam", 160);
+  text("output: NV12  input: Y_PLANE", 187);
+  text("decode_ok: " + std::to_string(decode_ok), 214);
+  text("valid: " + std::to_string(result.valid), 241); text("center_u_px: " + finiteText(result.valid ? result.center_u : NAN), 268);
+  text("center_v_px: " + finiteText(result.valid ? result.center_v : NAN), 295); text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 322);
+  text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 349); text("confidence: " + std::to_string(result.confidence), 376);
+  text("candidate_pixels: " + std::to_string(result.candidate_pixels), 403); text("lost_frames: " + std::to_string(lost_frames_.load()), 430);
+  text("capture_fps: " + std::to_string(stats_.captureFps()), 457); text("observation_fps: " + std::to_string(stats_.observationFps()), 484);
+  text("processing_us: " + std::to_string(processing_us), 511); text("p50_us: " + std::to_string(stats_.p50Us()), 538);
+  text("p95_us: " + std::to_string(stats_.p95Us()), 565); text("config: " + config_.config_file, 592);
+  text("threshold: " + std::to_string(config_.threshold.gray_threshold), 619);
   }
   cv::Mat left; cv::resize(debug, left, cv::Size(640, 360)); cv::Mat right;
   if (config_.display.show_binary_mask) {cv::resize(mask, right, cv::Size(320, 360));}
@@ -341,8 +304,4 @@ void LineVisionNode::saveCurrent(const cv::Mat & y, const cv::Mat & mask, const 
   RCLCPP_INFO(get_logger(), "Saved snapshot to %s", directory.c_str());
 }
 
-void LineVisionNode::stopPipeline()
-{
-  if (pipeline_ != nullptr) {gst_element_set_state(pipeline_, GST_STATE_NULL); gst_object_unref(pipeline_); pipeline_ = nullptr; app_sink_ = nullptr;}
-}
 }

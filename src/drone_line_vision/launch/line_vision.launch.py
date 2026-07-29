@@ -3,6 +3,8 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -10,8 +12,26 @@ from launch_ros.actions import Node
 def generate_launch_description():
     package_share = get_package_share_directory("drone_line_vision")
     config = os.path.join(package_share, "config", "line_vision.yaml")
+    usb_cam_launch = os.path.join(
+        get_package_share_directory("hobot_usb_cam"), "launch", "hobot_usb_cam.launch.py")
     return LaunchDescription([
         DeclareLaunchArgument("config_file", default_value=config),
+        DeclareLaunchArgument("usb_video_device", default_value="/dev/video0"),
+        DeclareLaunchArgument("usb_image_width", default_value="1280"),
+        DeclareLaunchArgument("usb_image_height", default_value="720"),
+        DeclareLaunchArgument("usb_framerate", default_value="60"),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(usb_cam_launch),
+            launch_arguments={
+                "usb_video_device": LaunchConfiguration("usb_video_device"),
+                "usb_image_width": LaunchConfiguration("usb_image_width"),
+                "usb_image_height": LaunchConfiguration("usb_image_height"),
+                "usb_framerate": LaunchConfiguration("usb_framerate"),
+                "usb_pixel_format": "mjpeg",
+                "usb_io_method": "mmap",
+                "usb_zero_copy": "True",
+            }.items(),
+        ),
         Node(
             package="drone_line_vision",
             executable="line_vision_node",

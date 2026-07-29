@@ -18,8 +18,7 @@ find_package(drone_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml-cpp REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GSTREAMER REQUIRED IMPORTED_TARGET gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
+find_package(hbm_img_msgs QUIET)
 
 add_executable(line_vision_node
   src/main.cpp
@@ -31,9 +30,14 @@ target_include_directories(line_vision_node PRIVATE include ${OpenCV_INCLUDE_DIR
 target_link_libraries(line_vision_node
   ${OpenCV_LIBS}
   yaml-cpp
-  PkgConfig::GSTREAMER
 )
 ament_target_dependencies(line_vision_node rclcpp std_msgs drone_msgs ament_index_cpp)
+if(hbm_img_msgs_FOUND)
+  ament_target_dependencies(line_vision_node hbm_img_msgs)
+  target_compile_definitions(line_vision_node PRIVATE DRONE_LINE_VISION_HAS_HBM=1)
+else()
+  message(WARNING "hbm_img_msgs not found; line_vision_node will build without camera subscription")
+endif()
 
 install(TARGETS line_vision_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)

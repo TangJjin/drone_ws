@@ -34,6 +34,7 @@ target_link_libraries(line_vision_node
 ament_target_dependencies(line_vision_node rclcpp std_msgs drone_msgs ament_index_cpp)
 if(hbm_img_msgs_FOUND)
   ament_target_dependencies(line_vision_node hbm_img_msgs)
+  target_include_directories(line_vision_node PRIVATE ${hbm_img_msgs_INCLUDE_DIRS})
   target_compile_definitions(line_vision_node PRIVATE DRONE_LINE_VISION_HAS_HBM=1)
 else()
   message(WARNING "hbm_img_msgs not found; line_vision_node will build without camera subscription")

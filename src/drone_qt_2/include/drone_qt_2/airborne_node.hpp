@@ -78,6 +78,7 @@ private:
     rclcpp::Publisher<drone_msgs::msg::DroneStatus>::SharedPtr status_pub_;
     rclcpp::Publisher<drone_msgs::msg::BarcodeCapture>::SharedPtr barcode_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr local_position_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr car_local_position_pub_;
     rclcpp::Publisher<drone_msgs::msg::TaskStatus>::SharedPtr return_status_pub_;
     rclcpp::Publisher<drone_msgs::msg::ReadyStatus>::SharedPtr return_path_ready_pub_;
     rclcpp::Publisher<drone_msgs::msg::WorldGroup>::SharedPtr return_world_group_pub_;
@@ -87,6 +88,7 @@ private:
     rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr status_sub_;
     rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr local_position_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr car_local_position_sub_;
     rclcpp::Subscription<drone_msgs::msg::TaskStatus>::SharedPtr task_status_sub_;
     rclcpp::Subscription<drone_msgs::msg::ReadyStatus>::SharedPtr ready_status_sub_;
     rclcpp::Subscription<drone_msgs::msg::WorldGroup>::SharedPtr return_world_group_sub_;
@@ -115,6 +117,14 @@ private:
     double position_qy{0};//无人机姿态四元数qy
     double position_qz{0};//无人机姿态四元数qz
     double position_qw{0};//无人机姿态四元数qw
+
+    double car_position_x{0};//无人车位置x坐标
+    double car_position_y{0};//无人车位置y坐标
+    double car_position_z{0};//无人车位置z坐标
+    double car_position_qx{0};//无人车姿态四元数qx
+    double car_position_qy{0};//无人车姿态四元数qy
+    double car_position_qz{0};//无人车姿态四元数qz
+    double car_position_qw{0};//无人车姿态四元数qw
 
     bool offboard_started_{false};//防止任务重复启动
     bool task_started_{false};

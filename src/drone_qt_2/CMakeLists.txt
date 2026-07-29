@@ -28,9 +28,15 @@ add_executable(airborne_node
 )
 
 add_executable(airborne_link_bridge
-  src/airborne_link_bridge_main.cpp  
+  src/airborne_link_bridge_main.cpp
   src/airborne_link_bridge.cpp
   include/drone_qt_2/airborne_link_bridge.hpp
+)
+
+add_executable(car_link_bridge
+  src/car_link_bridge_main.cpp
+  src/car_link_bridge.cpp
+  include/drone_qt_2/car_link_bridge.hpp
 )
 
 add_executable(barcode_test_sender
@@ -47,11 +53,21 @@ target_include_directories(airborne_link_bridge PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
+target_include_directories(car_link_bridge PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
 target_link_libraries(airborne_node
   Qt5::Core
 )
 
 target_link_libraries(airborne_link_bridge
+  Qt5::Core
+  Qt5::SerialPort
+)
+
+target_link_libraries(car_link_bridge
   Qt5::Core
   Qt5::SerialPort
 )
@@ -73,6 +89,11 @@ ament_target_dependencies(airborne_link_bridge
   geometry_msgs
 )
 
+ament_target_dependencies(car_link_bridge
+  rclcpp
+  geometry_msgs
+)
+
 ament_target_dependencies(barcode_test_sender
   rclcpp
   drone_msgs
@@ -81,6 +102,7 @@ ament_target_dependencies(barcode_test_sender
 install(TARGETS
   airborne_node
   airborne_link_bridge
+  car_link_bridge
   barcode_test_sender
   DESTINATION lib/${PROJECT_NAME}
 )

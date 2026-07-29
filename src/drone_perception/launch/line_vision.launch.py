@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    package_share = get_package_share_directory("drone_line_vision")
+    package_share = get_package_share_directory("drone_perception")
     config = os.path.join(package_share, "config", "line_vision.yaml")
     usb_cam_launch = os.path.join(
         get_package_share_directory("hobot_usb_cam"), "launch", "hobot_usb_cam.launch.py")
@@ -47,7 +47,7 @@ def generate_launch_description():
             }.items(),
         ),
         Node(
-            package="drone_line_vision",
+            package="drone_perception",
             executable="line_vision_node",
             name="line_vision_node",
             output="screen",

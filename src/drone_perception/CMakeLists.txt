@@ -26,6 +26,28 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(drone_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(hbm_img_msgs QUIET)
+find_path(HBM_IMG_MSGS_INCLUDE_DIR NAMES hbm_img_msgs/msg/hbm_msg1080_p.hpp
+  PATHS /opt/tros/humble/include/hbm_img_msgs /opt/ros/humble/include/hbm_img_msgs)
+
+add_executable(line_vision_node
+  src/line_vision_main.cpp
+  src/line_vision_node.cpp
+  src/line_detector.cpp
+  src/frame_statistics.cpp
+)
+target_compile_features(line_vision_node PUBLIC cxx_std_17)
+target_include_directories(line_vision_node PRIVATE include ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(line_vision_node ${OpenCV_LIBS} yaml-cpp)
+ament_target_dependencies(line_vision_node rclcpp std_msgs drone_msgs ament_index_cpp)
+if(hbm_img_msgs_FOUND AND HBM_IMG_MSGS_INCLUDE_DIR)
+  ament_target_dependencies(line_vision_node hbm_img_msgs)
+  target_include_directories(line_vision_node PRIVATE ${HBM_IMG_MSGS_INCLUDE_DIR})
+  target_compile_definitions(line_vision_node PRIVATE DRONE_LINE_VISION_HAS_HBM=1)
+else()
+  message(WARNING "hbm_img_msgs not found; line_vision_node will not subscribe to HBM")
+endif()
 
 add_executable(rdk_nv12_display_cpp scripts/rdk_nv12_display.cpp)
 target_compile_features(rdk_nv12_display_cpp PUBLIC cxx_std_17)
@@ -34,6 +56,7 @@ target_link_libraries(rdk_nv12_display_cpp ${OpenCV_LIBS} Threads::Threads)
 
 install(TARGETS
   rdk_nv12_display_cpp
+  line_vision_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

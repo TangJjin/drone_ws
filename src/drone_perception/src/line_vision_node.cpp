@@ -117,6 +117,15 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
       "straight_curvature_threshold_px_inv", c.curve.straight_curvature_threshold_px_inv);
     c.curve.reference_row_ratio = value<double>(curve, "reference_row_ratio", c.curve.reference_row_ratio);
     c.curve.direction_sign = value<int>(curve, "direction_sign", c.curve.direction_sign);
+    const auto centerline = p["centerline"];
+    c.centerline.row_step_px = value<int>(centerline, "row_step_px", c.centerline.row_step_px);
+    c.centerline.min_valid_rows = value<int>(centerline, "min_valid_rows", c.centerline.min_valid_rows);
+    c.centerline.min_band_width_px = value<int>(centerline, "min_band_width_px", c.centerline.min_band_width_px);
+    c.centerline.max_band_width_px = value<int>(centerline, "max_band_width_px", c.centerline.max_band_width_px);
+    c.centerline.max_center_jump_px = value<int>(centerline, "max_center_jump_px", c.centerline.max_center_jump_px);
+    c.centerline.max_gap_rows = value<int>(centerline, "max_gap_rows", c.centerline.max_gap_rows);
+    c.centerline.bottom_search_ratio = value<double>(centerline,
+      "bottom_search_ratio", c.centerline.bottom_search_ratio);
     const auto display_cfg = p["display"];
     c.display.enabled = value<bool>(display_cfg, "enabled", c.display.enabled);
     c.display.window_width = value<int>(display_cfg, "window_width", c.display.window_width);
@@ -150,6 +159,12 @@ bool LineVisionNode::loadConfig(const std::string & path, LineVisionConfig & out
       c.curve.straight_curvature_threshold_px_inv < 0.0 || c.curve.reference_row_ratio < 0.0 ||
       c.curve.reference_row_ratio > 1.0 || (c.curve.direction_sign != -1 && c.curve.direction_sign != 1)) {
       throw std::runtime_error("curve parameters are invalid");
+    }
+    if (c.centerline.row_step_px < 1 || c.centerline.min_valid_rows < 3 ||
+      c.centerline.min_band_width_px < 1 || c.centerline.max_band_width_px < c.centerline.min_band_width_px ||
+      c.centerline.max_center_jump_px < 1 || c.centerline.max_gap_rows < 0 ||
+      c.centerline.bottom_search_ratio < 0.0 || c.centerline.bottom_search_ratio > 1.0) {
+      throw std::runtime_error("centerline parameters are invalid");
     }
     out = c;
     return true;
@@ -252,6 +267,9 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
   last_display_time_ = now;
   cv::Mat debug = mask.empty() ? cv::Mat::zeros(y.size(), CV_8UC1) : mask.clone();
   cv::line(debug, cv::Point(debug.cols / 2, 0), cv::Point(debug.cols / 2, debug.rows), cv::Scalar(128), 1);
+  for (const auto & point : result.component) {
+    debug.at<uint8_t>(point.y, point.x) = 128;
+  }
   if (result.valid) {
     cv::circle(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)), 7, cv::Scalar(190), -1);
     cv::line(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)),

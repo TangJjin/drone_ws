@@ -2,6 +2,7 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace drone_line_vision
 {
@@ -38,6 +39,87 @@ bool fitQuadratic(const std::vector<cv::Point> & points, double & a, double & b,
   }
   residual = std::sqrt(squared_error / static_cast<double>(points.size()));
   return std::isfinite(a) && std::isfinite(b) && std::isfinite(c) && std::isfinite(residual);
+}
+
+int findTargetLabel(const cv::Mat & labels, const cv::Mat & stats, const LineVisionConfig & config)
+{
+  const int count = stats.rows;
+  const int center_x = labels.cols / 2;
+  const int first_row = static_cast<int>(config.centerline.bottom_search_ratio * labels.rows);
+  std::vector<int> lower_hits(static_cast<size_t>(count), 0);
+  std::vector<int> center_distance(static_cast<size_t>(count), labels.cols);
+  for (int y = std::clamp(first_row, 0, labels.rows - 1); y < labels.rows; ++y) {
+    for (int x = 0; x < labels.cols; ++x) {
+      const int label = labels.at<int>(y, x);
+      if (label > 0) {
+        ++lower_hits[static_cast<size_t>(label)];
+        center_distance[static_cast<size_t>(label)] = std::min(
+          center_distance[static_cast<size_t>(label)], std::abs(x - center_x));
+      }
+    }
+  }
+
+  int best = -1;
+  double best_score = -std::numeric_limits<double>::infinity();
+  for (int label = 1; label < count; ++label) {
+    const int area = stats.at<int>(label, cv::CC_STAT_AREA);
+    if (area < config.line_fit.min_component_area || lower_hits[static_cast<size_t>(label)] == 0) {
+      continue;
+    }
+    const double score = 1000000.0 - 1000.0 * center_distance[static_cast<size_t>(label)] +
+      10.0 * lower_hits[static_cast<size_t>(label)] + 0.01 * std::min(area, 200000);
+    if (score > best_score) {
+      best_score = score;
+      best = label;
+    }
+  }
+  return best;
+}
+
+std::vector<cv::Point> extractCenterline(const cv::Mat & labels, int target_label,
+  const LineVisionConfig & config, const cv::Rect & roi)
+{
+  std::vector<cv::Point> centers;
+  double expected_center = labels.cols / 2.0;
+  int gap_rows = 0;
+  for (int y = labels.rows - 1; y >= 0; y -= config.centerline.row_step_px) {
+    int best_left = -1;
+    int best_right = -1;
+    double best_distance = std::numeric_limits<double>::infinity();
+    for (int x = 0; x < labels.cols;) {
+      if (labels.at<int>(y, x) != target_label) {
+        ++x;
+        continue;
+      }
+      const int left = x;
+      while (x < labels.cols && labels.at<int>(y, x) == target_label) {++x;}
+      const int right = x - 1;
+      const int width = right - left + 1;
+      if (width < config.centerline.min_band_width_px || width > config.centerline.max_band_width_px) {
+        continue;
+      }
+      const double center = 0.5 * static_cast<double>(left + right);
+      const double distance = std::abs(center - expected_center);
+      if ((!centers.empty() && distance > config.centerline.max_center_jump_px) || distance >= best_distance) {
+        continue;
+      }
+      {
+        best_left = left;
+        best_right = right;
+        best_distance = distance;
+      }
+    }
+    if (best_left >= 0) {
+      const int center_x = (best_left + best_right) / 2;
+      centers.emplace_back(center_x + roi.x, y + roi.y);
+      expected_center = center_x;
+      gap_rows = 0;
+    } else if (!centers.empty()) {
+      gap_rows += config.centerline.row_step_px;
+      if (gap_rows > config.centerline.max_gap_rows) {break;}
+    }
+  }
+  return centers;
 }
 }
 
@@ -77,23 +159,16 @@ LineResult detectLine(const cv::Mat & y_plane, const LineVisionConfig & config)
   result.candidate_pixels = cv::countNonZero(mask);
   result.mask = cv::Mat::zeros(y_plane.size(), CV_8UC1);
   mask.copyTo(result.mask(roi));
-  if (result.candidate_pixels < config.threshold.min_candidate_pixels ||
-    result.candidate_pixels > config.threshold.max_candidate_pixels) {return result;}
+  if (result.candidate_pixels < config.threshold.min_candidate_pixels) {return result;}
 
   cv::Mat labels, stats, centroids;
   const int count = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-  int best = -1; int best_area = 0;
-  for (int i = 1; i < count; ++i) {
-    const int area = stats.at<int>(i, cv::CC_STAT_AREA);
-    if (area >= config.line_fit.min_component_area && area > best_area) {best = i; best_area = area;}
-  }
+  if (count <= 1) {return result;}
+  const int best = findTargetLabel(labels, stats, config);
   if (best < 0) {return result;}
-  for (int y = 0; y < labels.rows; ++y) {
-    for (int x = 0; x < labels.cols; ++x) {
-      if (labels.at<int>(y, x) == best) {result.component.emplace_back(x + roi.x, y + roi.y);}
-    }
-  }
-  if (result.component.size() < 2U) {return result;}
+  result.selected_component_pixels = stats.at<int>(best, cv::CC_STAT_AREA);
+  result.component = extractCenterline(labels, best, config, roi);
+  if (static_cast<int>(result.component.size()) < config.centerline.min_valid_rows) {return result;}
   cv::Vec4f line;
   cv::fitLine(result.component, line, cv::DIST_L2, 0, 0.01, 0.01);
   const cv::Point2f origin(line[2], line[3]);
@@ -125,6 +200,8 @@ LineResult detectLine(const cv::Mat & y_plane, const LineVisionConfig & config)
       const double t = row - reference_v;
       const double slope = 2.0 * a * t + b;
       const double signed_curvature = 2.0 * a / std::pow(1.0 + slope * slope, 1.5);
+      result.center_u = a * t * t + b * t + c;
+      result.center_v = row;
       result.heading_error_rad = -std::atan(slope);
       result.curvature_px_inv = std::abs(signed_curvature);
       result.curve_direction = result.curvature_px_inv < config.curve.straight_curvature_threshold_px_inv ?
@@ -134,7 +211,10 @@ LineResult detectLine(const cv::Mat & y_plane, const LineVisionConfig & config)
     }
   }
   if (!result.curve_valid && residual > config.line_fit.max_fit_residual_px) {return result;}
-  result.confidence = std::clamp((static_cast<double>(best_area) / 10000.0) *
+  const double expected_rows = std::max(1.0, static_cast<double>(roi.height) /
+    static_cast<double>(config.centerline.row_step_px));
+  const double coverage = std::min(1.0, static_cast<double>(result.component.size()) / expected_rows);
+  result.confidence = std::clamp(coverage *
     (1.0 - fit_residual / std::max(1.0, config.curve.max_fit_residual_px)), 0.0, 1.0);
   result.valid = true;
   return result;

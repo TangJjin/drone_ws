@@ -35,11 +35,19 @@ line_vision_node:
       near_scan_ratio: 0.75
       far_scan_ratio: 0.25
     curve:
-      min_fit_points: 80
+      min_fit_points: 40
       max_fit_residual_px: 15.0
       straight_curvature_threshold_px_inv: 0.0005
       reference_row_ratio: 0.75
       direction_sign: 1
+    centerline:
+      row_step_px: 4
+      min_valid_rows: 40
+      min_band_width_px: 4
+      max_band_width_px: 500
+      max_center_jump_px: 80
+      max_gap_rows: 16
+      bottom_search_ratio: 0.75
     display:
       enabled: true
       window_width: 1600

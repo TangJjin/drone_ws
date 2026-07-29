@@ -26,7 +26,7 @@ line_vision_node:
     morphology:
       enabled: true
       kernel_size: 3
-      open_iterations: 0
+      open_iterations: 1
       close_iterations: 1
     line_fit:
       min_component_area: 80

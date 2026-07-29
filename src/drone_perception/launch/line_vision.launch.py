@@ -23,8 +23,8 @@ def generate_launch_description():
             default_value=(
                 "/dev/v4l/by-id/usb-12MP_U3_Camera_12MP_U3_Camera_2601230002-video-index0"),
         ),
-        DeclareLaunchArgument("usb_image_width", default_value="1280"),
-        DeclareLaunchArgument("usb_image_height", default_value="720"),
+        DeclareLaunchArgument("usb_image_width", default_value="640"),
+        DeclareLaunchArgument("usb_image_height", default_value="360"),
         DeclareLaunchArgument("usb_framerate", default_value="60"),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(usb_cam_launch),

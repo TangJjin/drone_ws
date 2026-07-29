@@ -251,8 +251,8 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
     text("error_u_px: " + finiteText(result.valid ? result.center_u - y.cols / 2.0 : NAN), 120);
     text("angle_rad: " + finiteText(result.valid ? result.angle_rad : NAN), 144);
     text("candidates: " + std::to_string(result.candidate_pixels) + "  lost: " + std::to_string(lost_frames_.load()), 168);
-    text("capture_fps: " + std::to_string(stats_.captureFps()), 192);
-    text("observation_fps: " + std::to_string(stats_.observationFps()), 216);
+    text("capture/input_fps: " + std::to_string(stats_.captureFps()), 192);
+    text("observation/output_fps: " + std::to_string(stats_.observationFps()), 216);
     text("processing_us: " + std::to_string(processing_us), 240);
     text("p50/p95_us: " + std::to_string(stats_.p50Us()) + "/" + std::to_string(stats_.p95Us()), 264);
     text("threshold: " + std::to_string(config_.threshold.gray_threshold), 288);

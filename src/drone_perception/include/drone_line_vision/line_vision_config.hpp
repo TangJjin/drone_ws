@@ -22,7 +22,7 @@ struct ThresholdConfig {
   int min_candidate_pixels{100}; int max_candidate_pixels{100000};
 };
 struct MorphologyConfig {
-  bool enabled{true}; int kernel_size{3}; int open_iterations{1}; int close_iterations{1};
+  bool enabled{true}; int kernel_size{3}; int open_iterations{0}; int close_iterations{1};
 };
 struct LineFitConfig {
   int min_component_area{80}; double max_fit_residual_px{15.0};

@@ -226,12 +226,12 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
     return;
   }
   last_display_time_ = now;
-  cv::Mat debug = y.clone();
-  cv::line(debug, cv::Point(debug.cols / 2, 0), cv::Point(debug.cols / 2, debug.rows), cv::Scalar(220), 1);
+  cv::Mat debug = mask.empty() ? cv::Mat::zeros(y.size(), CV_8UC1) : mask.clone();
+  cv::line(debug, cv::Point(debug.cols / 2, 0), cv::Point(debug.cols / 2, debug.rows), cv::Scalar(128), 1);
   if (result.valid) {
-    cv::circle(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)), 7, cv::Scalar(200), -1);
+    cv::circle(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)), 7, cv::Scalar(190), -1);
     cv::line(debug, cv::Point(static_cast<int>(result.center_u), static_cast<int>(result.center_v)),
-      cv::Point(static_cast<int>(result.center_u + 100 * std::cos(result.angle_rad)), static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(150), 2);
+      cv::Point(static_cast<int>(result.center_u + 100 * std::cos(result.angle_rad)), static_cast<int>(result.center_v + 100 * std::sin(result.angle_rad))), cv::Scalar(96), 2);
   }
   cv::Mat combined = debug;
   if (config_.display.show_data_panel) {
@@ -244,7 +244,7 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
       cv::putText(panel, value_text, cv::Point(12, row), cv::FONT_HERSHEY_SIMPLEX, 0.48,
         cv::Scalar(235), 1, cv::LINE_AA);
     };
-    text("Y Plane | FULL_IMAGE | NV12", 24);
+    text("BINARY MASK | FULL_IMAGE", 24);
     text("size: " + std::to_string(y.cols) + "x" + std::to_string(y.rows) + "  decode: " + std::to_string(decode_ok), 48);
     text("valid: " + std::to_string(result.valid) + "  confidence: " + std::to_string(result.confidence), 72);
     text("center: " + finiteText(result.valid ? result.center_u : NAN) + ", " + finiteText(result.valid ? result.center_v : NAN), 96);
@@ -259,21 +259,13 @@ void LineVisionNode::display(const cv::Mat & y, const cv::Mat & mask, const Line
     text("topic: " + config_.camera.source_topic, 312);
     cv::addWeighted(combined(panel_rect), 0.35, panel, 0.65, 0.0, combined(panel_rect));
   }
-  if (config_.display.show_binary_mask && !mask.empty()) {
-    const int inset_width = std::max(160, combined.cols / 5);
-    const int inset_height = std::max(90, combined.rows / 5);
-    cv::Mat inset;
-    cv::resize(mask, inset, cv::Size(inset_width, inset_height));
-    cv::Rect inset_rect(combined.cols - inset.cols - 12, combined.rows - inset.rows - 12, inset.cols, inset.rows);
-    cv::addWeighted(combined(inset_rect), 0.35, inset, 0.65, 0.0, combined(inset_rect));
-  }
   static bool window_created = false;
   if (!window_created) {
-    cv::namedWindow("Line Vision Y Plane", cv::WINDOW_NORMAL);
-    cv::resizeWindow("Line Vision Y Plane", config_.display.window_width, config_.display.window_height);
+    cv::namedWindow("Line Vision Binary Mask", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Line Vision Binary Mask", config_.display.window_width, config_.display.window_height);
     window_created = true;
   }
-  cv::imshow("Line Vision Y Plane", combined);
+  cv::imshow("Line Vision Binary Mask", combined);
   const int key = cv::waitKey(1) & 0xff;
   if (key == config_.runtime.quit_key || key == 27) {running_.store(false); rclcpp::shutdown();}
   else if (key == config_.runtime.pause_key) {cv::waitKey(0);}

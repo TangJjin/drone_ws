@@ -25,7 +25,8 @@ system:
   max_z_speed_mps: 0.30
   max_yaw_rate_deg_s: 40.0
 
-  # Global visual-servo defaults. Used only by explicit visual_servo actions.
+  # Global visual-servo defaults. Input offsets and tolerances are in metres.
+  # max_body_speed_mps bounds the step: at 20 Hz, 0.20 m/s is at most 0.01 m/update.
   target_id: ""
   require_confirmed: true
   image_x_axis: "y"

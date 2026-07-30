@@ -50,6 +50,7 @@ struct VisualServoObservation {
   std::string target_id;
   bool valid = false;
   bool confirmed = false;
+  // Target offsets in metres: camera-image right and down, respectively.
   double error_x = 0.0;
   double error_y = 0.0;
   rclcpp::Time received_time{0, 0, RCL_ROS_TIME};
@@ -249,6 +250,8 @@ class VisualServoController {
     last_error_x_ = filtered_error_x_;
     last_error_y_ = filtered_error_y_;
 
+    // Metric error makes the proportional gains inverse-time gains. Integrating
+    // the bounded velocity over dt keeps each setpoint update a small step.
     double velocity_x = config_.kp_x * filtered_error_x_ +
         config_.ki_x * integral_x_ + config_.kd_x * derivative_x;
     double velocity_y = config_.kp_y * filtered_error_y_ +

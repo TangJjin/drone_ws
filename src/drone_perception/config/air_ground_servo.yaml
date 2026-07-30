@@ -72,14 +72,17 @@ air_ground_servo_node:
     # 是否显示OpenCV调试窗口。
     debug_view: true
 
-    # 调试窗口显示模式；可选RGB、GRAY或BINARY，BINARY使用Otsu自动阈值。
-    view_mode: "BINARY"
+    # 调试窗口显示模式；默认RGB以避免BINARY模式额外执行Otsu、轮廓提取和轮廓绘制。
+    view_mode: "RGB"
+
+    # OpenCV内部并行线程数；视觉节点已绑定CPU 6、7，因此限制为2避免线程过量竞争。
+    opencv_num_threads: 2
 
     # 重复警告日志的最小间隔，单位毫秒。
     log_throttle_ms: 2000
 
-    # 有效靶标圆心的相机系三维坐标输出话题；靶标、深度或内参无效时不发布伪坐标。
-    point_topic: "/air_ground_servo/target_point"
+    # 控制端视觉伺服话题；发布VisionServoTarget，默认与现有控制端订阅话题一致。
+    servo_topic: "/vision/servo/target"
 
     # Canny边缘检测低阈值；与高阈值共同用于椭圆和十字线候选。
     canny_low_threshold: 50

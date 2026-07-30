@@ -6,6 +6,9 @@ realsense:
   # RealSense节点名称；默认生成/camera/camera/...话题。
   camera_name: camera
 
+  # 固定librealsense识别的D435i序列号；前导下划线防止ROS解析成整数。
+  serial_no: "_327122074056"
+
   # 是否启用RGB彩色流；RGBD消息必须开启。
   enable_color: true
 

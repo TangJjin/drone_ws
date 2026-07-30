@@ -20,6 +20,7 @@ from launch_ros.actions import Node
 REALSENSE_TYPES = {
     "camera_namespace": str,
     "camera_name": str,
+    "serial_no": str,
     "enable_color": bool,
     "rgb_camera.color_profile": str,
     "enable_depth": bool,

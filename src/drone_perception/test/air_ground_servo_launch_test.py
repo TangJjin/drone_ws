@@ -34,10 +34,35 @@ def test_realsense_config_targets_fixed_d435i_serial():
     assert realsense["serial_no"] == "_327122074056"
 
 
-def test_servo_config_defines_manual_point_topic():
+def test_servo_config_defines_target_point_topic():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
-    assert servo["point_topic"] == "/air_ground_servo/manual_point"
+    assert servo["point_topic"] == "/air_ground_servo/target_point"
+
+
+def test_servo_config_defines_cross_tracking_parameters():
+    _, servo = MODULE._load_config(str(CONFIG_FILE))
+
+    assert servo["min_cross_angle_deg"] == 60.0
+    assert servo["min_ring_radius_px"] < servo["max_ring_radius_px"]
+    assert servo["min_ring_coverage_ratio"] == 0.30
+    assert servo["canny_low_threshold"] < servo["canny_high_threshold"]
+
+
+def test_servo_config_uses_binary_debug_view():
+    _, servo = MODULE._load_config(str(CONFIG_FILE))
+
+    assert servo["view_mode"] == "BINARY"
+
+
+def test_servo_config_rejects_unknown_view_mode(tmp_path):
+    config = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8"))
+    config["air_ground_servo_node"]["ros__parameters"]["view_mode"] = "EDGE"
+    invalid_config = tmp_path / "invalid_view_mode.yaml"
+    invalid_config.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="view_mode.*must be RGB, GRAY or BINARY"):
+        MODULE._load_config(str(invalid_config))
 
 
 def test_realsense_config_uses_supported_50_hz_power_line_frequency():

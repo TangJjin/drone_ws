@@ -44,8 +44,21 @@ SERVO_TYPES = {
     "fps_smoothing_alpha": (int, float),
     "window_name": str,
     "debug_view": bool,
+    "view_mode": str,
     "log_throttle_ms": int,
     "point_topic": str,
+    "canny_low_threshold": int,
+    "canny_high_threshold": int,
+    "hough_threshold": int,
+    "hough_min_line_length": int,
+    "hough_max_line_gap": int,
+    "line_angle_tolerance_deg": (int, float),
+    "min_cross_angle_deg": (int, float),
+    "min_ring_radius_px": int,
+    "max_ring_radius_px": int,
+    "min_ring_separation_px": int,
+    "min_ring_coverage_ratio": (int, float),
+    "trajectory_max_points": int,
 }
 
 SERVO_FLOAT_PARAMETERS = {
@@ -53,6 +66,9 @@ SERVO_FLOAT_PARAMETERS = {
     "min_depth_m",
     "max_depth_m",
     "fps_smoothing_alpha",
+    "line_angle_tolerance_deg",
+    "min_cross_angle_deg",
+    "min_ring_coverage_ratio",
 }
 
 
@@ -129,6 +145,9 @@ def _load_config(path):
         raise RuntimeError(
             "'realsense.rgb_camera.power_line_frequency' must be 0, 1, or 2"
         )
+
+    if servo_parameters["view_mode"] not in {"RGB", "GRAY", "BINARY"}:
+        raise RuntimeError("'air_ground_servo_node.view_mode' must be RGB, GRAY or BINARY")
 
     return realsense, servo_parameters
 

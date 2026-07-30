@@ -132,6 +132,12 @@ mission:
       yaw: 0.000
     - type: "visual_servo"
 
+    - type: "move"
+      frame: "world_body"
+      position: [0.700, 0.000, 1.400]
+      yaw: 0.000
+    - type: "visual_servo"
+
 
     # Point 20 - close the oval at the A-B midpoint
     - type: "move"

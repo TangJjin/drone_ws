@@ -1,172 +1,149 @@
-# Mission configuration
+# Ellipse mission reduced from ellipse_100_points.yaml to 20 move points.
 mission:
-  takeoff_altitude: 0.00
+  takeoff_altitude: 1.50
   actions:
     - type: "takeoff"
-      altitude: 0.00
+      altitude: 1.50
 
+    # Point 01 - source point 001
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 0.00
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.000, 0.000, 1.500]
+      yaw: 0.000
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 02 - source point 006
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.395, 0.000, 1.500]
+      yaw: 0.000
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 03 - source point 011
     - type: "move"
       frame: "world_body"
-      position: [0.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.789, 0.000, 1.500]
+      yaw: 0.000
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 04 - source point 017
     - type: "move"
       frame: "world_body"
-      position: [1.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [1.263, 0.000, 1.500]
+      yaw: 0.000
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 05 - source point 022
     - type: "move"
       frame: "world_body"
-      position: [1.25, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [1.651, -0.015, 1.500]
+      yaw: -0.203
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 06 - source point 027
     - type: "move"
       frame: "world_body"
-      position: [0.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [1.989, -0.181, 1.500]
+      yaw: -0.709
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 07 - source point 032
     - type: "move"
       frame: "world_body"
-      position: [1.25, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [2.203, -0.490, 1.500]
+      yaw: -1.216
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 08 - source point 037
     - type: "move"
       frame: "world_body"
-      position: [1.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [2.241, -0.864, 1.500]
+      yaw: -1.723
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 09 - source point 043
     - type: "move"
       frame: "world_body"
-      position: [0.75, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [2.044, -1.267, 1.500]
+      yaw: -2.331
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-      vision_hover: true
-
+    # Point 10 - source point 048
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 1.57
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [1.725, -1.466, 1.500]
+      yaw: -2.838
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 11 - source point 053
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.30]
-      yaw: 0.00
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [1.342, -1.500, 1.500]
+      yaw: -3.142
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
-
+    # Point 12 - source point 058
     - type: "move"
       frame: "world_body"
-      position: [0.00, 0.00, 0.00]
-      yaw: 0.00
-      tolerance: 0.10
-      yaw_tolerance_deg: 4.0
-      max_xy_speed_mps: 0.50
-      max_z_speed_mps: 0.30
-      max_yaw_rate_deg_s: 40.0
+      position: [0.947, -1.500, 1.500]
+      yaw: -3.142
+    - type: "visual_servo"
 
-    - type: "hover"
-      duration: 3.00
+    # Point 13 - source point 064
+    - type: "move"
+      frame: "world_body"
+      position: [0.474, -1.500, 1.500]
+      yaw: -3.142
+    - type: "visual_servo"
+
+    # Point 14 - source point 069
+    - type: "move"
+      frame: "world_body"
+      position: [0.079, -1.500, 1.500]
+      yaw: -3.142
+    - type: "visual_servo"
+
+    # Point 15 - source point 074
+    - type: "move"
+      frame: "world_body"
+      position: [-0.305, -1.435, 1.500]
+      yaw: 2.723
+    - type: "visual_servo"
+
+    # Point 16 - source point 079
+    - type: "move"
+      frame: "world_body"
+      position: [-0.607, -1.191, 1.500]
+      yaw: 2.199
+    - type: "visual_servo"
+
+    # Point 17 - source point 084
+    - type: "move"
+      frame: "world_body"
+      position: [-0.746, -0.828, 1.500]
+      yaw: 1.676
+    - type: "visual_servo"
+
+    # Point 18 - source point 090
+    - type: "move"
+      frame: "world_body"
+      position: [-0.650, -0.375, 1.500]
+      yaw: 1.047
+    - type: "visual_servo"
+
+    # Point 19 - source point 095
+    - type: "move"
+      frame: "world_body"
+      position: [-0.375, -0.100, 1.500]
+      yaw: 0.524
+    - type: "visual_servo"
+
+    # Point 20 - source point 100 (closed)
+    - type: "move"
+      frame: "world_body"
+      position: [0.000, 0.000, 1.500]
+      yaw: 0.000
+    - type: "visual_servo"
 
     - type: "hover"
       duration: 1.00
@@ -174,4 +151,34 @@ mission:
     - type: "land"
 
 system:
+  tolerance: 0.10
+  yaw_tolerance_deg: 4.0
+  max_xy_speed_mps: 0.50
+  max_z_speed_mps: 0.30
+  max_yaw_rate_deg_s: 40.0
+
+  target_id: ""
+  require_confirmed: true
+  image_x_axis: "y"
+  image_y_axis: "z"
+  image_x_sign: -1.0
+  image_y_sign: -1.0
+  kp_x: 0.35
+  ki_x: 0.0
+  kd_x: 0.02
+  kp_y: 0.35
+  ki_y: 0.0
+  kd_y: 0.02
+  integral_limit: 0.5
+  filter_alpha: 0.35
+  enter_tolerance_x: 0.04
+  enter_tolerance_y: 0.04
+  exit_tolerance_x: 0.07
+  exit_tolerance_y: 0.07
+  settle_time_s: 0.6
+  acquire_timeout_s: 5.0
+  lost_timeout_s: 1.0
+  overall_timeout_s: 20.0
+  max_body_speed_mps: 0.20
+  continue_on_timeout: true
   auto_start_mission: false

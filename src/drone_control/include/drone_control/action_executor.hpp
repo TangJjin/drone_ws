@@ -18,7 +18,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <functional>
+#include <fstream>
 #include <iomanip>
 #include <memory>
 #include <queue>
@@ -180,6 +182,10 @@ public:
         status.task_running = static_cast<bool>(current_action_);
         status.action_step = current_action_ ? action_id_ : 0;
         status.action_name = current_action_ ? actionTypeToString(current_action_->getType()) : "idle";
+        if (drop_active_)
+        {
+            status.action_name = "drop";
+        }
         return status;
     }
 
@@ -242,6 +248,8 @@ private:
     {
         visual_servo_controller_.reset();
         visual_servo_action_initialized_ = false;
+        drop_active_ = false;
+        drop_started_time_ = rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
         resetMoveRuntimeState();
         land_mode_request_sent_ = false;
         land_setpoint_quiet_started_ = false;
@@ -728,6 +736,18 @@ private:
     void executeVisualServo(const std::shared_ptr<DroneAction> &action)
     {
         const rclcpp::Time now = node_->now();
+
+        if (drop_active_)
+        {
+            sendPositionSetpoint(visual_servo_hold_pose_);
+            if ((now - drop_started_time_).seconds() >= kDropHoldDurationS)
+            {
+                drop_active_ = false;
+                completeCurrentAction("视觉伺服完成后已执行舵机抛投。");
+            }
+            return;
+        }
+
         if (!visual_servo_action_initialized_)
         {
             visual_servo_controller_.start(action->getVisualServoConfig(), now);
@@ -745,7 +765,14 @@ private:
         if (output.state == VisualServoState::SUCCEEDED)
         {
             publishVisualServoStatus(output, false, true);
-            completeCurrentAction("视觉伺服已稳定对准目标。");
+            visual_servo_hold_pose_ = current_pose_;
+            if (!startDropServo())
+            {
+                completeCurrentAction("视觉伺服已完成，但舵机抛投启动失败。");
+                return;
+            }
+            drop_active_ = true;
+            drop_started_time_ = now;
             return;
         }
 
@@ -791,6 +818,50 @@ private:
             std::string(VisualServoController::stateName(output.state)) +
             "，error=(" + formatSeconds(output.filtered_error_x) + ", " +
             formatSeconds(output.filtered_error_y) + ")，" + output.detail + "。");
+    }
+
+    bool writePwmValue(const std::string &path, const std::string &value)
+    {
+        std::ofstream file(path);
+        if (!file)
+        {
+            RCLCPP_ERROR(node_->get_logger(), "无法打开 PWM 文件：%s", path.c_str());
+            return false;
+        }
+        file << value;
+        file.flush();
+        if (!file)
+        {
+            RCLCPP_ERROR(node_->get_logger(), "无法写入 PWM 文件：%s", path.c_str());
+            return false;
+        }
+        return true;
+    }
+
+    bool startDropServo()
+    {
+        constexpr const char *kPwmChipPath = "/sys/class/pwm/pwmchip0";
+        constexpr const char *kPwmPath = "/sys/class/pwm/pwmchip0/pwm0";
+        constexpr const char *kPeriodNs = "20000000";
+        constexpr const char *kReleaseDutyNs = "1000000";
+
+        if (!std::filesystem::exists(kPwmPath) &&
+            !writePwmValue(std::string(kPwmChipPath) + "/export", "0"))
+        {
+            return false;
+        }
+
+        if (!writePwmValue(std::string(kPwmPath) + "/enable", "0") ||
+            !writePwmValue(std::string(kPwmPath) + "/polarity", "normal") ||
+            !writePwmValue(std::string(kPwmPath) + "/period", kPeriodNs) ||
+            !writePwmValue(std::string(kPwmPath) + "/duty_cycle", kReleaseDutyNs) ||
+            !writePwmValue(std::string(kPwmPath) + "/enable", "1"))
+        {
+            return false;
+        }
+
+        RCLCPP_INFO(node_->get_logger(), "舵机抛投已触发：duty_cycle=%s ns。", kReleaseDutyNs);
+        return true;
     }
 
     void publishVisualServoStatus(
@@ -1071,6 +1142,9 @@ private:
     VisualServoState last_visual_servo_state_ = VisualServoState::IDLE;
     bool visual_servo_target_received_ = false;
     bool visual_servo_action_initialized_ = false;
+    bool drop_active_ = false;
+    rclcpp::Time drop_started_time_;
+    static constexpr double kDropHoldDurationS = 1.0;
     bool force_visual_servo_status_publish_ = true;
     std::string last_visual_servo_status_name_;
     rclcpp::Time last_visual_servo_status_time_;

@@ -6,7 +6,12 @@ import re
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    GroupAction,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -79,6 +84,13 @@ def _as_launch_value(value):
     return str(value)
 
 
+def _taskset_prefix(cpu_set):
+    normalized = cpu_set.strip()
+    if normalized and not re.fullmatch(r"[0-9]+(?:[,-][0-9]+)*", normalized):
+        raise RuntimeError("cpu_set must be a CPU list like '6,7' or '4-7'")
+    return f"taskset -c {normalized}" if normalized else None
+
+
 def _load_config(path):
     if not os.path.isfile(path):
         raise RuntimeError(f"air-ground servo config file does not exist: {path}")
@@ -116,6 +128,7 @@ def _load_config(path):
 def _launch_setup(context):
     config_path = os.path.abspath(LaunchConfiguration("config_file").perform(context))
     realsense, servo_parameters = _load_config(config_path)
+    servo_prefix = _taskset_prefix(LaunchConfiguration("cpu_set").perform(context))
 
     realsense_launch = os.path.join(
         get_package_share_directory("realsense2_camera"), "launch", "rs_launch.py"
@@ -127,9 +140,15 @@ def _launch_setup(context):
     realsense_arguments["config_file"] = "''"
 
     return [
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(realsense_launch),
-            launch_arguments=realsense_arguments.items(),
+        GroupAction(
+            actions=[
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(realsense_launch),
+                ),
+            ],
+            scoped=True,
+            forwarding=False,
+            launch_configurations=realsense_arguments,
         ),
         Node(
             package="drone_perception",
@@ -137,6 +156,7 @@ def _launch_setup(context):
             name="air_ground_servo_node",
             output="screen",
             emulate_tty=True,
+            prefix=servo_prefix,
             parameters=[servo_parameters],
         ),
     ]
@@ -150,6 +170,11 @@ def generate_launch_description():
             "config_file",
             default_value=default_config,
             description="Path to the commented air-ground RGBD YAML configuration",
+        ),
+        DeclareLaunchArgument(
+            "cpu_set",
+            default_value="6,7",
+            description="CPU list for taskset before the RGBD node starts; empty disables pinning",
         ),
         OpaqueFunction(function=_launch_setup),
     ])

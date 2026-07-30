@@ -101,7 +101,7 @@ class StartupSupervisor:
             StartupStep(
                 name='air_ground_servo',
                 command=['ros2', 'launch', 'drone_perception', 'air_ground_servo.launch.py'],
-                ready_topic='/mavros/state',
+                ready_topic='/vision/servo/target',
                 ready_type='drone_msgs/msg/VisionServoTarget',
                 timeout_sec=20,
                 ready_qos_reliability='best_effort',

@@ -743,6 +743,7 @@ private:
             if ((now - drop_started_time_).seconds() >= kDropHoldDurationS)
             {
                 drop_active_ = false;
+                replaceRemainingActionsWithReturnHomeAndLand();
                 completeCurrentAction("视觉伺服完成后已执行舵机抛投。");
             }
             return;
@@ -862,6 +863,34 @@ private:
 
         RCLCPP_INFO(node_->get_logger(), "舵机抛投已触发：duty_cycle=%s ns。", kReleaseDutyNs);
         return true;
+    }
+
+    void replaceRemainingActionsWithReturnHomeAndLand()
+    {
+        while (!action_queue_.empty())
+        {
+            action_queue_.pop();
+        }
+
+        geometry_msgs::msg::PoseStamped return_pose;
+        return_pose.header.frame_id = "world_body";
+        return_pose.pose.position.z = 1.5;
+        return_pose.pose.orientation.w = 1.0;
+
+        constexpr double kDegToRad = M_PI / 180.0;
+        action_queue_.push(DroneAction::createMoveToAction(
+            return_pose,
+            DroneAction::Frame::WORLD_BODY,
+            0.10,
+            4.0 * kDegToRad,
+            0.50,
+            0.30,
+            40.0 * kDegToRad));
+        action_queue_.push(DroneAction::createLandAction());
+
+        RCLCPP_INFO(
+            node_->get_logger(),
+            "抛投完成，已清空后续航点并切换为返航、恢复初始航向和降落。");
     }
 
     void publishVisualServoStatus(

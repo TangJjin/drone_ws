@@ -9,6 +9,7 @@ import yaml
 
 LAUNCH_FILE = Path(__file__).parents[1] / "launch" / "air_ground_servo.launch.py"
 CONFIG_FILE = Path(__file__).parents[1] / "config" / "air_ground_servo.yaml"
+NODE_FILE = Path(__file__).parents[1] / "src" / "air_ground_servo_node.cpp"
 SPEC = importlib.util.spec_from_file_location("air_ground_servo_launch", LAUNCH_FILE)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
@@ -16,6 +17,19 @@ SPEC.loader.exec_module(MODULE)
 
 def test_taskset_prefix_pins_process_before_node_start():
     assert MODULE._taskset_prefix("6,7") == "taskset -c 6,7"
+
+
+def test_servo_launch_does_not_include_the_realsense_driver():
+    launch_source = LAUNCH_FILE.read_text(encoding="utf-8")
+
+    assert "realsense2_camera" not in launch_source
+    assert "IncludeLaunchDescription" not in launch_source
+
+
+def test_d435i_driver_uses_the_official_realsense_launch_directly():
+    d435i_launch_file = Path(__file__).parents[1] / "launch" / "d435i_rgbd.launch.py"
+
+    assert not d435i_launch_file.exists()
 
 
 def test_taskset_prefix_allows_disabling_affinity():
@@ -34,10 +48,18 @@ def test_realsense_config_targets_fixed_d435i_serial():
     assert realsense["serial_no"] == "_327122074056"
 
 
-def test_servo_config_defines_target_point_topic():
+def test_servo_config_defines_control_target_topic():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
-    assert servo["point_topic"] == "/air_ground_servo/target_point"
+    assert servo["servo_topic"] == "/vision/servo/target"
+
+
+def test_servo_node_publishes_single_frame_confirmed_vision_target():
+    node_source = NODE_FILE.read_text(encoding="utf-8")
+
+    assert "drone_msgs/msg/vision_servo_target.hpp" in node_source
+    assert "drone_msgs::msg::VisionServoTarget" in node_source
+    assert "output.confirmed = valid;" in node_source
 
 
 def test_servo_config_defines_cross_tracking_parameters():
@@ -49,10 +71,16 @@ def test_servo_config_defines_cross_tracking_parameters():
     assert servo["canny_low_threshold"] < servo["canny_high_threshold"]
 
 
-def test_servo_config_uses_binary_debug_view():
+def test_servo_config_uses_rgb_debug_view():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
-    assert servo["view_mode"] == "BINARY"
+    assert servo["view_mode"] == "RGB"
+
+
+def test_servo_config_limits_opencv_to_two_threads():
+    _, servo = MODULE._load_config(str(CONFIG_FILE))
+
+    assert servo["opencv_num_threads"] == 2
 
 
 def test_servo_config_rejects_unknown_view_mode(tmp_path):

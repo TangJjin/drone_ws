@@ -1,4 +1,4 @@
-"""Launch the D435i RGBD driver and the air-ground servo debug node."""
+"""Launch only the air-ground RGBD target vision node."""
 
 import os
 import re
@@ -6,13 +6,7 @@ import re
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument,
-    GroupAction,
-    IncludeLaunchDescription,
-    OpaqueFunction,
-)
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -45,8 +39,9 @@ SERVO_TYPES = {
     "window_name": str,
     "debug_view": bool,
     "view_mode": str,
+    "opencv_num_threads": int,
     "log_throttle_ms": int,
-    "point_topic": str,
+    "servo_topic": str,
     "canny_low_threshold": int,
     "canny_high_threshold": int,
     "hough_threshold": int,
@@ -95,12 +90,6 @@ def _validate_section(section_name, values, expected_types):
             raise RuntimeError(
                 f"'{section_name}.{name}' has invalid type {type(value).__name__}"
             )
-
-
-def _as_launch_value(value):
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
 
 
 def _taskset_prefix(cpu_set):
@@ -154,29 +143,10 @@ def _load_config(path):
 
 def _launch_setup(context):
     config_path = os.path.abspath(LaunchConfiguration("config_file").perform(context))
-    realsense, servo_parameters = _load_config(config_path)
+    _, servo_parameters = _load_config(config_path)
     servo_prefix = _taskset_prefix(LaunchConfiguration("cpu_set").perform(context))
 
-    realsense_launch = os.path.join(
-        get_package_share_directory("realsense2_camera"), "launch", "rs_launch.py"
-    )
-    realsense_arguments = {
-        name: _as_launch_value(value) for name, value in realsense.items()
-    }
-    # rs_launch.py用字面量"''"表示不加载驱动YAML，避免继承本launch的双分区配置。
-    realsense_arguments["config_file"] = "''"
-
     return [
-        GroupAction(
-            actions=[
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(realsense_launch),
-                ),
-            ],
-            scoped=True,
-            forwarding=False,
-            launch_configurations=realsense_arguments,
-        ),
         Node(
             package="drone_perception",
             executable="air_ground_servo_node",
@@ -201,7 +171,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "cpu_set",
             default_value="6,7",
-            description="CPU list for taskset before the RGBD node starts; empty disables pinning",
+            description="CPU list for taskset before the vision node starts; empty disables pinning",
         ),
         OpaqueFunction(function=_launch_setup),
     ])

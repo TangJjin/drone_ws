@@ -11,13 +11,14 @@
 #include <vector>
 
 #include <cv_bridge/cv_bridge.h>
+#include <opencv2/core/utility.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/point_stamped.hpp>
 #include <realsense2_camera_msgs/msg/rgbd.hpp>
 #include <sensor_msgs/image_encodings.hpp>
 
+#include "drone_msgs/msg/vision_servo_target.hpp"
 #include "drone_perception/air_ground_servo_depth.hpp"
 #include "drone_perception/air_ground_target_geometry.hpp"
 
@@ -42,10 +43,10 @@ public:
     fps_smoothing_alpha_ = declare_parameter<double>("fps_smoothing_alpha", 0.1);
     window_name_ = declare_parameter<std::string>("window_name", "Air-Ground Servo RGBD");
     debug_view_ = declare_parameter<bool>("debug_view", true);
-    view_mode_ = declare_parameter<std::string>("view_mode", "BINARY");
+    view_mode_ = declare_parameter<std::string>("view_mode", "RGB");
+    opencv_num_threads_ = declare_parameter<int>("opencv_num_threads", 2);
     log_throttle_ms_ = declare_parameter<int>("log_throttle_ms", 2000);
-    point_topic_ = declare_parameter<std::string>(
-      "point_topic", "/air_ground_servo/target_point");
+    servo_topic_ = declare_parameter<std::string>("servo_topic", "/vision/servo/target");
     geometry_config_.canny_low_threshold = declare_parameter<int>("canny_low_threshold", 50);
     geometry_config_.canny_high_threshold = declare_parameter<int>("canny_high_threshold", 150);
     geometry_config_.hough_threshold = declare_parameter<int>("hough_threshold", 35);
@@ -60,6 +61,8 @@ public:
     trajectory_max_points_ = declare_parameter<int>("trajectory_max_points", 80);
 
     validateParameters();
+    cv::setNumThreads(opencv_num_threads_);
+    actual_opencv_num_threads_ = cv::getNumThreads();
 
     if (debug_view_) {
       try {
@@ -73,13 +76,16 @@ public:
     rgbd_sub_ = create_subscription<realsense2_camera_msgs::msg::RGBD>(
       rgbd_topic_, rclcpp::SensorDataQoS(),
       std::bind(&AirGroundServoNode::handleRgbd, this, std::placeholders::_1));
-    point_pub_ = create_publisher<geometry_msgs::msg::PointStamped>(point_topic_, 10);
+    servo_pub_ = create_publisher<drone_msgs::msg::VisionServoTarget>(
+      servo_topic_, rclcpp::SensorDataQoS());
 
     RCLCPP_INFO(
       get_logger(),
-      "Air-ground RGBD target debug ready: topic=%s expected=%dx%d@%.1f manual=(%d,%d) window=%dx%d",
+      "Air-ground RGBD target debug ready: topic=%s expected=%dx%d@%.1f manual=(%d,%d) "
+      "window=%dx%d view=%s opencv_threads=%d servo_topic=%s",
       rgbd_topic_.c_str(), expected_width_, expected_height_, expected_fps_, center_x_, center_y_,
-      sample_window_size_, sample_window_size_);
+      sample_window_size_, sample_window_size_, view_mode_.c_str(), actual_opencv_num_threads_,
+      servo_topic_.c_str());
   }
 
   ~AirGroundServoNode() override
@@ -107,8 +113,8 @@ private:
     if (rgbd_topic_.empty()) {
       throw std::invalid_argument("rgbd_topic must not be empty");
     }
-    if (point_topic_.empty()) {
-      throw std::invalid_argument("point_topic must not be empty");
+    if (servo_topic_.empty()) {
+      throw std::invalid_argument("servo_topic must not be empty");
     }
     if (expected_width_ <= 0 || expected_height_ <= 0 || expected_fps_ <= 0.0) {
       throw std::invalid_argument("expected_width, expected_height and expected_fps must be positive");
@@ -134,6 +140,9 @@ private:
     }
     if (view_mode_ != "RGB" && view_mode_ != "GRAY" && view_mode_ != "BINARY") {
       throw std::invalid_argument("view_mode must be RGB, GRAY or BINARY");
+    }
+    if (opencv_num_threads_ <= 0) {
+      throw std::invalid_argument("opencv_num_threads must be positive");
     }
     if (geometry_config_.canny_low_threshold <= 0 ||
       geometry_config_.canny_high_threshold <= geometry_config_.canny_low_threshold ||
@@ -281,16 +290,16 @@ private:
     {
       point = projectPixelToCamera(
         sample_x, sample_y, sample.depth_m, color->image.cols, color->image.rows, camera_info);
-      if (point.valid) {
-        geometry_msgs::msg::PointStamped output;
-        output.header = message->rgb.header;
-        output.header.frame_id = camera_info.header.frame_id;
-        output.point.x = point.point.x;
-        output.point.y = point.point.y;
-        output.point.z = point.point.z;
-        point_pub_->publish(output);
-      }
     }
+
+    const bool valid = point.valid;
+    drone_msgs::msg::VisionServoTarget output;
+    output.valid = valid;
+    // 单帧确认：本帧完整通过双环十字、跳变、深度和反投影校验即确认。
+    output.confirmed = valid;
+    output.error_x = valid ? point.point.x : 0.0;
+    output.error_y = valid ? point.point.y : 0.0;
+    servo_pub_->publish(output);
 
     if (debug_view_) {
       cv::Mat display_image = color->image;
@@ -497,8 +506,13 @@ private:
     if (frame_id.size() > 48U) {
       frame_id = frame_id.substr(0, 45U) + "...";
     }
+    const int threads_y = view_mode_ == "BINARY" ? 363 : 296;
+    const int frame_y = view_mode_ == "BINARY" ? 385 : 319;
     cv::putText(
-      display, cv::format("Frame: %s", frame_id.c_str()), cv::Point(24, view_mode_ == "BINARY" ? 363 : 296),
+      display, cv::format("OpenCV threads: %d", actual_opencv_num_threads_),
+      cv::Point(24, threads_y), cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
+    cv::putText(
+      display, cv::format("Frame: %s", frame_id.c_str()), cv::Point(24, frame_y),
       cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
 
     cv::imshow(window_name_, display);
@@ -521,9 +535,11 @@ private:
   double fps_smoothing_alpha_ = 0.1;
   std::string window_name_;
   bool debug_view_ = true;
-  std::string view_mode_ = "BINARY";
+  std::string view_mode_ = "RGB";
+  int opencv_num_threads_ = 2;
+  int actual_opencv_num_threads_ = 0;
   int log_throttle_ms_ = 2000;
-  std::string point_topic_;
+  std::string servo_topic_;
   TargetGeometryConfig geometry_config_;
   int trajectory_max_points_ = 80;
   bool window_created_ = false;
@@ -532,7 +548,7 @@ private:
   std::optional<cv::Point2f> last_measured_center_;
   std::deque<cv::Point> measured_trajectory_;
   rclcpp::Subscription<realsense2_camera_msgs::msg::RGBD>::SharedPtr rgbd_sub_;
-  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr point_pub_;
+  rclcpp::Publisher<drone_msgs::msg::VisionServoTarget>::SharedPtr servo_pub_;
 };
 
 }  // namespace drone_perception

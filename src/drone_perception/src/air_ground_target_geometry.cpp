@@ -14,6 +14,8 @@ namespace
 
 constexpr char kCarPlatform[] = "car_platform";
 constexpr char kHome[] = "home";
+constexpr double kInnerRingSearchRatioMin = 0.10;
+constexpr double kInnerRingSearchRatioMax = 0.90;
 
 bool isValidConfig(const TargetGeometryConfig &config)
 {
@@ -24,9 +26,7 @@ bool isValidConfig(const TargetGeometryConfig &config)
          config.min_circularity > 0.0 && config.min_circularity <= 1.0 &&
          config.min_axis_ratio > 0.0 && config.min_axis_ratio <= 1.0 &&
          config.min_inner_ring_score > 0.0 && config.min_inner_ring_score <= 1.0 &&
-         config.min_cross_score > 0.0 && config.min_cross_score <= 1.0 &&
-         config.inner_ring_ratio_min > 0.0 &&
-         config.inner_ring_ratio_max > config.inner_ring_ratio_min && config.inner_ring_ratio_max < 1.0;
+         config.min_cross_score > 0.0 && config.min_cross_score <= 1.0;
 }
 
 void ellipsePoints(
@@ -49,7 +49,7 @@ void ellipsePoints(
 
 double innerRingScore(
   const cv::Mat &mask, const cv::Point2f &center, const cv::Size2f &semi_axes,
-  double angle_deg, const TargetGeometryConfig &config, double *best_ratio)
+  double angle_deg, double *best_ratio)
 {
   std::vector<double> angles;
   angles.reserve(360U);
@@ -60,7 +60,7 @@ double innerRingScore(
   double best = 0.0;
   *best_ratio = 0.0;
   std::vector<cv::Point> points;
-  for (double ratio = config.inner_ring_ratio_min; ratio <= config.inner_ring_ratio_max + 1e-6;
+  for (double ratio = kInnerRingSearchRatioMin; ratio <= kInnerRingSearchRatioMax + 1e-6;
     ratio += 0.01)
   {
     std::vector<bool> hits(angles.size(), false);
@@ -182,7 +182,7 @@ TargetGeometryResult detectCrossTarget(
     const cv::Size2f semi_axes(ellipse.size.width * 0.5F, ellipse.size.height * 0.5F);
     double ratio = 0.0;
     const double ring_score = innerRingScore(
-      result.dark_mask, ellipse.center, semi_axes, ring_angle, config, &ratio);
+      result.dark_mask, ellipse.center, semi_axes, ring_angle, &ratio);
     if (ring_score < config.min_inner_ring_score) {
       continue;
     }

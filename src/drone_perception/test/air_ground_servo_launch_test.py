@@ -66,8 +66,10 @@ def test_servo_config_defines_ellipse_marker_parameters():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
     assert servo["min_ring_radius_px"] < servo["max_ring_radius_px"]
-    assert servo["inner_ring_ratio_min"] < servo["inner_ring_ratio_max"]
-    assert servo["min_inner_ring_score"] == 0.55
+    assert servo["min_circularity"] == 0.2
+    assert servo["min_axis_ratio"] == 0.4
+    assert servo["min_inner_ring_score"] == 0.2
+    assert servo["min_cross_score"] == 0.3
     assert servo["gaussian_blur_kernel"] % 2 == 1
 
 

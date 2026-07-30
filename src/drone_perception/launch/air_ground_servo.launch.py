@@ -52,8 +52,6 @@ SERVO_TYPES = {
     "min_axis_ratio": (int, float),
     "min_inner_ring_score": (int, float),
     "min_cross_score": (int, float),
-    "inner_ring_ratio_min": (int, float),
-    "inner_ring_ratio_max": (int, float),
     "trajectory_max_points": int,
 }
 
@@ -68,8 +66,6 @@ SERVO_FLOAT_PARAMETERS = {
     "min_axis_ratio",
     "min_inner_ring_score",
     "min_cross_score",
-    "inner_ring_ratio_min",
-    "inner_ring_ratio_max",
 }
 
 

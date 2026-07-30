@@ -21,8 +21,6 @@ struct TargetGeometryConfig
   double min_axis_ratio = 0.70;
   double min_inner_ring_score = 0.55;
   double min_cross_score = 0.58;
-  double inner_ring_ratio_min = 0.48;
-  double inner_ring_ratio_max = 0.74;
 };
 
 struct TargetGeometryResult

@@ -57,8 +57,6 @@ public:
     geometry_config_.min_axis_ratio = declare_parameter<double>("min_axis_ratio", 0.70);
     geometry_config_.min_inner_ring_score = declare_parameter<double>("min_inner_ring_score", 0.55);
     geometry_config_.min_cross_score = declare_parameter<double>("min_cross_score", 0.58);
-    geometry_config_.inner_ring_ratio_min = declare_parameter<double>("inner_ring_ratio_min", 0.48);
-    geometry_config_.inner_ring_ratio_max = declare_parameter<double>("inner_ring_ratio_max", 0.74);
     trajectory_max_points_ = declare_parameter<int>("trajectory_max_points", 80);
 
     validateParameters();
@@ -146,10 +144,7 @@ private:
       geometry_config_.min_circularity <= 0.0 || geometry_config_.min_circularity > 1.0 ||
       geometry_config_.min_axis_ratio <= 0.0 || geometry_config_.min_axis_ratio > 1.0 ||
       geometry_config_.min_inner_ring_score <= 0.0 || geometry_config_.min_inner_ring_score > 1.0 ||
-      geometry_config_.min_cross_score <= 0.0 || geometry_config_.min_cross_score > 1.0 ||
-      geometry_config_.inner_ring_ratio_min <= 0.0 ||
-      geometry_config_.inner_ring_ratio_max <= geometry_config_.inner_ring_ratio_min ||
-      geometry_config_.inner_ring_ratio_max >= 1.0)
+      geometry_config_.min_cross_score <= 0.0 || geometry_config_.min_cross_score > 1.0)
     {
       throw std::invalid_argument("target geometry parameters are invalid");
     }

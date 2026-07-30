@@ -241,6 +241,7 @@ endforeach()
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest QUIET)
+  find_package(ament_cmake_pytest QUIET)
   if(ament_cmake_gtest_FOUND)
     ament_add_gtest(
       air_ground_servo_depth_test
@@ -252,6 +253,14 @@ if(BUILD_TESTING)
       air_ground_servo_depth_test air_ground_servo_depth ${OpenCV_LIBS})
   else()
     message(WARNING "ament_cmake_gtest not found; RGBD depth tests are unavailable.")
+  endif()
+  if(ament_cmake_pytest_FOUND)
+    ament_add_pytest_test(
+      air_ground_servo_launch_test
+      test/air_ground_servo_launch_test.py
+    )
+  else()
+    message(WARNING "ament_cmake_pytest not found; RGBD launch tests are unavailable.")
   endif()
 endif()
 

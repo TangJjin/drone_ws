@@ -123,6 +123,8 @@ def _launch_setup(context):
     realsense_arguments = {
         name: _as_launch_value(value) for name, value in realsense.items()
     }
+    # rs_launch.py也声明了config_file；显式清空，避免继承本launch的双分区YAML。
+    realsense_arguments["config_file"] = ""
 
     return [
         IncludeLaunchDescription(

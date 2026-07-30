@@ -55,7 +55,7 @@ air_ground_servo_node:
     center_y: 240
 
     # 中心深度采样窗口边长；10表示10x10像素。
-    sample_window_size: 10
+    sample_window_size: 50
 
     # 允许接受的最小有效深度，单位米。
     min_depth_m: 0.1
@@ -103,7 +103,7 @@ air_ground_servo_node:
     max_ring_radius_px: 220
 
     # 外椭圆轮廓最小圆度；越大越严格地拒绝非圆形轮廓。
-    min_circularity: 0.45
+    min_circularity: 0.30
 
     # 外椭圆短轴与长轴的最小比值；允许俯仰后的椭圆形变。
     min_axis_ratio: 0.20
@@ -115,4 +115,4 @@ air_ground_servo_node:
     min_cross_score: 0.45
 
     # 调试窗口保留的有效双环十字圆心历史点数量；以洋红色点显示，不连接为折线。
-    trajectory_max_points: 80
+    trajectory_max_points: 30

@@ -103,16 +103,16 @@ air_ground_servo_node:
     max_ring_radius_px: 220
 
     # 外椭圆轮廓最小圆度；越大越严格地拒绝非圆形轮廓。
-    min_circularity: 0.35
+    min_circularity: 0.45
 
     # 外椭圆短轴与长轴的最小比值；允许俯仰后的椭圆形变。
-    min_axis_ratio: 0.50
+    min_axis_ratio: 0.60
 
     # 内环360度采样的最小黑色覆盖率；低于此值不视为双环。
-    min_inner_ring_score: 0.30
+    min_inner_ring_score: 0.40
 
     # 两条穿过椭圆中心的近似垂直直径黑线最小覆盖率；达到此值分类为小车靶标。
-    min_cross_score: 0.35
+    min_cross_score: 0.45
 
     # 内环与外环半径比搜索下限；标称30/50=0.60，保留透视和线宽余量。
     inner_ring_ratio_min: 0.48

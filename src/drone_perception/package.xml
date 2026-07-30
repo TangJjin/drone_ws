@@ -13,6 +13,9 @@
   <depend>std_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>drone_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>sensor_msgs</depend>
+  <depend>realsense2_camera_msgs</depend>
   <depend>libopencv-dev</depend>
   <build_depend>yaml-cpp</build_depend>
   <exec_depend>yaml-cpp</exec_depend>
@@ -20,6 +23,7 @@
   <exec_depend>hbm_img_msgs</exec_depend>
   <exec_depend>hobot_usb_cam</exec_depend>
   <exec_depend>hobot_codec</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
   <build_depend>libgstreamer1.0-dev</build_depend>
   <build_depend>libgstreamer-plugins-base1.0-dev</build_depend>
   <build_depend>libavutil-dev</build_depend>
@@ -38,6 +42,8 @@
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

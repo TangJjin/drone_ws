@@ -27,6 +27,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(drone_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(cv_bridge QUIET)
+find_package(sensor_msgs QUIET)
+find_package(realsense2_camera_msgs QUIET)
 find_package(hbm_img_msgs QUIET)
 find_path(HBM_IMG_MSGS_INCLUDE_DIR NAMES hbm_img_msgs/msg/hbm_msg1080_p.hpp
   PATHS /opt/tros/humble/include/hbm_img_msgs /opt/ros/humble/include/hbm_img_msgs)
@@ -59,6 +62,38 @@ install(TARGETS
   line_vision_node
   DESTINATION lib/${PROJECT_NAME}
 )
+
+add_library(air_ground_servo_depth STATIC src/air_ground_servo_depth.cpp)
+target_compile_features(air_ground_servo_depth PUBLIC cxx_std_17)
+target_include_directories(air_ground_servo_depth
+  PUBLIC include
+  PRIVATE ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(air_ground_servo_depth ${OpenCV_LIBS})
+ament_target_dependencies(air_ground_servo_depth sensor_msgs)
+
+add_library(air_ground_target_geometry STATIC src/air_ground_target_geometry.cpp)
+target_compile_features(air_ground_target_geometry PUBLIC cxx_std_17)
+target_include_directories(air_ground_target_geometry
+  PUBLIC include
+  PRIVATE ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(air_ground_target_geometry ${OpenCV_LIBS})
+
+if(cv_bridge_FOUND AND sensor_msgs_FOUND AND realsense2_camera_msgs_FOUND)
+  add_executable(air_ground_servo_node src/air_ground_servo_node.cpp)
+  target_compile_features(air_ground_servo_node PUBLIC cxx_std_17)
+  target_include_directories(air_ground_servo_node PRIVATE include ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(
+    air_ground_servo_node air_ground_servo_depth air_ground_target_geometry ${OpenCV_LIBS})
+  ament_target_dependencies(
+    air_ground_servo_node rclcpp cv_bridge sensor_msgs geometry_msgs realsense2_camera_msgs)
+  install(TARGETS air_ground_servo_node DESTINATION lib/${PROJECT_NAME})
+else()
+  message(STATUS
+    "Skipping air_ground_servo_node: need cv_bridge, sensor_msgs, and "
+    "realsense2_camera_msgs development packages.")
+endif()
 
 install(PROGRAMS
   scripts/rdk_udp_vpu_bridge.sh
@@ -213,5 +248,38 @@ foreach(ANIMAL_MODEL IN LISTS ANIMAL_MODELS)
     message(WARNING "Animal RKNN model is missing: ${ANIMAL_MODEL}")
   endif()
 endforeach()
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest QUIET)
+  find_package(ament_cmake_pytest QUIET)
+  if(ament_cmake_gtest_FOUND)
+    ament_add_gtest(
+      air_ground_servo_depth_test
+      test/air_ground_servo_depth_test.cpp
+    )
+    target_include_directories(
+      air_ground_servo_depth_test PRIVATE include ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(
+      air_ground_servo_depth_test air_ground_servo_depth ${OpenCV_LIBS})
+    ament_add_gtest(
+      air_ground_target_geometry_test
+      test/air_ground_target_geometry_test.cpp
+    )
+    target_include_directories(
+      air_ground_target_geometry_test PRIVATE include ${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(
+      air_ground_target_geometry_test air_ground_target_geometry ${OpenCV_LIBS})
+  else()
+    message(WARNING "ament_cmake_gtest not found; RGBD depth tests are unavailable.")
+  endif()
+  if(ament_cmake_pytest_FOUND)
+    ament_add_pytest_test(
+      air_ground_servo_launch_test
+      test/air_ground_servo_launch_test.py
+    )
+  else()
+    message(WARNING "ament_cmake_pytest not found; RGBD launch tests are unavailable.")
+  endif()
+endif()
 
 ament_package()

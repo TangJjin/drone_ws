@@ -1,11 +1,15 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ctime>
 #include <deque>
 #include <exception>
+#include <filesystem>
 #include <functional>
+#include <iomanip>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -86,6 +90,7 @@ public:
 
   ~AirGroundServoNode() override
   {
+    finalizeDebugVideo();
     if (window_created_) {
       cv::destroyWindow(window_name_);
     }
@@ -171,6 +176,89 @@ private:
       }
     }
     last_frame_time_ = now;
+  }
+
+  std::filesystem::path makeDebugVideoPath() const
+  {
+    const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::tm local_time{};
+#ifdef _WIN32
+    localtime_s(&local_time, &now);
+#else
+    localtime_r(&now, &local_time);
+#endif
+    std::ostringstream timestamp;
+    timestamp << std::put_time(&local_time, "%Y%m%d_%H%M%S");
+
+    const std::filesystem::path directory = std::filesystem::current_path();
+    const std::string stem = "air_ground_servo_debug_" + timestamp.str();
+    for (int index = 0; index < 1000; ++index) {
+      const std::filesystem::path candidate = directory /
+        (stem + (index == 0 ? "" : "_" + std::to_string(index)) + ".avi");
+      if (!std::filesystem::exists(candidate)) {
+        return candidate;
+      }
+    }
+    throw std::runtime_error("could not allocate a timestamped debug video path");
+  }
+
+  void recordDebugFrame(const cv::Mat &display)
+  {
+    if (debug_video_disabled_ || display.empty()) {
+      return;
+    }
+
+    try {
+      if (!debug_video_writer_.isOpened()) {
+        debug_video_path_ = makeDebugVideoPath();
+        debug_video_writer_.open(
+          debug_video_path_.string(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
+          expected_fps_, display.size(), true);
+        if (!debug_video_writer_.isOpened()) {
+          debug_video_disabled_ = true;
+          RCLCPP_ERROR(
+            get_logger(), "Failed to open debug video writer: %s", debug_video_path_.c_str());
+          return;
+        }
+        debug_video_start_time_ = SteadyClock::now();
+        RCLCPP_INFO(
+          get_logger(), "Recording debug video to %s", debug_video_path_.c_str());
+      }
+      debug_video_writer_.write(display);
+      ++debug_video_frame_count_;
+    } catch (const std::exception &error) {
+      RCLCPP_ERROR(get_logger(), "Debug video recording stopped: %s", error.what());
+      finalizeDebugVideo();
+      debug_video_disabled_ = true;
+    }
+  }
+
+  void finalizeDebugVideo()
+  {
+    if (!debug_video_writer_.isOpened()) {
+      return;
+    }
+
+    debug_video_writer_.release();
+    const double duration_s = debug_video_start_time_ == SteadyClock::time_point{} ? 0.0 :
+      std::chrono::duration<double>(SteadyClock::now() - debug_video_start_time_).count();
+    if (duration_s < 5.0) {
+      std::error_code error;
+      const bool removed = std::filesystem::remove(debug_video_path_, error);
+      if (removed) {
+        RCLCPP_INFO(
+          get_logger(), "Deleted short debug video (%.2fs): %s", duration_s, debug_video_path_.c_str());
+      } else {
+        RCLCPP_WARN(
+          get_logger(), "Could not delete short debug video %s: %s",
+          debug_video_path_.c_str(), error.message().c_str());
+      }
+      return;
+    }
+
+    RCLCPP_INFO(
+      get_logger(), "Saved debug video: %s (%.2fs, %zu frames)", debug_video_path_.c_str(),
+      duration_s, debug_video_frame_count_);
   }
 
   bool acceptMeasurement(TargetGeometryResult *target, const cv::Size &image_size)
@@ -483,6 +571,7 @@ private:
       display, cv::format("Frame: %s", frame_id.c_str()), cv::Point(24, frame_y),
       cv::FONT_HERSHEY_SIMPLEX, 0.42, normal_text, 1, cv::LINE_AA);
 
+    recordDebugFrame(display);
     cv::imshow(window_name_, display);
     const int key = cv::waitKey(1) & 0xff;
     if (key == 27 || key == 'q' || key == 'Q') {
@@ -509,8 +598,13 @@ private:
   TargetGeometryConfig geometry_config_;
   int trajectory_max_points_ = 80;
   bool window_created_ = false;
+  bool debug_video_disabled_ = false;
   SteadyClock::time_point last_frame_time_{};
+  SteadyClock::time_point debug_video_start_time_{};
   double display_fps_ = 0.0;
+  std::filesystem::path debug_video_path_;
+  std::size_t debug_video_frame_count_ = 0U;
+  cv::VideoWriter debug_video_writer_;
   std::optional<cv::Point2f> last_measured_center_;
   std::deque<cv::Point> measured_trajectory_;
   rclcpp::Subscription<realsense2_camera_msgs::msg::RGBD>::SharedPtr rgbd_sub_;

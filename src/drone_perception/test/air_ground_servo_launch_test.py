@@ -62,14 +62,23 @@ def test_servo_node_publishes_single_frame_confirmed_vision_target():
     assert "output.confirmed = valid;" in node_source
 
 
+def test_servo_node_records_timestamped_debug_video_and_discards_short_runs():
+    node_source = NODE_FILE.read_text(encoding="utf-8")
+
+    assert "air_ground_servo_debug_" in node_source
+    assert "cv::VideoWriter::fourcc('M', 'J', 'P', 'G')" in node_source
+    assert "duration_s < 5.0" in node_source
+    assert "std::filesystem::remove(debug_video_path_" in node_source
+
+
 def test_servo_config_defines_ellipse_marker_parameters():
     _, servo = MODULE._load_config(str(CONFIG_FILE))
 
     assert servo["min_ring_radius_px"] < servo["max_ring_radius_px"]
-    assert servo["min_circularity"] == 0.2
-    assert servo["min_axis_ratio"] == 0.4
-    assert servo["min_inner_ring_score"] == 0.2
-    assert servo["min_cross_score"] == 0.3
+    assert servo["min_circularity"] == 0.45
+    assert servo["min_axis_ratio"] == 0.60
+    assert servo["min_inner_ring_score"] == 0.40
+    assert servo["min_cross_score"] == 0.45
     assert servo["gaussian_blur_kernel"] % 2 == 1
 
 

@@ -69,7 +69,8 @@ target_include_directories(air_ground_servo_depth
   PUBLIC include
   PRIVATE ${OpenCV_INCLUDE_DIRS}
 )
-target_link_libraries(air_ground_servo_depth PUBLIC ${OpenCV_LIBS})
+target_link_libraries(air_ground_servo_depth ${OpenCV_LIBS})
+ament_target_dependencies(air_ground_servo_depth sensor_msgs)
 
 if(cv_bridge_FOUND AND sensor_msgs_FOUND AND realsense2_camera_msgs_FOUND)
   add_executable(air_ground_servo_node src/air_ground_servo_node.cpp)
@@ -77,7 +78,7 @@ if(cv_bridge_FOUND AND sensor_msgs_FOUND AND realsense2_camera_msgs_FOUND)
   target_include_directories(air_ground_servo_node PRIVATE include ${OpenCV_INCLUDE_DIRS})
   target_link_libraries(air_ground_servo_node air_ground_servo_depth ${OpenCV_LIBS})
   ament_target_dependencies(
-    air_ground_servo_node rclcpp cv_bridge sensor_msgs realsense2_camera_msgs)
+    air_ground_servo_node rclcpp cv_bridge sensor_msgs geometry_msgs realsense2_camera_msgs)
   install(TARGETS air_ground_servo_node DESTINATION lib/${PROJECT_NAME})
 else()
   message(STATUS

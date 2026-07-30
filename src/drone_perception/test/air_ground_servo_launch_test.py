@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 LAUNCH_FILE = Path(__file__).parents[1] / "launch" / "air_ground_servo.launch.py"
@@ -31,3 +32,25 @@ def test_realsense_config_targets_fixed_d435i_serial():
     realsense, _ = MODULE._load_config(str(CONFIG_FILE))
 
     assert realsense["serial_no"] == "_327122074056"
+
+
+def test_servo_config_defines_manual_point_topic():
+    _, servo = MODULE._load_config(str(CONFIG_FILE))
+
+    assert servo["point_topic"] == "/air_ground_servo/manual_point"
+
+
+def test_realsense_config_uses_supported_50_hz_power_line_frequency():
+    realsense, _ = MODULE._load_config(str(CONFIG_FILE))
+
+    assert realsense["rgb_camera.power_line_frequency"] == 1
+
+
+def test_realsense_config_rejects_unsupported_power_line_frequency(tmp_path):
+    config = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8"))
+    config["realsense"]["rgb_camera.power_line_frequency"] = 3
+    invalid_config = tmp_path / "invalid_power_line_frequency.yaml"
+    invalid_config.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="must be 0, 1, or 2"):
+        MODULE._load_config(str(invalid_config))

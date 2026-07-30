@@ -70,4 +70,43 @@ DepthWindowSample sampleDepthWindow(
   return result;
 }
 
+CameraPointSample projectPixelToCamera(
+  int pixel_x,
+  int pixel_y,
+  double depth_m,
+  int image_width,
+  int image_height,
+  const sensor_msgs::msg::CameraInfo &camera_info)
+{
+  CameraPointSample result;
+  if (image_width <= 0 || image_height <= 0 || pixel_x < 0 || pixel_y < 0 ||
+    pixel_x >= image_width || pixel_y >= image_height ||
+    camera_info.width != static_cast<uint32_t>(image_width) ||
+    camera_info.height != static_cast<uint32_t>(image_height) ||
+    !std::isfinite(depth_m) || depth_m <= 0.0)
+  {
+    return result;
+  }
+
+  const double fx = camera_info.k[0];
+  const double cx = camera_info.k[2];
+  const double fy = camera_info.k[4];
+  const double cy = camera_info.k[5];
+  if (!std::isfinite(fx) || !std::isfinite(fy) || !std::isfinite(cx) ||
+    !std::isfinite(cy) || fx <= 0.0 || fy <= 0.0)
+  {
+    return result;
+  }
+
+  result.point.x = (static_cast<double>(pixel_x) - cx) * depth_m / fx;
+  result.point.y = (static_cast<double>(pixel_y) - cy) * depth_m / fy;
+  result.point.z = depth_m;
+  result.valid = std::isfinite(result.point.x) && std::isfinite(result.point.y) &&
+    std::isfinite(result.point.z);
+  if (!result.valid) {
+    result.point = cv::Point3d();
+  }
+  return result;
+}
+
 }  // namespace drone_perception

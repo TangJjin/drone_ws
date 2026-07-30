@@ -4,6 +4,7 @@
 
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 
 namespace drone_perception
 {
@@ -24,5 +25,19 @@ DepthWindowSample sampleDepthWindow(
   int window_size,
   double min_depth_m,
   double max_depth_m);
+
+struct CameraPointSample
+{
+  bool valid = false;
+  cv::Point3d point;
+};
+
+CameraPointSample projectPixelToCamera(
+  int pixel_x,
+  int pixel_y,
+  double depth_m,
+  int image_width,
+  int image_height,
+  const sensor_msgs::msg::CameraInfo &camera_info);
 
 }  // namespace drone_perception

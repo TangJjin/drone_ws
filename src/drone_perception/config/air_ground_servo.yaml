@@ -15,6 +15,9 @@ realsense:
   # RGB分辨率和帧率，格式为宽x高xFPS。
   rgb_camera.color_profile: "640x480x30"
 
+  # RGB灯光防频闪频率；1表示50 Hz，避免D435i不支持默认Auto=3的警告。
+  rgb_camera.power_line_frequency: 1
+
   # 是否启用深度流；RGBD消息必须开启。
   enable_depth: true
 
@@ -71,3 +74,6 @@ air_ground_servo_node:
 
     # 重复警告日志的最小间隔，单位毫秒。
     log_throttle_ms: 2000
+
+    # 有效手工像素三维坐标输出话题；深度或内参无效时不发布伪坐标。
+    point_topic: "/air_ground_servo/manual_point"

@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include <opencv2/core/mat.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 
 #include "drone_perception/air_ground_servo_depth.hpp"
 
@@ -65,6 +66,55 @@ TEST(AirGroundServoDepthTest, ClipsWindowAtImageBoundary)
   EXPECT_DOUBLE_EQ(result.depth_m, 1.5);
   EXPECT_EQ(result.total_count, 25U);
   EXPECT_EQ(result.roi, cv::Rect(0, 0, 5, 5));
+}
+
+TEST(AirGroundServoDepthTest, ProjectsPrincipalPointAlongOpticalAxis)
+{
+  sensor_msgs::msg::CameraInfo info;
+  info.width = 640;
+  info.height = 480;
+  info.k[0] = 500.0;
+  info.k[2] = 320.0;
+  info.k[4] = 500.0;
+  info.k[5] = 240.0;
+
+  const CameraPointSample result = projectPixelToCamera(320, 240, 1.0, 640, 480, info);
+
+  ASSERT_TRUE(result.valid);
+  EXPECT_NEAR(result.point.x, 0.0, 1e-9);
+  EXPECT_NEAR(result.point.y, 0.0, 1e-9);
+  EXPECT_NEAR(result.point.z, 1.0, 1e-9);
+}
+
+TEST(AirGroundServoDepthTest, ProjectsPixelSignsAndRejectsInvalidInputs)
+{
+  sensor_msgs::msg::CameraInfo info;
+  info.width = 640;
+  info.height = 480;
+  info.k[0] = 500.0;
+  info.k[2] = 320.0;
+  info.k[4] = 500.0;
+  info.k[5] = 240.0;
+
+  const CameraPointSample right_down = projectPixelToCamera(370, 290, 2.0, 640, 480, info);
+  ASSERT_TRUE(right_down.valid);
+  EXPECT_GT(right_down.point.x, 0.0);
+  EXPECT_GT(right_down.point.y, 0.0);
+
+  const CameraPointSample left_up = projectPixelToCamera(270, 190, 2.0, 640, 480, info);
+  ASSERT_TRUE(left_up.valid);
+  EXPECT_LT(left_up.point.x, 0.0);
+  EXPECT_LT(left_up.point.y, 0.0);
+
+  const CameraPointSample bad_depth = projectPixelToCamera(320, 240, 0.0, 640, 480, info);
+  EXPECT_FALSE(bad_depth.valid);
+
+  const CameraPointSample bad_size = projectPixelToCamera(320, 240, 1.0, 320, 240, info);
+  EXPECT_FALSE(bad_size.valid);
+
+  info.k[0] = 0.0;
+  const CameraPointSample bad_intrinsics = projectPixelToCamera(320, 240, 1.0, 640, 480, info);
+  EXPECT_FALSE(bad_intrinsics.valid);
 }
 
 }  // namespace

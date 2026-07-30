@@ -23,6 +23,7 @@ REALSENSE_TYPES = {
     "serial_no": str,
     "enable_color": bool,
     "rgb_camera.color_profile": str,
+    "rgb_camera.power_line_frequency": int,
     "enable_depth": bool,
     "depth_module.depth_profile": str,
     "enable_sync": bool,
@@ -44,6 +45,7 @@ SERVO_TYPES = {
     "window_name": str,
     "debug_view": bool,
     "log_throttle_ms": int,
+    "point_topic": str,
 }
 
 SERVO_FLOAT_PARAMETERS = {
@@ -122,6 +124,11 @@ def _load_config(path):
     for profile_name in ("rgb_camera.color_profile", "depth_module.depth_profile"):
         if not profile_pattern.fullmatch(realsense[profile_name]):
             raise RuntimeError(f"'realsense.{profile_name}' must use WIDTHxHEIGHTxFPS")
+
+    if realsense["rgb_camera.power_line_frequency"] not in {0, 1, 2}:
+        raise RuntimeError(
+            "'realsense.rgb_camera.power_line_frequency' must be 0, 1, or 2"
+        )
 
     return realsense, servo_parameters
 

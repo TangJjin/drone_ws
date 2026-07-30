@@ -1,6 +1,5 @@
 #pragma once
 
-#include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <mavros_msgs/msg/state.hpp>
 #include <mavros_msgs/srv/command_bool.hpp>
@@ -13,6 +12,7 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_ros/buffer.hpp>
 #include "drone_msgs/msg/vision_servo_status.hpp"
+#include "drone_msgs/msg/vision_servo_target.hpp"
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -102,8 +102,8 @@ public:
             std::bind(&ActionExecutor::pose_callback, this, std::placeholders::_1));
 
         visual_servo_target_sub_ =
-            node_->create_subscription<geometry_msgs::msg::PointStamped>(
-                "/air_ground_servo/target_point", rclcpp::SensorDataQoS(),
+            node_->create_subscription<drone_msgs::msg::VisionServoTarget>(
+                "/vision/servo/target", rclcpp::SensorDataQoS(),
                 std::bind(
                     &ActionExecutor::visualServoTargetCallback,
                     this, std::placeholders::_1));
@@ -1085,10 +1085,9 @@ private:
     }
 
     void visualServoTargetCallback(
-        const geometry_msgs::msg::PointStamped::SharedPtr msg)
+        const drone_msgs::msg::VisionServoTarget::SharedPtr msg)
     {
-        if (!msg || !std::isfinite(msg->point.x) ||
-            !std::isfinite(msg->point.y) || !std::isfinite(msg->point.z))
+        if (!msg || !std::isfinite(msg->error_x) || !std::isfinite(msg->error_y))
         {
             RCLCPP_WARN_THROTTLE(
                 node_->get_logger(), *node_->get_clock(), 1000,
@@ -1096,15 +1095,15 @@ private:
             return;
         }
 
-        // The vision node publishes camera optical-frame offsets in metres:
-        // x points right and y points down. Axis/sign mapping stays configurable.
+        // error_x/error_y are camera-frame offsets in metres. Identifier and
+        // diagnostic fields are intentionally ignored for this camera.
         ++visual_servo_target_sequence_;
         latest_visual_servo_target_.sequence = visual_servo_target_sequence_;
         latest_visual_servo_target_.target_id.clear();
-        latest_visual_servo_target_.valid = true;
-        latest_visual_servo_target_.confirmed = true;
-        latest_visual_servo_target_.error_x = msg->point.x;
-        latest_visual_servo_target_.error_y = msg->point.y;
+        latest_visual_servo_target_.valid = msg->valid;
+        latest_visual_servo_target_.confirmed = msg->confirmed;
+        latest_visual_servo_target_.error_x = msg->error_x;
+        latest_visual_servo_target_.error_y = msg->error_y;
         latest_visual_servo_target_.received_time = node_->now();
         visual_servo_target_received_ = true;
     }
@@ -1140,7 +1139,7 @@ private:
     rclcpp::Publisher<drone_msgs::msg::VisionServoStatus>::SharedPtr visual_servo_status_pub_;
     rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr state_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr visual_servo_target_sub_;
+    rclcpp::Subscription<drone_msgs::msg::VisionServoTarget>::SharedPtr visual_servo_target_sub_;
     rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
     rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
     rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr land_client_;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 #include <opencv2/imgproc.hpp>
@@ -11,33 +12,117 @@ namespace drone_perception
 namespace
 {
 
-double segmentLength(const cv::Vec4i &line)
+constexpr char kCarPlatform[] = "car_platform";
+constexpr char kHome[] = "home";
+
+bool isValidConfig(const TargetGeometryConfig &config)
 {
-  return std::hypot(
-    static_cast<double>(line[2] - line[0]), static_cast<double>(line[3] - line[1]));
+  return config.gaussian_blur_kernel >= 3 && config.gaussian_blur_kernel % 2 == 1 &&
+         config.clahe_clip_limit > 0.0 && config.clahe_tile_grid_size > 0 &&
+         config.adaptive_threshold_block_size >= 3 && config.adaptive_threshold_block_size % 2 == 1 &&
+         config.min_ring_radius_px > 0 && config.max_ring_radius_px > config.min_ring_radius_px &&
+         config.min_circularity > 0.0 && config.min_circularity <= 1.0 &&
+         config.min_axis_ratio > 0.0 && config.min_axis_ratio <= 1.0 &&
+         config.min_inner_ring_score > 0.0 && config.min_inner_ring_score <= 1.0 &&
+         config.min_cross_score > 0.0 && config.min_cross_score <= 1.0 &&
+         config.inner_ring_ratio_min > 0.0 &&
+         config.inner_ring_ratio_max > config.inner_ring_ratio_min && config.inner_ring_ratio_max < 1.0;
 }
 
-bool intersectLines(const cv::Vec4i &first, const cv::Vec4i &second, cv::Point2f *intersection)
+void ellipsePoints(
+  const cv::Point2f &center, const cv::Size2f &semi_axes, double angle_deg, double ratio,
+  const std::vector<double> &angles, std::vector<cv::Point> *points)
 {
-  const double x1 = first[0];
-  const double y1 = first[1];
-  const double x2 = first[2];
-  const double y2 = first[3];
-  const double x3 = second[0];
-  const double y3 = second[1];
-  const double x4 = second[2];
-  const double y4 = second[3];
-  const double denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (std::abs(denominator) < 1e-6) {
-    return false;
+  points->clear();
+  points->reserve(angles.size());
+  const double angle = angle_deg * CV_PI / 180.0;
+  const double cosine = std::cos(angle);
+  const double sine = std::sin(angle);
+  for (const double theta : angles) {
+    const double local_x = semi_axes.width * ratio * std::cos(theta);
+    const double local_y = semi_axes.height * ratio * std::sin(theta);
+    points->emplace_back(
+      static_cast<int>(std::lround(center.x + local_x * cosine - local_y * sine)),
+      static_cast<int>(std::lround(center.y + local_x * sine + local_y * cosine)));
   }
-  const double determinant_one = x1 * y2 - y1 * x2;
-  const double determinant_two = x3 * y4 - y3 * x4;
-  intersection->x = static_cast<float>(
-    (determinant_one * (x3 - x4) - (x1 - x2) * determinant_two) / denominator);
-  intersection->y = static_cast<float>(
-    (determinant_one * (y3 - y4) - (y1 - y2) * determinant_two) / denominator);
-  return std::isfinite(intersection->x) && std::isfinite(intersection->y);
+}
+
+double innerRingScore(
+  const cv::Mat &mask, const cv::Point2f &center, const cv::Size2f &semi_axes,
+  double angle_deg, const TargetGeometryConfig &config, double *best_ratio)
+{
+  std::vector<double> angles;
+  angles.reserve(360U);
+  for (int degree = 0; degree < 360; ++degree) {
+    angles.push_back(static_cast<double>(degree) * CV_PI / 180.0);
+  }
+
+  double best = 0.0;
+  *best_ratio = 0.0;
+  std::vector<cv::Point> points;
+  for (double ratio = config.inner_ring_ratio_min; ratio <= config.inner_ring_ratio_max + 1e-6;
+    ratio += 0.01)
+  {
+    std::vector<bool> hits(angles.size(), false);
+    for (double offset = -0.035; offset <= 0.0351; offset += 0.0175) {
+      ellipsePoints(center, semi_axes, angle_deg, ratio + offset, angles, &points);
+      for (std::size_t index = 0; index < points.size(); ++index) {
+        const cv::Point &point = points[index];
+        if (point.x >= 0 && point.x < mask.cols && point.y >= 0 && point.y < mask.rows &&
+          mask.at<std::uint8_t>(point) != 0U)
+        {
+          hits[index] = true;
+        }
+      }
+    }
+    const double score = static_cast<double>(std::count(hits.begin(), hits.end(), true)) /
+      static_cast<double>(hits.size());
+    if (score > best) {
+      best = score;
+      *best_ratio = ratio;
+    }
+  }
+  return best;
+}
+
+double diameterLineScore(
+  const cv::Mat &mask, const cv::Point2f &center, double radius, double angle_deg)
+{
+  const double angle = angle_deg * CV_PI / 180.0;
+  const cv::Point2f direction(std::cos(angle), std::sin(angle));
+  const cv::Point2f normal(-direction.y, direction.x);
+  const int half_width = std::max(1, static_cast<int>(std::lround(radius * 0.045)));
+  int hit_count = 0;
+  constexpr int kSamplesPerSide = 80;
+  constexpr int kTotalSamples = kSamplesPerSide * 2;
+  for (int index = 0; index < kTotalSamples; ++index) {
+    const double fraction = index < kSamplesPerSide ?
+      -0.86 + static_cast<double>(index) * 0.71 / (kSamplesPerSide - 1) :
+      0.15 + static_cast<double>(index - kSamplesPerSide) * 0.71 / (kSamplesPerSide - 1);
+    bool hit = false;
+    for (int offset = -half_width; offset <= half_width; ++offset) {
+      const int x = static_cast<int>(std::lround(center.x + fraction * radius * direction.x + offset * normal.x));
+      const int y = static_cast<int>(std::lround(center.y + fraction * radius * direction.y + offset * normal.y));
+      if (x >= 0 && x < mask.cols && y >= 0 && y < mask.rows && mask.at<std::uint8_t>(y, x) != 0U) {
+        hit = true;
+        break;
+      }
+    }
+    hit_count += hit ? 1 : 0;
+  }
+  return static_cast<double>(hit_count) / kTotalSamples;
+}
+
+double crossScore(const cv::Mat &mask, const cv::Point2f &center, const cv::Size2f &semi_axes)
+{
+  const double radius = std::min(semi_axes.width, semi_axes.height);
+  double best = 0.0;
+  for (int angle = 0; angle < 90; angle += 2) {
+    best = std::max(best, std::min(
+      diameterLineScore(mask, center, radius, static_cast<double>(angle)),
+      diameterLineScore(mask, center, radius, static_cast<double>(angle + 90))));
+  }
+  return best;
 }
 
 }  // namespace
@@ -46,138 +131,84 @@ TargetGeometryResult detectCrossTarget(
   const cv::Mat &bgr_image, const TargetGeometryConfig &config)
 {
   TargetGeometryResult result;
-  if (bgr_image.empty() || bgr_image.channels() != 3 || config.canny_low_threshold <= 0 ||
-    config.canny_high_threshold <= config.canny_low_threshold || config.hough_threshold <= 0 ||
-    config.hough_min_line_length <= 0 || config.hough_max_line_gap < 0 ||
-    config.line_angle_tolerance_deg <= 0.0 || config.line_angle_tolerance_deg >= 45.0 ||
-    config.min_cross_angle_deg <= 0.0 || config.min_cross_angle_deg > 90.0 ||
-    config.min_ring_radius_px <= 0 || config.max_ring_radius_px <= config.min_ring_radius_px ||
-    config.min_ring_separation_px <= 0 ||
-    config.min_ring_coverage_ratio <= 0.0 || config.min_ring_coverage_ratio > 1.0)
-  {
+  if (bgr_image.empty() || bgr_image.channels() != 3 || !isValidConfig(config)) {
     return result;
   }
 
   cv::Mat gray;
   cv::cvtColor(bgr_image, gray, cv::COLOR_BGR2GRAY);
-  cv::Mat edges;
-  cv::Canny(gray, edges, config.canny_low_threshold, config.canny_high_threshold);
-  cv::HoughLinesP(edges, result.lines, 1.0, CV_PI / 180.0, config.hough_threshold,
-    config.hough_min_line_length, config.hough_max_line_gap);
+  cv::Mat blurred;
+  cv::GaussianBlur(gray, blurred, cv::Size(config.gaussian_blur_kernel, config.gaussian_blur_kernel), 0.0);
+  const cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(
+    config.clahe_clip_limit, cv::Size(config.clahe_tile_grid_size, config.clahe_tile_grid_size));
+  cv::Mat enhanced;
+  clahe->apply(blurred, enhanced);
+  cv::Mat otsu;
+  cv::threshold(enhanced, otsu, 0.0, 255.0, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+  int adaptive_block = std::min(config.adaptive_threshold_block_size, std::min(gray.cols, gray.rows) | 1);
+  adaptive_block = std::max(3, adaptive_block);
+  cv::Mat adaptive;
+  cv::adaptiveThreshold(enhanced, adaptive, 255.0, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+    cv::THRESH_BINARY_INV, adaptive_block, config.adaptive_threshold_c);
+  cv::bitwise_and(otsu, adaptive, result.dark_mask);
+  cv::findContours(result.dark_mask, result.contours, cv::RETR_LIST, cv::CHAIN_APPROX_NONE);
 
-  const double angle_tolerance = config.line_angle_tolerance_deg * CV_PI / 180.0;
-  double best_score = -std::numeric_limits<double>::infinity();
-  for (const cv::Vec4i &horizontal : result.lines) {
-    const double horizontal_length = segmentLength(horizontal);
-    if (horizontal_length <= 1e-6) {
+  const double min_radius = std::max(7.0, std::min(gray.cols, gray.rows) * 0.018);
+  const double max_radius = std::min(
+    static_cast<double>(config.max_ring_radius_px), std::min(gray.cols, gray.rows) * 0.52);
+  double best_confidence = -std::numeric_limits<double>::infinity();
+  for (const std::vector<cv::Point> &contour : result.contours) {
+    if (contour.size() < 5U) {
       continue;
     }
-    const double horizontal_angle = std::atan2(
-      static_cast<double>(horizontal[3] - horizontal[1]),
-      static_cast<double>(horizontal[2] - horizontal[0]));
-    const double horizontal_error = std::min(
-      std::abs(horizontal_angle), std::abs(std::abs(horizontal_angle) - CV_PI));
-    if (horizontal_error > angle_tolerance) {
+    const double area = cv::contourArea(contour);
+    const double perimeter = cv::arcLength(contour, true);
+    if (area <= 0.0 || perimeter <= 0.0) {
       continue;
     }
-    for (const cv::Vec4i &vertical : result.lines) {
-      const double vertical_length = segmentLength(vertical);
-      if (vertical_length <= 1e-6) {
-        continue;
-      }
-      const double vertical_angle = std::atan2(
-        static_cast<double>(vertical[3] - vertical[1]),
-        static_cast<double>(vertical[2] - vertical[0]));
-      const double vertical_error = std::abs(std::abs(vertical_angle) - CV_PI * 0.5);
-      if (vertical_error > angle_tolerance) {
-        continue;
-      }
-      const double cross_angle_deg = std::abs(horizontal_angle - vertical_angle) * 180.0 / CV_PI;
-      const double folded_angle = std::min(cross_angle_deg, 180.0 - cross_angle_deg);
-      if (folded_angle < config.min_cross_angle_deg) {
-        continue;
-      }
-      cv::Point2f intersection;
-      if (!intersectLines(horizontal, vertical, &intersection) ||
-        intersection.x < 0.0F || intersection.x >= bgr_image.cols ||
-        intersection.y < 0.0F || intersection.y >= bgr_image.rows)
-      {
-        continue;
-      }
-      const double score = horizontal_length + vertical_length + folded_angle;
-      if (score > best_score) {
-        best_score = score;
-        result.horizontal_line = horizontal;
-        result.vertical_line = vertical;
-        result.center = intersection;
-      }
-    }
-  }
-  if (!std::isfinite(best_score)) {
-    return result;
-  }
-  constexpr int kAngleBins = 72;
-  const int maximum_radius = std::min(
-    config.max_ring_radius_px, std::min(bgr_image.cols, bgr_image.rows) / 2);
-  std::vector<std::vector<bool>> radial_support(
-    static_cast<std::size_t>(maximum_radius + 1), std::vector<bool>(kAngleBins, false));
-  for (int y = 0; y < edges.rows; ++y) {
-    const auto *edge_row = edges.ptr<std::uint8_t>(y);
-    for (int x = 0; x < edges.cols; ++x) {
-      if (edge_row[x] == 0U) {
-        continue;
-      }
-      const double dx = x - result.center.x;
-      const double dy = y - result.center.y;
-      const int radius = static_cast<int>(std::lround(std::hypot(dx, dy)));
-      if (radius < config.min_ring_radius_px - 2 || radius > maximum_radius + 2) {
-        continue;
-      }
-      double angle = std::atan2(dy, dx);
-      if (angle < 0.0) {
-        angle += 2.0 * CV_PI;
-      }
-      const int bin = std::min(kAngleBins - 1, static_cast<int>(angle * kAngleBins / (2.0 * CV_PI)));
-      for (int offset = -2; offset <= 2; ++offset) {
-        const int supported_radius = radius + offset;
-        if (supported_radius >= config.min_ring_radius_px && supported_radius <= maximum_radius) {
-          radial_support[static_cast<std::size_t>(supported_radius)][static_cast<std::size_t>(bin)] = true;
-        }
-      }
-    }
-  }
-  std::vector<double> coverage(static_cast<std::size_t>(maximum_radius + 1), 0.0);
-  for (int radius = config.min_ring_radius_px; radius <= maximum_radius; ++radius) {
-    coverage[static_cast<std::size_t>(radius)] = static_cast<double>(std::count(
-      radial_support[static_cast<std::size_t>(radius)].begin(),
-      radial_support[static_cast<std::size_t>(radius)].end(), true)) / kAngleBins;
-  }
-  double best_ring_score = -1.0;
-  for (int outer_radius = config.min_ring_radius_px; outer_radius <= maximum_radius; ++outer_radius) {
-    if (coverage[static_cast<std::size_t>(outer_radius)] < config.min_ring_coverage_ratio) {
+    const double circularity = 4.0 * CV_PI * area / (perimeter * perimeter);
+    if (circularity < config.min_circularity) {
       continue;
     }
-    for (int inner_radius = config.min_ring_radius_px;
-      inner_radius + config.min_ring_separation_px < outer_radius; ++inner_radius)
-    {
-      if (coverage[static_cast<std::size_t>(inner_radius)] < config.min_ring_coverage_ratio) {
-        continue;
-      }
-      const double ring_score = coverage[static_cast<std::size_t>(outer_radius)] +
-        coverage[static_cast<std::size_t>(inner_radius)];
-      if (ring_score > best_ring_score) {
-        best_ring_score = ring_score;
-        result.outer_ring_radius_px = outer_radius;
-        result.inner_ring_radius_px = inner_radius;
-      }
+    const cv::RotatedRect ellipse = cv::fitEllipse(contour);
+    const double major = std::max(ellipse.size.width, ellipse.size.height);
+    const double minor = std::min(ellipse.size.width, ellipse.size.height);
+    const double mean_radius = (major + minor) * 0.25;
+    const double axis_ratio = minor / major;
+    if (axis_ratio < config.min_axis_ratio || mean_radius < min_radius || mean_radius > max_radius) {
+      continue;
     }
-  }
-  if (best_ring_score >= 0.0) {
+    const double ring_angle = ellipse.angle;
+    const cv::Size2f semi_axes(ellipse.size.width * 0.5F, ellipse.size.height * 0.5F);
+    double ratio = 0.0;
+    const double ring_score = innerRingScore(
+      result.dark_mask, ellipse.center, semi_axes, ring_angle, config, &ratio);
+    if (ring_score < config.min_inner_ring_score) {
+      continue;
+    }
+    const double candidate_cross_score = crossScore(result.dark_mask, ellipse.center, semi_axes);
+    const bool has_cross = candidate_cross_score >= config.min_cross_score;
+    const double geometry_score = std::min(1.0, 0.55 * ring_score + 0.25 * circularity + 0.20 * axis_ratio);
+    const double confidence = 0.75 * geometry_score + 0.25 * (has_cross ? candidate_cross_score : 1.0 - candidate_cross_score);
+    if (confidence <= best_confidence) {
+      continue;
+    }
+    best_confidence = confidence;
     result.outer_ring_valid = true;
     result.inner_ring_valid = true;
-    result.valid = true;
-    result.score = best_score + best_ring_score;
+    result.has_cross = has_cross;
+    result.marker_type = has_cross ? kCarPlatform : kHome;
+    result.center = ellipse.center;
+    result.outer_axes = cv::Size2f(static_cast<float>(major), static_cast<float>(minor));
+    result.ellipse_angle_deg = ellipse.size.width >= ellipse.size.height ? ellipse.angle :
+      std::fmod(ellipse.angle + 90.0, 180.0);
+    result.inner_outer_ratio = ratio;
+    result.ring_score = ring_score;
+    result.cross_score = candidate_cross_score;
+    result.circularity = circularity;
+    result.score = confidence;
   }
+  result.valid = result.marker_type == kCarPlatform;
   return result;
 }
 

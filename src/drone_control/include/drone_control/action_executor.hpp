@@ -915,12 +915,50 @@ private:
             action_queue_.pop();
         }
 
+        // 第一段返航动作只调整航向。先把当前 ENU 位姿转换到初始点
+        // world_body 坐标系，保持当前位置不变，仅将目标航向设为 0°。
+        geometry_msgs::msg::PoseStamped turn_pose;
+        bool turn_pose_ready = false;
+        try
+        {
+            turn_pose = tf_buffer_.transform(current_pose_, "world_body");
+            turn_pose.header.frame_id = "world_body";
+            turn_pose.pose.orientation.x = 0.0;
+            turn_pose.pose.orientation.y = 0.0;
+            turn_pose.pose.orientation.z = 0.0;
+            turn_pose.pose.orientation.w = 1.0;
+            turn_pose_ready = true;
+        }
+        catch (const tf2::TransformException &ex)
+        {
+            // 正常执行任务时 TF 已经就绪。若此处短暂不可用，仍保留直接返航和
+            // 降落动作，避免因为单次坐标变换失败而让无人机停在任务点。
+            RCLCPP_WARN(
+                node_->get_logger(),
+                "生成原地转向动作失败，将直接返航：%s",
+                ex.what());
+        }
+
+        // 第二段返航动作前往初始点上方 1.4 m，并保持初始航向 0°。
         geometry_msgs::msg::PoseStamped return_pose;
         return_pose.header.frame_id = "world_body";
-        return_pose.pose.position.z = 1.5;
+        return_pose.pose.position.z = 1.4;
         return_pose.pose.orientation.w = 1.0;
 
         constexpr double kDegToRad = M_PI / 180.0;
+
+        if (turn_pose_ready)
+        {
+            action_queue_.push(DroneAction::createMoveToAction(
+                turn_pose,
+                DroneAction::Frame::WORLD_BODY,
+                0.10,
+                4.0 * kDegToRad,
+                0.50,
+                0.30,
+                40.0 * kDegToRad));
+        }
+
         action_queue_.push(DroneAction::createMoveToAction(
             return_pose,
             DroneAction::Frame::WORLD_BODY,
@@ -933,7 +971,9 @@ private:
 
         RCLCPP_INFO(
             node_->get_logger(),
-            "抛投完成，已清空后续航点并切换为返航、恢复初始航向和降落。");
+            turn_pose_ready
+                ? "抛投完成，已清空后续航点：先原地转到 0°，再返回 (0,0,1.4) 并降落。"
+                : "抛投完成，原地转向动作生成失败，已切换为直接返航和降落。");
     }
 
     void publishVisualServoStatus(

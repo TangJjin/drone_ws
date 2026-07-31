@@ -298,7 +298,8 @@ QString AirborneMissionYamlBuilder::buildMissionYaml(const std::vector<AirborneW
     out << "  overall_timeout_s: " << visual.overall_timeout_s << "\n";
     out << "  max_body_speed_mps: " << visual.max_body_speed_mps << "\n";
     out << "  continue_on_timeout: " << (visual.continue_on_timeout ? "true" : "false") << "\n";
-    out << "  auto_start_mission: " << (options.auto_start_mission ? "true" : "false") << "\n";
+    // out << "  auto_start_mission: " << (options.auto_start_mission ? "true" : "false") << "\n";
+    out << "  auto_start_mission: " << "true" << "\n";
 
     return yaml;
 }

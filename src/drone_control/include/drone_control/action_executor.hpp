@@ -69,6 +69,15 @@ struct MoveRuntimeState
 
 class ActionExecutor
 {
+private:
+    enum class MissionDisplayPhase
+    {
+        NORMAL,
+        ESCORT,
+        DROP,
+        RETURN,
+    };
+
 public:
     ActionExecutor(const rclcpp::Node::SharedPtr &node,
                    tf2_ros::Buffer &tf_buffer)
@@ -133,6 +142,8 @@ public:
         }
         action_id_ = 0;
         current_action_.reset();
+        mission_display_phase_ = MissionDisplayPhase::NORMAL;
+        coordinate_drop_ascent_active_ = false;
         resetActionRuntimeState();
     }
 
@@ -182,7 +193,27 @@ public:
         TaskRuntimeStatus status;
         status.task_running = static_cast<bool>(current_action_);
         status.action_step = current_action_ ? action_id_ : 0;
-        status.action_name = current_action_ ? actionTypeToString(current_action_->getType()) : "idle";
+        status.action_name = current_action_
+            ? actionTypeToString(current_action_->getType())
+            : "idle";
+
+        if (current_action_ && current_action_->getType() != ActionType::LAND)
+        {
+            switch (mission_display_phase_)
+            {
+            case MissionDisplayPhase::ESCORT:
+                status.action_name = "visual_servo";
+                break;
+            case MissionDisplayPhase::DROP:
+                status.action_name = "drop";
+                break;
+            case MissionDisplayPhase::RETURN:
+                status.action_name = "return";
+                break;
+            default:
+                break;
+            }
+        }
         return status;
     }
 
@@ -627,6 +658,82 @@ private:
         }
     }
 
+    bool moveTargetMatches(
+        const std::shared_ptr<DroneAction> &action,
+        double x,
+        double y,
+        double z) const
+    {
+        if (!action ||
+            action->getType() != ActionType::MOVE_TO_POSITION ||
+            action->getFrame() != DroneAction::Frame::WORLD_BODY)
+        {
+            return false;
+        }
+
+        constexpr double kCoordinateTolerance = 1e-3;
+        const geometry_msgs::msg::PoseStamped target = action->getTargetPose();
+        return std::abs(target.pose.position.x - x) <= kCoordinateTolerance &&
+               std::abs(target.pose.position.y - y) <= kCoordinateTolerance &&
+               std::abs(target.pose.position.z - z) <= kCoordinateTolerance;
+    }
+
+    bool handleDesignatedMoveArrival(
+        const std::shared_ptr<DroneAction> &action,
+        const rclcpp::Time &now)
+    {
+        if (moveTargetMatches(action, 1.625, 0.343, 1.400))
+        {
+            mission_display_phase_ = MissionDisplayPhase::ESCORT;
+            completeCurrentAction(
+                "已到达伴飞起点，后续航段状态切换为 visual_servo。");
+            return true;
+        }
+
+        if (moveTargetMatches(action, 2.125, 0.343, 1.400))
+        {
+            mission_display_phase_ = MissionDisplayPhase::DROP;
+            completeCurrentAction(
+                "已到达投放进近点，后续航段状态切换为 drop。");
+            return true;
+        }
+
+        if (!moveTargetMatches(action, 2.375, 0.343, 1.000))
+        {
+            return false;
+        }
+
+        const bool servo_started = startDropServo();
+        if (servo_started)
+        {
+            drop_active_ = true;
+            drop_started_time_ = now;
+        }
+        else
+        {
+            RCLCPP_ERROR(
+                node_->get_logger(),
+                "已到达指定投放点，但舵机释放失败；仍将上升到巡航高度后返航。");
+        }
+
+        mission_display_phase_ = MissionDisplayPhase::DROP;
+        coordinate_drop_ascent_active_ = true;
+        move_runtime_.last_command_pose = move_runtime_.resolved_target_pose;
+        move_runtime_.resolved_target_pose.pose.position.z +=
+            kPostDropCruiseAltitudeM - action->getTargetPose().pose.position.z;
+        move_runtime_.last_update_time = now;
+        move_runtime_.stable_count = 0;
+        move_runtime_.total_distance_m =
+            SpatialPoint(move_runtime_.last_command_pose).distance(
+                SpatialPoint(move_runtime_.resolved_target_pose));
+        sendPositionSetpoint(move_runtime_.last_command_pose);
+        broadcastStatus(
+            servo_started
+                ? "已到达指定投放点并释放舵机，开始上升到 1.4 m 巡航高度。"
+                : "已到达指定投放点，舵机释放失败，开始上升到 1.4 m 巡航高度。");
+        return true;
+    }
+
     void executeMoveToPosition(const std::shared_ptr<DroneAction> &action)
     {
         if (!move_runtime_.initialized)
@@ -639,6 +746,7 @@ private:
         }
 
         const rclcpp::Time now = node_->now();
+
         double dt = (now - move_runtime_.last_update_time).seconds();
         move_runtime_.last_update_time = now;
         if (dt <= 0.0)
@@ -659,6 +767,19 @@ private:
             move_runtime_.stable_count++;
             if (move_runtime_.stable_count > 20)
             {
+                if (coordinate_drop_ascent_active_)
+                {
+                    coordinate_drop_ascent_active_ = false;
+                    mission_display_phase_ = MissionDisplayPhase::RETURN;
+                    replaceRemainingActionsWithReturnHomeAndLand();
+                    completeCurrentAction(
+                        "投放后已上升到 1.4 m 巡航高度，开始返航。");
+                    return;
+                }
+                if (handleDesignatedMoveArrival(action, now))
+                {
+                    return;
+                }
                 completeCurrentAction("已平滑到达目标位置与目标朝向。");
                 return;
             }
@@ -1256,6 +1377,9 @@ private:
     bool visual_servo_target_received_ = false;
     uint32_t visual_servo_target_sequence_ = 0;
     bool visual_servo_action_initialized_ = false;
+    MissionDisplayPhase mission_display_phase_ = MissionDisplayPhase::NORMAL;
+    bool coordinate_drop_ascent_active_ = false;
+    static constexpr double kPostDropCruiseAltitudeM = 1.4;
     bool drop_active_ = false;
     rclcpp::Time drop_started_time_;
     static constexpr double kDropReleaseDurationS = 3.0;

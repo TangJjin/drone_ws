@@ -106,10 +106,10 @@ air_ground_servo_node:
     min_circularity: 0.45
 
     # 外椭圆短轴与长轴的最小比值；允许俯仰后的椭圆形变。
-    min_axis_ratio: 0.60
+    min_axis_ratio: 0.20
 
     # 内环360度采样的最小黑色覆盖率；低于此值不视为双环。
-    min_inner_ring_score: 0.40
+    min_inner_ring_score: 0.20
 
     # 两条穿过椭圆中心的近似垂直直径黑线最小覆盖率；达到此值分类为小车靶标。
     min_cross_score: 0.45

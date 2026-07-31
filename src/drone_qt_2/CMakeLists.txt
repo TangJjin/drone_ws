@@ -92,6 +92,7 @@ ament_target_dependencies(airborne_link_bridge
 ament_target_dependencies(car_link_bridge
   rclcpp
   geometry_msgs
+  std_msgs
 )
 
 ament_target_dependencies(barcode_test_sender

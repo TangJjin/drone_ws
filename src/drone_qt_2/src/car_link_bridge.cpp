@@ -10,6 +10,7 @@ namespace lp = drone_msgs::link_protocol;
 
 namespace
 {
+constexpr int kMaxPayloadSize = 4096;
 void configureStream(QDataStream &stream)
 {
     stream.setByteOrder(QDataStream::LittleEndian);
@@ -52,6 +53,27 @@ void CarLinkBridge::setupRosInterfaces()
                 const geometry_msgs::msg::PoseStamped::SharedPtr message) {
                 sendCarLocalPosition(message);
             });
+
+    car_keypad_s4_pressed_sub_ =
+        this->create_subscription<std_msgs::msg::Bool>(
+            "/keypad/s4_pressed",
+            rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
+            [this](const std_msgs::msg::Bool::SharedPtr message) {
+                sendCarKeypadS4Pressed(message);
+            });
+
+    car_route_state_sub_ =
+        this->create_subscription<std_msgs::msg::String>(
+            "/route/state",
+            rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
+            [this](const std_msgs::msg::String::SharedPtr message) {
+                sendCarRouteState(message);
+            });
+
+    car_control_mode_pub_ =
+        this->create_publisher<std_msgs::msg::String>(
+            "/control/mode",
+            rclcpp::QoS(rclcpp::KeepLast(10)).reliable());
 }
 
 void CarLinkBridge::setupSerial()
@@ -63,7 +85,11 @@ void CarLinkBridge::setupSerial()
     serial_.setStopBits(QSerialPort::OneStop);
     serial_.setFlowControl(QSerialPort::NoFlowControl);
 
-    if (!serial_.open(QIODevice::WriteOnly)) {
+    QObject::connect(&serial_, &QSerialPort::readyRead, [this]() {
+        onSerialReadyRead();
+    });
+
+    if (!serial_.open(QIODevice::ReadWrite)) {
         RCLCPP_ERROR(
             this->get_logger(),
             "failed to open car serial port %s: %s",
@@ -114,11 +140,61 @@ void CarLinkBridge::sendCarLocalPosition(
     }
 
     const QByteArray frame =
-        encodeFrame(lp::kTypecarLocalPosition, 0, 0, payload);
+        encodeFrame(lp::kTypecarLocalPosition, 0, tx_sequence_++, payload);
     if (frame.isEmpty() || serial_.write(frame) < 0) {
         RCLCPP_ERROR(
             this->get_logger(),
             "failed to write car local position frame: %s",
+            serial_.errorString().toStdString().c_str());
+    }
+}
+
+void CarLinkBridge::sendCarKeypadS4Pressed(
+    const std_msgs::msg::Bool::SharedPtr message)
+{
+    if (!message || !serial_.isOpen()) {
+        return;
+    }
+
+    QByteArray payload;
+    payload.append(static_cast<char>(message->data ? 1 : 0));
+
+    const QByteArray frame = encodeFrame(
+        lp::kTypeCarKeypadS4Pressed,
+        0,
+        tx_sequence_++,
+        payload);
+    if (frame.isEmpty() || serial_.write(frame) < 0) {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "failed to write car S4 keypad frame: %s",
+            serial_.errorString().toStdString().c_str());
+    }
+}
+
+void CarLinkBridge::sendCarRouteState(
+    const std_msgs::msg::String::SharedPtr message)
+{
+    if (!message || !serial_.isOpen()) {
+        return;
+    }
+
+    // 统一成大写后传输，地面端可以直接按文档中的状态名进行映射。
+    const QString state =
+        QString::fromStdString(message->data).trimmed().toUpper();
+    if (state.isEmpty()) {
+        return;
+    }
+
+    const QByteArray frame = encodeFrame(
+        lp::kTypeCarRouteState,
+        0,
+        tx_sequence_++,
+        state.toUtf8());
+    if (frame.isEmpty() || serial_.write(frame) < 0) {
+        RCLCPP_ERROR(
+            this->get_logger(),
+            "failed to write car route state frame: %s",
             serial_.errorString().toStdString().c_str());
     }
 }
@@ -156,4 +232,117 @@ QByteArray CarLinkBridge::encodeFrame(
     frame.append(static_cast<char>(crc & 0xFF));
     frame.append(static_cast<char>((crc >> 8) & 0xFF));
     return frame;
+}
+
+void CarLinkBridge::onSerialReadyRead()
+{
+    rx_buffer_.append(serial_.readAll());
+
+    uint8_t type = 0;
+    QByteArray payload;
+    while (tryParseCarFrame(type, payload)) {
+        if (type == lp::kTypeCarControlMode) {
+            publishCarControlMode(payload);
+        } else {
+            RCLCPP_WARN(
+                this->get_logger(),
+                "ignored unexpected car serial frame type: 0x%02X",
+                type);
+        }
+    }
+}
+
+bool CarLinkBridge::tryParseCarFrame(
+    uint8_t &type,
+    QByteArray &payload)
+{
+    while (true) {
+        while (rx_buffer_.size() >= 2) {
+            const auto first = static_cast<uint8_t>(rx_buffer_[0]);
+            const auto second = static_cast<uint8_t>(rx_buffer_[1]);
+            if (first == lp::kSof1 && second == lp::kSof2) {
+                break;
+            }
+            rx_buffer_.remove(0, 1);
+        }
+
+        if (rx_buffer_.size() < 11) {
+            return false;
+        }
+
+        const auto *data =
+            reinterpret_cast<const uint8_t *>(rx_buffer_.constData());
+        const uint16_t payload_length =
+            static_cast<uint16_t>(data[7]) |
+            (static_cast<uint16_t>(data[8]) << 8);
+
+        if (payload_length > kMaxPayloadSize) {
+            rx_buffer_.remove(0, 1);
+            continue;
+        }
+
+        const int frame_length = 9 + static_cast<int>(payload_length) + 2;
+        if (rx_buffer_.size() < frame_length) {
+            return false;
+        }
+
+        const QByteArray frame = rx_buffer_.left(frame_length);
+        rx_buffer_.remove(0, frame_length);
+
+        if (!validateFrame(frame)) {
+            RCLCPP_WARN(this->get_logger(), "discarded invalid car serial frame");
+            continue;
+        }
+
+        const auto *frame_data =
+            reinterpret_cast<const uint8_t *>(frame.constData());
+        type = frame_data[3];
+        payload = frame.mid(9, payload_length);
+        return true;
+    }
+}
+
+bool CarLinkBridge::validateFrame(const QByteArray &frame) const
+{
+    if (frame.size() < 11) {
+        return false;
+    }
+
+    const auto *data =
+        reinterpret_cast<const uint8_t *>(frame.constData());
+    if (data[0] != lp::kSof1 ||
+        data[1] != lp::kSof2 ||
+        data[2] != lp::kVersion) {
+        return false;
+    }
+
+    const uint16_t payload_length =
+        static_cast<uint16_t>(data[7]) |
+        (static_cast<uint16_t>(data[8]) << 8);
+    if (frame.size() != 9 + static_cast<int>(payload_length) + 2) {
+        return false;
+    }
+
+    const uint16_t received_crc =
+        static_cast<uint16_t>(data[frame.size() - 2]) |
+        (static_cast<uint16_t>(data[frame.size() - 1]) << 8);
+    const uint16_t calculated_crc =
+        crc16Ccitt(data + 2, frame.size() - 4);
+    return received_crc == calculated_crc;
+}
+
+void CarLinkBridge::publishCarControlMode(const QByteArray &payload)
+{
+    const QString mode =
+        QString::fromUtf8(payload).trimmed().toUpper();
+    if (mode != "DISABLED" && mode != "AUTO") {
+        RCLCPP_WARN(
+            this->get_logger(),
+            "ignored unsupported car control mode payload");
+        return;
+    }
+
+    std_msgs::msg::String message;
+    message.data = mode.toStdString();
+    car_control_mode_pub_->publish(message);
 }

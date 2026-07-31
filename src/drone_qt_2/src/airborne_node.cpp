@@ -516,7 +516,9 @@ void AirborneNode::handleUploadMissionSummary(
 
     if(waypoint_or_button_ == false)
     {
-        current_mission_path_ = "/home/orangepi/drone_ws/src/drone_mission/warehouse/mission.yaml";
+        // 空路线表示使用机载端预设的空地协同固定路线，不生成也不覆盖 YAML。
+        current_mission_path_ =
+            "/home/orangepi/drone_ws/src/drone_mission/config/ground_station.yaml";
     }
     else
     {

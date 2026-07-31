@@ -39,6 +39,7 @@ mission:
       max_xy_speed_mps: 0.10
       max_z_speed_mps: 0.10
       max_yaw_rate_deg_s: 10.0
+    - type: "visual_servo"
 
 
     # Point 01 - fly directly from the takeoff origin to the A-B midpoint

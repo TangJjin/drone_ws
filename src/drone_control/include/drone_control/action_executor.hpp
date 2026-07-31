@@ -183,15 +183,13 @@ public:
         status.task_running = static_cast<bool>(current_action_);
         status.action_step = current_action_ ? action_id_ : 0;
         status.action_name = current_action_ ? actionTypeToString(current_action_->getType()) : "idle";
-        if (drop_active_)
-        {
-            status.action_name = "drop";
-        }
         return status;
     }
 
     void controlLoop()
     {
+        updateDropServo(node_->now());
+
         if (!current_pose_received_)
         {
             sendDummyPose();
@@ -249,8 +247,6 @@ private:
     {
         visual_servo_controller_.reset();
         visual_servo_action_initialized_ = false;
-        drop_active_ = false;
-        drop_started_time_ = rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
         resetMoveRuntimeState();
         land_mode_request_sent_ = false;
         land_setpoint_quiet_started_ = false;
@@ -738,18 +734,6 @@ private:
     {
         const rclcpp::Time now = node_->now();
 
-        if (drop_active_)
-        {
-            sendPositionSetpoint(visual_servo_hold_pose_);
-            if ((now - drop_started_time_).seconds() >= kDropHoldDurationS)
-            {
-                drop_active_ = false;
-                replaceRemainingActionsWithReturnHomeAndLand();
-                completeCurrentAction("视觉伺服完成后已执行舵机抛投。");
-            }
-            return;
-        }
-
         if (!visual_servo_action_initialized_)
         {
             visual_servo_controller_.start(action->getVisualServoConfig(), now);
@@ -775,6 +759,8 @@ private:
             }
             drop_active_ = true;
             drop_started_time_ = now;
+            replaceRemainingActionsWithReturnHomeAndLand();
+            completeCurrentAction("视觉伺服完成后已触发舵机抛投，继续执行后续任务。");
             return;
         }
 
@@ -840,11 +826,42 @@ private:
         return true;
     }
 
+    bool setDropServoDuty(const std::string &duty_cycle_ns)
+    {
+        constexpr const char *kPwmPath = "/sys/class/pwm/pwmchip0/pwm0";
+        constexpr const char *kPeriodNs = "20000000";
+
+        std::string current_enable;
+        {
+            std::ifstream enable_file(std::string(kPwmPath) + "/enable");
+            if (!(enable_file >> current_enable))
+            {
+                RCLCPP_ERROR(node_->get_logger(), "无法读取 PWM enable 状态。");
+                return false;
+            }
+        }
+
+        if (current_enable == "1" &&
+            !writePwmValue(std::string(kPwmPath) + "/enable", "0"))
+        {
+            return false;
+        }
+
+        if (!writePwmValue(std::string(kPwmPath) + "/period", kPeriodNs) ||
+            !writePwmValue(std::string(kPwmPath) + "/polarity", "normal") ||
+            !writePwmValue(std::string(kPwmPath) + "/duty_cycle", duty_cycle_ns) ||
+            !writePwmValue(std::string(kPwmPath) + "/enable", "1"))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     bool startDropServo()
     {
         constexpr const char *kPwmChipPath = "/sys/class/pwm/pwmchip0";
         constexpr const char *kPwmPath = "/sys/class/pwm/pwmchip0/pwm0";
-        constexpr const char *kPeriodNs = "20000000";
         constexpr const char *kReleaseDutyNs = "1000000";
 
         if (!std::filesystem::exists(kPwmPath) &&
@@ -853,17 +870,42 @@ private:
             return false;
         }
 
-        if (!writePwmValue(std::string(kPwmPath) + "/enable", "0") ||
-            !writePwmValue(std::string(kPwmPath) + "/polarity", "normal") ||
-            !writePwmValue(std::string(kPwmPath) + "/period", kPeriodNs) ||
-            !writePwmValue(std::string(kPwmPath) + "/duty_cycle", kReleaseDutyNs) ||
-            !writePwmValue(std::string(kPwmPath) + "/enable", "1"))
+        if (!setDropServoDuty(kReleaseDutyNs))
         {
             return false;
         }
 
         RCLCPP_INFO(node_->get_logger(), "舵机抛投已触发：duty_cycle=%s ns。", kReleaseDutyNs);
         return true;
+    }
+
+    void updateDropServo(const rclcpp::Time &now)
+    {
+        if (!drop_active_ ||
+            (now - drop_started_time_).seconds() < kDropReleaseDurationS)
+        {
+            return;
+        }
+
+        constexpr const char *kRetractDutyNs = "1700000";
+        drop_active_ = false;
+        drop_started_time_ = rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
+
+        if (setDropServoDuty(kRetractDutyNs))
+        {
+            RCLCPP_INFO(
+                node_->get_logger(),
+                "舵机抛投保持 %.1f s 后已收回：duty_cycle=%s ns。",
+                kDropReleaseDurationS,
+                kRetractDutyNs);
+        }
+        else
+        {
+            RCLCPP_ERROR(
+                node_->get_logger(),
+                "舵机抛投保持 %.1f s 后收回失败。",
+                kDropReleaseDurationS);
+        }
     }
 
     void replaceRemainingActionsWithReturnHomeAndLand()
@@ -1176,7 +1218,7 @@ private:
     bool visual_servo_action_initialized_ = false;
     bool drop_active_ = false;
     rclcpp::Time drop_started_time_;
-    static constexpr double kDropHoldDurationS = 1.0;
+    static constexpr double kDropReleaseDurationS = 3.0;
     bool force_visual_servo_status_publish_ = true;
     std::string last_visual_servo_status_name_;
     rclcpp::Time last_visual_servo_status_time_;

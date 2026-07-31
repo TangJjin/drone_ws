@@ -1,139 +1,149 @@
 # Start at the takeoff circle, enter at the shifted A-B midpoint, then fly one 20-point oval.
 mission:
-  takeoff_altitude: 1.50
+  takeoff_altitude: 1.40
   actions:
     - type: "takeoff"
-      altitude: 1.50
+      altitude: 1.40
 
     - type: "hover"
       duration: 1.00
 
-    # Point 01 - fly directly from the takeoff origin to the A-B midpoint
+    # # Point 01 - fly directly from the takeoff origin to the A-B midpoint
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [1.620, -0.340, 1.400]
+    #   yaw: 0.000
+    # - type: "visual_servo"
+
+    # # Point 02 - A-B straight
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [2.376, -0.340, 1.400]
+    #   yaw: 0.000
+    # - type: "visual_servo"
+
+    # # Point 03 - enter the upper arc
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [2.912, -0.553, 1.400]
+    #   yaw: -0.882
+    # - type: "visual_servo"
+
+    # # Point 04 - upper arc
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [3.188, -1.091, 1.400]
+    #   yaw: -1.706
+    # - type: "visual_servo"
+
+    # # Point 05 - upper arc
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [2.909, -1.624, 1.400]
+    #   yaw: -2.325
+    # - type: "visual_servo"
+
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [2.323, -1.841, 1.400]
+    #   yaw: -3.142
+    # - type: "visual_servo"
+
+
+
+
+
+
+
+
+
+
+    # # Point 06 - upper arc
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [1.920, -1.841, 1.400]
+    #   yaw: -3.142
+    # - type: "visual_servo"
+
+    # # Point 07 - upper arc
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [1.600, -1.841, 1.400]
+    #   yaw: -3.142
+    # - type: "visual_servo"
+
+    # # Point 08 - leave the upper arc
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [1.300, -1.841, 1.400]
+    #   yaw: -3.142
+    # - type: "visual_servo"
+
+    # # Point 09 - C-D straight
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [0.870, -1.841, 1.400]
+    #   yaw: -3.142
+    # - type: "visual_servo"
+
+
+
+
+
+
+
+
+
+
+
+
+    # # Point 10 - C-D straight
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [0.490, -1.620, 1.400]
+    #   yaw: 2.400
+    # - type: "visual_servo"
+
+    # # Point 11 - C-D straight
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [0.120, -1.150, 1.400]
+    #   yaw: 1.550
+    # - type: "visual_servo"
+
+    # # Point 12 - C-D straight
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [0.490, -0.550, 1.400]
+    #   yaw: 0.775
+    # - type: "visual_servo"
+
+    # # Point 13 - enter the lower arc
+    # - type: "move"
+    #   frame: "world_body"
+    #   position: [0.870, -0.340, 1.400]
+    #   yaw: 0.000
+    # - type: "visual_servo"
+
+
     - type: "move"
       frame: "world_body"
-      position: [1.620, -0.340, 1.500]
+      position: [1.500, 0.000, 1.400]
       yaw: 0.000
     - type: "visual_servo"
 
-    # Point 02 - A-B straight
     - type: "move"
       frame: "world_body"
-      position: [2.376, -0.340, 1.500]
+      position: [0.700, 0.000, 1.400]
       yaw: 0.000
     - type: "visual_servo"
-
-    # Point 03 - enter the upper arc
-    - type: "move"
-      frame: "world_body"
-      position: [2.912, -0.553, 1.500]
-      yaw: -0.882
-    - type: "visual_servo"
-
-    # Point 04 - upper arc
-    - type: "move"
-      frame: "world_body"
-      position: [3.188, -1.091, 1.500]
-      yaw: -1.706
-    - type: "visual_servo"
-
-    # Point 05 - upper arc
-    - type: "move"
-      frame: "world_body"
-      position: [2.909, -1.624, 1.500]
-      yaw: -2.325
-    - type: "visual_servo"
-
-    - type: "move"
-      frame: "world_body"
-      position: [2.323, -1.841, 1.500]
-      yaw: -3.142
-    - type: "visual_servo"
-
-
-
-
-
-
-
-
-
-
-    # Point 06 - upper arc
-    - type: "move"
-      frame: "world_body"
-      position: [1.920, -1.841, 1.500]
-      yaw: -3.142
-    - type: "visual_servo"
-
-    # Point 07 - upper arc
-    - type: "move"
-      frame: "world_body"
-      position: [1.600, -1.841, 1.500]
-      yaw: -3.142
-    - type: "visual_servo"
-
-    # Point 08 - leave the upper arc
-    - type: "move"
-      frame: "world_body"
-      position: [1.300, -1.841, 1.500]
-      yaw: -3.142
-    - type: "visual_servo"
-
-    # Point 09 - C-D straight
-    - type: "move"
-      frame: "world_body"
-      position: [0.870, -1.841, 1.500]
-      yaw: -3.142
-    - type: "visual_servo"
-
-
-
-
-
-
-
-
-
-
-
-
-    # Point 10 - C-D straight
-    - type: "move"
-      frame: "world_body"
-      position: [0.490, -1.620, 1.500]
-      yaw: 2.400
-    - type: "visual_servo"
-
-    # Point 11 - C-D straight
-    - type: "move"
-      frame: "world_body"
-      position: [0.120, -1.150, 1.500]
-      yaw: 1.550
-    - type: "visual_servo"
-
-    # Point 12 - C-D straight
-    - type: "move"
-      frame: "world_body"
-      position: [0.490, -0.550, 1.500]
-      yaw: 0.775
-    - type: "visual_servo"
-
-    # Point 13 - enter the lower arc
-    - type: "move"
-      frame: "world_body"
-      position: [0.870, -0.340, 1.500]
-      yaw: 0.000
-    - type: "visual_servo"
-
-
 
 
     # Point 20 - close the oval at the A-B midpoint
     - type: "move"
       frame: "world_body"
-      position: [0.000, 0.000, 1.500]
+      position: [0.000, 0.000, 1.400]
       yaw: 0.000
-    - type: "visual_servo"
 
     - type: "hover"
       duration: 1.00
@@ -153,22 +163,22 @@ system:
   image_y_axis: "z"
   image_x_sign: -1.0
   image_y_sign: -1.0
-  kp_x: 0.35
+  kp_x: 0.50
   ki_x: 0.0
   kd_x: 0.02
-  kp_y: 0.35
+  kp_y: 0.50
   ki_y: 0.0
   kd_y: 0.02
   integral_limit: 0.5
   filter_alpha: 0.35
-  enter_tolerance_x: 0.04
-  enter_tolerance_y: 0.04
-  exit_tolerance_x: 0.07
-  exit_tolerance_y: 0.07
+  enter_tolerance_x: 0.20
+  enter_tolerance_y: 0.20
+  exit_tolerance_x: 0.21
+  exit_tolerance_y: 0.21
   settle_time_s: 0.6
   acquire_timeout_s: 7.0
-  lost_timeout_s: 1.0
-  overall_timeout_s: 10.0
+  lost_timeout_s: 7.0
+  overall_timeout_s: 15.0
   max_body_speed_mps: 0.20
   continue_on_timeout: true
   auto_start_mission: false

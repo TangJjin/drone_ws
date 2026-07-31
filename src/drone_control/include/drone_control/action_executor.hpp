@@ -143,7 +143,6 @@ public:
         action_id_ = 0;
         current_action_.reset();
         mission_display_phase_ = MissionDisplayPhase::NORMAL;
-        coordinate_drop_ascent_active_ = false;
         resetActionRuntimeState();
     }
 
@@ -278,6 +277,9 @@ private:
     {
         visual_servo_controller_.reset();
         visual_servo_action_initialized_ = false;
+        visual_servo_drop_delay_active_ = false;
+        visual_servo_drop_delay_started_time_ =
+            rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
         resetMoveRuntimeState();
         land_mode_request_sent_ = false;
         land_setpoint_quiet_started_ = false;
@@ -679,8 +681,7 @@ private:
     }
 
     bool handleDesignatedMoveArrival(
-        const std::shared_ptr<DroneAction> &action,
-        const rclcpp::Time &now)
+        const std::shared_ptr<DroneAction> &action)
     {
         if (moveTargetMatches(action, 1.625, 0.343, 1.400))
         {
@@ -692,46 +693,21 @@ private:
 
         if (moveTargetMatches(action, 2.125, 0.343, 1.400))
         {
-            mission_display_phase_ = MissionDisplayPhase::DROP;
+            mission_display_phase_ = MissionDisplayPhase::ESCORT;
             completeCurrentAction(
-                "已到达投放进近点，后续航段状态切换为 drop。");
+                "已到达投放进近点，B 到 C 航段继续保持 visual_servo 状态。");
             return true;
         }
 
-        if (!moveTargetMatches(action, 2.375, 0.343, 1.000))
+        if (moveTargetMatches(action, 2.375, 0.343, 1.000))
         {
-            return false;
+            mission_display_phase_ = MissionDisplayPhase::DROP;
+            completeCurrentAction(
+                "已到达 C 点，开始执行视觉伺服，状态切换为 drop。");
+            return true;
         }
 
-        const bool servo_started = startDropServo();
-        if (servo_started)
-        {
-            drop_active_ = true;
-            drop_started_time_ = now;
-        }
-        else
-        {
-            RCLCPP_ERROR(
-                node_->get_logger(),
-                "已到达指定投放点，但舵机释放失败；仍将上升到巡航高度后返航。");
-        }
-
-        mission_display_phase_ = MissionDisplayPhase::DROP;
-        coordinate_drop_ascent_active_ = true;
-        move_runtime_.last_command_pose = move_runtime_.resolved_target_pose;
-        move_runtime_.resolved_target_pose.pose.position.z +=
-            kPostDropCruiseAltitudeM - action->getTargetPose().pose.position.z;
-        move_runtime_.last_update_time = now;
-        move_runtime_.stable_count = 0;
-        move_runtime_.total_distance_m =
-            SpatialPoint(move_runtime_.last_command_pose).distance(
-                SpatialPoint(move_runtime_.resolved_target_pose));
-        sendPositionSetpoint(move_runtime_.last_command_pose);
-        broadcastStatus(
-            servo_started
-                ? "已到达指定投放点并释放舵机，开始上升到 1.4 m 巡航高度。"
-                : "已到达指定投放点，舵机释放失败，开始上升到 1.4 m 巡航高度。");
-        return true;
+        return false;
     }
 
     void executeMoveToPosition(const std::shared_ptr<DroneAction> &action)
@@ -767,16 +743,7 @@ private:
             move_runtime_.stable_count++;
             if (move_runtime_.stable_count > 20)
             {
-                if (coordinate_drop_ascent_active_)
-                {
-                    coordinate_drop_ascent_active_ = false;
-                    mission_display_phase_ = MissionDisplayPhase::RETURN;
-                    replaceRemainingActionsWithReturnHomeAndLand();
-                    completeCurrentAction(
-                        "投放后已上升到 1.4 m 巡航高度，开始返航。");
-                    return;
-                }
-                if (handleDesignatedMoveArrival(action, now))
+                if (handleDesignatedMoveArrival(action))
                 {
                     return;
                 }
@@ -864,6 +831,26 @@ private:
             force_visual_servo_status_publish_ = true;
         }
 
+        if (visual_servo_drop_delay_active_)
+        {
+            sendPositionSetpoint(visual_servo_hold_pose_);
+            const double delay_elapsed_s =
+                (now - visual_servo_drop_delay_started_time_).seconds();
+            if (delay_elapsed_s >= kVisualServoDropDelayS)
+            {
+                visual_servo_drop_delay_active_ = false;
+                mission_display_phase_ = MissionDisplayPhase::RETURN;
+                replaceRemainingActionsWithReturnHomeAndLand();
+                completeCurrentAction(
+                    "舵机投放后保持 0.7 秒完成，开始直接返航并同步升高。");
+            }
+            else
+            {
+                broadcastStatusThrottled("舵机已投放，等待 0.7 秒后返航。");
+            }
+            return;
+        }
+
         const VisualServoObservation *observation =
             visual_servo_target_received_ ? &latest_visual_servo_target_ : nullptr;
         const VisualServoOutput output =
@@ -873,15 +860,26 @@ private:
         {
             publishVisualServoStatus(output, false, true);
             visual_servo_hold_pose_ = current_pose_;
-            if (!startDropServo())
+            const bool servo_started = startDropServo();
+            if (servo_started)
             {
-                completeCurrentAction("视觉伺服已完成，但舵机抛投启动失败。");
-                return;
+                drop_active_ = true;
+                drop_started_time_ = now;
             }
-            drop_active_ = true;
-            drop_started_time_ = now;
-            replaceRemainingActionsWithReturnHomeAndLand();
-            completeCurrentAction("视觉伺服完成后已触发舵机抛投，继续执行后续任务。");
+            else
+            {
+                RCLCPP_ERROR(
+                    node_->get_logger(),
+                    "视觉伺服已完成，但舵机抛投启动失败；仍将在 0.7 秒后返航。");
+            }
+
+            visual_servo_drop_delay_active_ = true;
+            visual_servo_drop_delay_started_time_ = now;
+            sendPositionSetpoint(visual_servo_hold_pose_);
+            broadcastStatus(
+                servo_started
+                    ? "视觉伺服完成并已触发舵机投放，0.7 秒后开始返航。"
+                    : "视觉伺服完成但舵机投放失败，0.7 秒后开始返航。");
             return;
         }
 
@@ -1036,49 +1034,13 @@ private:
             action_queue_.pop();
         }
 
-        // 第一段返航动作只调整航向。先把当前 ENU 位姿转换到初始点
-        // world_body 坐标系，保持当前位置不变，仅将目标航向设为 0°。
-        geometry_msgs::msg::PoseStamped turn_pose;
-        bool turn_pose_ready = false;
-        try
-        {
-            turn_pose = tf_buffer_.transform(current_pose_, "world_body");
-            turn_pose.header.frame_id = "world_body";
-            turn_pose.pose.orientation.x = 0.0;
-            turn_pose.pose.orientation.y = 0.0;
-            turn_pose.pose.orientation.z = 0.0;
-            turn_pose.pose.orientation.w = 1.0;
-            turn_pose_ready = true;
-        }
-        catch (const tf2::TransformException &ex)
-        {
-            // 正常执行任务时 TF 已经就绪。若此处短暂不可用，仍保留直接返航和
-            // 降落动作，避免因为单次坐标变换失败而让无人机停在任务点。
-            RCLCPP_WARN(
-                node_->get_logger(),
-                "生成原地转向动作失败，将直接返航：%s",
-                ex.what());
-        }
-
-        // 第二段返航动作前往初始点上方 1.4 m，并保持初始航向 0°。
+        // 直接返回初始点上方 1.4 m，水平位置与高度在同一动作中同步变化。
         geometry_msgs::msg::PoseStamped return_pose;
         return_pose.header.frame_id = "world_body";
         return_pose.pose.position.z = 1.4;
         return_pose.pose.orientation.w = 1.0;
 
         constexpr double kDegToRad = M_PI / 180.0;
-
-        if (turn_pose_ready)
-        {
-            action_queue_.push(DroneAction::createMoveToAction(
-                turn_pose,
-                DroneAction::Frame::WORLD_BODY,
-                0.10,
-                4.0 * kDegToRad,
-                0.50,
-                0.30,
-                40.0 * kDegToRad));
-        }
 
         action_queue_.push(DroneAction::createMoveToAction(
             return_pose,
@@ -1090,11 +1052,8 @@ private:
             40.0 * kDegToRad));
         action_queue_.push(DroneAction::createLandAction());
 
-        RCLCPP_INFO(
-            node_->get_logger(),
-            turn_pose_ready
-                ? "抛投完成，已清空后续航点：先原地转到 0°，再返回 (0,0,1.4) 并降落。"
-                : "抛投完成，原地转向动作生成失败，已切换为直接返航和降落。");
+        RCLCPP_INFO(node_->get_logger(),
+                    "抛投完成，已直接返回 (0,0,1.4) 并降落。");
     }
 
     void publishVisualServoStatus(
@@ -1378,8 +1337,9 @@ private:
     uint32_t visual_servo_target_sequence_ = 0;
     bool visual_servo_action_initialized_ = false;
     MissionDisplayPhase mission_display_phase_ = MissionDisplayPhase::NORMAL;
-    bool coordinate_drop_ascent_active_ = false;
-    static constexpr double kPostDropCruiseAltitudeM = 1.4;
+    bool visual_servo_drop_delay_active_ = false;
+    rclcpp::Time visual_servo_drop_delay_started_time_;
+    static constexpr double kVisualServoDropDelayS = 0.7;
     bool drop_active_ = false;
     rclcpp::Time drop_started_time_;
     static constexpr double kDropReleaseDurationS = 3.0;

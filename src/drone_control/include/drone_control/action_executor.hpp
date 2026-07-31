@@ -870,29 +870,11 @@ private:
             return false;
         }
 
-        std::string current_enable;
-        {
-            std::ifstream enable_file(std::string(kPwmPath) + "/enable");
-            if (!(enable_file >> current_enable))
-            {
-                RCLCPP_ERROR(node_->get_logger(), "无法读取 PWM enable 状态。");
-                return false;
-            }
-        }
-
-        if (current_enable == "1" &&
-            !writePwmValue(std::string(kPwmPath) + "/enable", "0"))
+        if (!setDropServoDuty(kReleaseDutyNs))
         {
             return false;
         }
 
-        if (!writePwmValue(std::string(kPwmPath) + "/period", kPeriodNs) ||
-            !writePwmValue(std::string(kPwmPath) + "/polarity", "normal") ||
-            !writePwmValue(std::string(kPwmPath) + "/duty_cycle", kReleaseDutyNs) ||
-            !writePwmValue(std::string(kPwmPath) + "/enable", "1"))
-        {
-            return false;
-        }
         RCLCPP_INFO(node_->get_logger(), "舵机抛投已触发：duty_cycle=%s ns。", kReleaseDutyNs);
         return true;
     }

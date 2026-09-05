@@ -114,33 +114,6 @@ class StartupSupervisor:
                 timeout_sec=15,
                 ready_qos_reliability='reliable',
             ),
-
-            StartupStep(
-                name='offboard',
-                command=[
-                    'ros2', 'launch',
-                    'drone_bringup',
-                    'run_offboard.launch.py',
-                    'mission_config_path:=/home/orangepi/drone_ws/src/drone_mission/config/ground_station.yaml',
-                    'enable_offboard_control:=true',
-                ],
-                ready_topic='/control/path_ready',
-                ready_type='drone_msgs/msg/ReadyStatus',
-                timeout_sec=15,
-                ready_qos_reliability='reliable',
-            )
-
-            StartupStep(
-                name='start_mission',
-                command=[
-                    'ros2', 'topic', 'pub', '--once',
-                    '/start_mission',
-                    'std_msgs/msg/Empty',
-                    '{}',
-                ],
-                timeout_sec=10,
-                one_shot=True,
-            )
             # StartupStep(
             #     name='airborne_node',
             #     command=['ros2', 'run', 'drone_qt_2', 'airborne_node'],
